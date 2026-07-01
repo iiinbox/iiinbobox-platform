@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Menu, ShoppingCart, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Logo } from "@/components/logo";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import {
   DropdownMenu,
@@ -41,7 +42,8 @@ export function HeaderClient({ user }: { user: SessionUser | null }) {
     <header className="sticky top-0 z-40 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="container flex h-14 items-center">
         {/* Logo */}
-        <Link href="/" className="mr-6 flex items-center space-x-2 font-bold text-lg tracking-tight">
+        <Link href="/" className="mr-6 flex items-center gap-2 font-bold text-lg tracking-tight">
+          <Logo size={28} />
           iiiiiBOX
         </Link>
 
@@ -130,7 +132,8 @@ export function HeaderClient({ user }: { user: SessionUser | null }) {
             <SheetContent side="left" className="w-72">
               <SheetHeader>
                 <SheetTitle>
-                  <Link href="/" onClick={() => setOpen(false)} className="font-bold text-lg">
+                  <Link href="/" onClick={() => setOpen(false)} className="flex items-center gap-2 font-bold text-lg">
+                    <Logo size={24} />
                     iiiiiBOX
                   </Link>
                 </SheetTitle>

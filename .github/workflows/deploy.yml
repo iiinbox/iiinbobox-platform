@@ -10,49 +10,43 @@ on:
 jobs:
   deploy:
     name: Deploy to production
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Copy code to server
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ secrets.DEPLOY_HOST }}
-          username: ${{ secrets.DEPLOY_USER }}
-          key: ${{ secrets.DEPLOY_SSH_KEY }}
-          source: "."
-          target: "/opt/iiiiibox"
-          rm: false
+      - name: Ensure .env exists
+        run: |
+          if [ ! -f /opt/iiiiibox/.env ]; then
+            echo "ERROR: /opt/iiiiibox/.env not found — create it from .env.example before deploying"
+            exit 1
+          fi
 
-      - name: Deploy via SSH
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.DEPLOY_HOST }}
-          username: ${{ secrets.DEPLOY_USER }}
-          key: ${{ secrets.DEPLOY_SSH_KEY }}
-          script: |
-            set -e
-            cd /opt/iiiiibox
+      - name: Copy code to deployment directory
+        run: |
+          rsync -a --exclude='.git' --exclude='node_modules' --exclude='dist' --exclude='.next' \
+            $GITHUB_WORKSPACE/ /opt/iiiiibox/
 
-            # Ensure .env exists (managed separately, not in git)
-            if [ ! -f .env ]; then
-              echo ".env not found — copy .env.example to .env and fill in secrets"
-              exit 1
-            fi
+      - name: Build and deploy
+        working-directory: /opt/iiiiibox
+        run: |
+          set -e
 
-            # Pull latest images and rebuild app containers
-            docker compose pull postgres minio meilisearch caddy 2>/dev/null || true
-            docker compose build --parallel api web
+          # Install dependencies
+          corepack enable
+          pnpm install --frozen-lockfile
 
-            # Run DB migrations before swapping traffic
-            docker compose run --rm api sh -c "pnpm --filter @iiiiibox/database exec prisma migrate deploy"
+          # Build packages in dependency order
+          DATABASE_URL=$(grep DATABASE_URL .env | cut -d= -f2-) pnpm turbo build \
+            --filter=@iiiiibox/shared-types \
+            --filter=@iiiiibox/database \
+            --filter=@iiiiibox/api-client
 
-            # Bring up all services (rolling restart for web/api)
-            docker compose up -d --remove-orphans
+          # Build and restart containers
+          docker compose build --parallel api web
+          docker compose run --rm api sh -c "pnpm --filter @iiiiibox/database exec prisma migrate deploy"
+          docker compose up -d --remove-orphans
+          docker image prune -f
 
-            # Clean up dangling images
-            docker image prune -f
-
-            echo "Deploy complete at $(date)"
+          echo "Deploy complete at $(date)"

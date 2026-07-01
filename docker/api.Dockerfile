@@ -5,6 +5,7 @@ COPY . .
 RUN npx turbo prune @iiiiibox/api --docker
 
 FROM node:20-alpine AS builder
+RUN apk add --no-cache openssl
 RUN corepack enable
 WORKDIR /app
 COPY --from=pruner /app/out/json/ .
@@ -14,6 +15,7 @@ RUN pnpm --filter @iiiiibox/database exec prisma generate
 RUN pnpm turbo build --filter=@iiiiibox/api
 
 FROM node:20-alpine AS runner
+RUN apk add --no-cache openssl
 RUN corepack enable
 WORKDIR /app
 ENV NODE_ENV=production

@@ -25,7 +25,13 @@ jobs:
 
       - name: Copy code to deployment directory
         run: |
-          rsync -a --exclude='.git' --exclude='node_modules' --exclude='dist' --exclude='.next' \
+          rsync -a \
+            --exclude='.git' \
+            --exclude='node_modules' \
+            --exclude='dist' \
+            --exclude='.next' \
+            --exclude='.env' \
+            --exclude='.env.local' \
             $GITHUB_WORKSPACE/ /opt/iiiiibox/
 
       - name: Install dependencies

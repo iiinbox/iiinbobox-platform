@@ -53,7 +53,11 @@ jobs:
       - name: Run database migrations (on host, not in container)
         working-directory: /opt/iiiiibox
         run: |
-          export DATABASE_URL=$(grep "^DATABASE_URL" .env | sed 's/@postgres:/@localhost:/; s/:5432/:5433/')
+          PGUSER=$(grep "^POSTGRES_USER" .env | cut -d= -f2-)
+          PGPASS=$(grep "^POSTGRES_PASSWORD" .env | cut -d= -f2-)
+          PGDB=$(grep "^POSTGRES_DB" .env | cut -d= -f2-)
+          export DATABASE_URL="postgresql://${PGUSER}:${PGPASS}@localhost:5433/${PGDB}"
+          echo "Running migrations against localhost:5433/${PGDB}"
           pnpm --filter @iiiiibox/database exec prisma migrate deploy
 
       - name: Build and start app containers

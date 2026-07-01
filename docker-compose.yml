@@ -82,13 +82,14 @@ services:
       - "3000"
 
   caddy:
-    image: caddy:2-alpine
+    build:
+      context: ./docker
+      dockerfile: caddy.Dockerfile
     restart: unless-stopped
     ports:
       - "80:80"
       - "443:443"
     volumes:
-      - ./docker/Caddyfile:/etc/caddy/Caddyfile
       - caddy_data:/data
       - caddy_config:/config
     depends_on:

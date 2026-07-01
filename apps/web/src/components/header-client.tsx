@@ -42,9 +42,8 @@ export function HeaderClient({ user }: { user: SessionUser | null }) {
     <header className="sticky top-0 z-40 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="container flex h-14 items-center">
         {/* Logo */}
-        <Link href="/" className="mr-6 flex items-center gap-2 font-bold text-lg tracking-tight">
+        <Link href="/" className="mr-6" aria-label="iiinbox home">
           <Logo size={28} />
-          iiiiiBOX
         </Link>
 
         {/* Desktop nav */}
@@ -132,9 +131,8 @@ export function HeaderClient({ user }: { user: SessionUser | null }) {
             <SheetContent side="left" className="w-72">
               <SheetHeader>
                 <SheetTitle>
-                  <Link href="/" onClick={() => setOpen(false)} className="flex items-center gap-2 font-bold text-lg">
+                  <Link href="/" onClick={() => setOpen(false)} aria-label="iiinbox home">
                     <Logo size={24} />
-                    iiiiiBOX
                   </Link>
                 </SheetTitle>
               </SheetHeader>

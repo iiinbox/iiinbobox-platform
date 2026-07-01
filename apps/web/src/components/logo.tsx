@@ -14,28 +14,11 @@ export function Logo({ size = 28 }: { size?: number }) {
         </clipPath>
       </defs>
 
-      {/* Blue half — top-left triangle */}
-      <rect width="32" height="32" rx="7" fill="#2563EB" />
+      {/* Yellow fills the full rounded square (top half visible) */}
+      <rect width="32" height="32" rx="7" fill="#F59E0B" />
 
-      {/* Yellow half — bottom-right triangle, clipped to rounded square */}
-      <polygon
-        points="32,0 32,32 0,32"
-        fill="#F59E0B"
-        clipPath="url(#logo-clip)"
-      />
-
-      {/* White "i" letter centred */}
-      <text
-        x="16"
-        y="22"
-        textAnchor="middle"
-        fill="white"
-        fontSize="18"
-        fontWeight="800"
-        fontFamily="system-ui, -apple-system, sans-serif"
-      >
-        i
-      </text>
+      {/* Blue covers the bottom half, clipped to rounded corners */}
+      <rect y="16" width="32" height="16" fill="#2563EB" clipPath="url(#logo-clip)" />
     </svg>
   );
 }

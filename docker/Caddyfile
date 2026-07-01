@@ -1,19 +1,21 @@
-# iiinbox.com — redirect bare domain to www
-iiinbox.com {
-    redir https://www.iiinbox.com{uri} permanent
-}
+# Cloudflare Tunnel handles TLS — Caddy only needs HTTP routing on port 80
+:80 {
+    @www host www.iiinbox.com
+    handle @www {
+        reverse_proxy web:3000
+    }
 
-# Customer storefront + vendor/admin web app
-www.iiinbox.com {
-    reverse_proxy web:3000
-}
+    @api host api.iiinbox.com
+    handle @api {
+        reverse_proxy api:4000
+    }
 
-# NestJS backend API
-api.iiinbox.com {
-    reverse_proxy api:4000
-}
+    @cdn host cdn.iiinbox.com
+    handle @cdn {
+        reverse_proxy minio:9000
+    }
 
-# MinIO object storage (product images served as cdn.iiinbox.com)
-cdn.iiinbox.com {
-    reverse_proxy minio:9000
+    handle {
+        respond "iiinbox — not found" 404
+    }
 }

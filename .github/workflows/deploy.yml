@@ -1,0 +1,58 @@
+name: Deploy
+
+on:
+  workflow_run:
+    workflows: [CI]
+    branches: [main]
+    types: [completed]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    name: Deploy to production
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Copy code to server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          source: "."
+          target: "/opt/iiiiibox"
+          rm: false
+
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script: |
+            set -e
+            cd /opt/iiiiibox
+
+            # Ensure .env exists (managed separately, not in git)
+            if [ ! -f .env ]; then
+              echo ".env not found — copy .env.example to .env and fill in secrets"
+              exit 1
+            fi
+
+            # Pull latest images and rebuild app containers
+            docker compose pull postgres minio meilisearch caddy 2>/dev/null || true
+            docker compose build --parallel api web
+
+            # Run DB migrations before swapping traffic
+            docker compose run --rm api sh -c "pnpm --filter @iiiiibox/database exec prisma migrate deploy"
+
+            # Bring up all services (rolling restart for web/api)
+            docker compose up -d --remove-orphans
+
+            # Clean up dangling images
+            docker image prune -f
+
+            echo "Deploy complete at $(date)"

@@ -1,0 +1,19 @@
+# iiinbox.com — redirect bare domain to www
+iiinbox.com {
+    redir https://www.iiinbox.com{uri} permanent
+}
+
+# Customer storefront + vendor/admin web app
+www.iiinbox.com {
+    reverse_proxy web:3000
+}
+
+# NestJS backend API
+api.iiinbox.com {
+    reverse_proxy api:4000
+}
+
+# MinIO object storage (product images served as cdn.iiinbox.com)
+cdn.iiinbox.com {
+    reverse_proxy minio:9000
+}

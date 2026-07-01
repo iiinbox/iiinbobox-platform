@@ -1,0 +1,21 @@
+{
+  "name": "iiiiibox",
+  "private": true,
+  "engines": {
+    "node": ">=20"
+  },
+  "packageManager": "pnpm@9.15.0",
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "lint": "turbo run lint",
+    "test": "turbo run test",
+    "db:migrate": "pnpm --filter @iiiiibox/database exec prisma migrate dev",
+    "db:generate": "pnpm --filter @iiiiibox/database exec prisma generate",
+    "db:studio": "pnpm --filter @iiiiibox/database exec prisma studio"
+  },
+  "devDependencies": {
+    "turbo": "^2.3.0",
+    "typescript": "^5.6.0"
+  }
+}

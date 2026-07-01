@@ -1,0 +1,16 @@
+{
+  "extends": "@iiiiibox/config/tsconfig.base.json",
+  "compilerOptions": {
+    "module": "CommonJS",
+    "moduleResolution": "Node",
+    "target": "ES2022",
+    "outDir": "./dist",
+    "baseUrl": "./",
+    "incremental": true,
+    "emitDecoratorMetadata": true,
+    "experimentalDecorators": true,
+    "declaration": false,
+    "noUncheckedIndexedAccess": false
+  },
+  "include": ["src"]
+}

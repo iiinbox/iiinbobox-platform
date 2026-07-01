@@ -1,0 +1,66 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    name: Build & type-check
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: iiiiibox_test
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+        ports:
+          - 5432:5432
+
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/iiiiibox_test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client & run migrations
+        working-directory: packages/database
+        run: |
+          pnpm prisma generate
+          pnpm prisma migrate deploy
+
+      - name: Build packages (shared-types, database, api-client)
+        run: pnpm turbo build --filter=@iiiiibox/shared-types --filter=@iiiiibox/database --filter=@iiiiibox/api-client
+
+      - name: Build API
+        run: pnpm turbo build --filter=@iiiiibox/api
+
+      - name: Build web
+        env:
+          NEXT_PUBLIC_API_URL: http://localhost:4000
+        run: pnpm turbo build --filter=@iiiiibox/web
+
+      - name: Type-check mobile
+        working-directory: apps/mobile
+        run: pnpm lint

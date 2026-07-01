@@ -1,0 +1,17 @@
+{
+  "name": "@iiiiibox/shared-types",
+  "version": "0.0.0",
+  "private": true,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@iiiiibox/config": "workspace:*",
+    "typescript": "^5.6.0"
+  }
+}

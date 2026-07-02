@@ -1,5 +1,14 @@
-# Cloudflare Tunnel handles TLS — Caddy only needs HTTP routing on port 80
+{
+    auto_https off
+}
+
 :80 {
+    # Redirect bare domain to www
+    @bare host iiinbox.com
+    handle @bare {
+        redir https://www.iiinbox.com{uri} permanent
+    }
+
     @www host www.iiinbox.com
     handle @www {
         reverse_proxy web:3000
@@ -16,6 +25,6 @@
     }
 
     handle {
-        respond "iiinbox — not found" 404
+        respond "not found" 404
     }
 }

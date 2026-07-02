@@ -165,11 +165,11 @@ export function HeaderClient({
 
           <button
             type="submit"
-            className="shrink-0 px-5 py-3 bg-blue-600 text-white hover:bg-blue-700 transition-colors flex items-center justify-center"
+            className="shrink-0 px-5 py-3 bg-gray-200 text-gray-700 hover:bg-gray-300 transition-colors flex items-center justify-center"
           >
             <svg width="18" height="18" viewBox="0 0 16 16" fill="none" aria-hidden>
-              <circle cx="6.5" cy="6.5" r="5.5" stroke="white" strokeWidth="1.8" />
-              <path d="M10.5 10.5L14 14" stroke="white" strokeWidth="1.8" strokeLinecap="round" />
+              <circle cx="6.5" cy="6.5" r="5.5" stroke="currentColor" strokeWidth="1.8" />
+              <path d="M10.5 10.5L14 14" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
             </svg>
           </button>
         </form>

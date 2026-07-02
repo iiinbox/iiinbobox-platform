@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Search } from "lucide-react";
 
 export default function HomePage() {
   const router = useRouter();
@@ -10,36 +9,25 @@ export default function HomePage() {
 
   function onSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (query.trim()) {
-      router.push(`/products?search=${encodeURIComponent(query.trim())}`);
-    } else {
-      router.push("/products");
-    }
+    router.push(query.trim() ? `/products?search=${encodeURIComponent(query.trim())}` : "/products");
   }
 
   return (
-    <div className="flex flex-col items-center pt-16 px-4">
-      <form onSubmit={onSubmit} className="w-full max-w-2xl">
-        <div className="flex items-center rounded-full border-2 border-gray-200 bg-white shadow-sm hover:shadow-md transition-shadow overflow-hidden">
-          <div className="pl-5 text-gray-400">
-            <Search className="h-5 w-5" />
-          </div>
-          <input
-            type="text"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search for products, brands or categories..."
-            className="flex-1 py-4 px-4 text-base outline-none bg-transparent placeholder:text-gray-400"
-            autoFocus
-          />
-          <button
-            type="submit"
-            className="m-1.5 px-6 py-2.5 bg-primary text-white rounded-full text-sm font-medium hover:bg-primary/90 transition-colors"
-          >
-            Search
-          </button>
-        </div>
-      </form>
-    </div>
+    <form onSubmit={onSubmit} className="flex w-full border-b border-black">
+      <input
+        type="text"
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        placeholder="Search..."
+        className="flex-1 px-4 py-3 text-sm outline-none bg-white text-black placeholder:text-gray-400"
+        autoFocus
+      />
+      <button
+        type="submit"
+        className="px-5 py-3 text-sm font-medium bg-black text-white"
+      >
+        Search
+      </button>
+    </form>
   );
 }

@@ -1,0 +1,31 @@
+# Traefik ingress (built into k3s via Rancher Desktop)
+# Replaces the Caddyfile routing
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: iiiiibox-ingress
+  namespace: iiiiibox
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: web
+spec:
+  rules:
+  - host: api.iiinbox.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: api
+            port:
+              number: 4000
+  - host: cdn.iiinbox.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: minio
+            port:
+              number: 9000

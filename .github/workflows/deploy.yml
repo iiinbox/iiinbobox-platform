@@ -9,6 +9,10 @@ concurrency:
   group: deploy-production
   cancel-in-progress: true
 
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}/api
+
 jobs:
   deploy:
     name: Deploy to production
@@ -18,18 +22,6 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 2
-
-      - name: Sync code to server
-        run: |
-          rsync -a --delete \
-            --exclude='.git' \
-            --exclude='node_modules' \
-            --exclude='dist' \
-            --exclude='.next' \
-            --exclude='.turbo' \
-            --exclude='.env' \
-            --exclude='.env.local' \
-            $GITHUB_WORKSPACE/ /opt/iiiiibox/
 
       - name: Detect changed services
         id: diff
@@ -41,36 +33,38 @@ jobs:
           else
             echo "api=false" >> $GITHUB_OUTPUT
           fi
-          if echo "$CHANGED" | grep -qE '^(docker/Caddyfile|docker/caddy\.Dockerfile|docker-compose\.yml)' || [ "$CHANGED" = "all" ]; then
+          if echo "$CHANGED" | grep -qE '^(k8s/)' || [ "$CHANGED" = "all" ]; then
             echo "infra=true" >> $GITHUB_OUTPUT
           else
             echo "infra=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Start infrastructure
-        working-directory: /opt/iiiiibox
-        run: docker compose up -d postgres minio meilisearch
-
-      - name: Wait for postgres
+      - name: Log in to GitHub Container Registry
         if: steps.diff.outputs.api == 'true'
-        working-directory: /opt/iiiiibox
-        run: |
-          for i in $(seq 1 30); do
-            docker compose exec -T postgres pg_isready && break; sleep 1
-          done
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Rebuild & restart API
+      - name: Build and push API image
         if: steps.diff.outputs.api == 'true'
-        working-directory: /opt/iiiiibox
-        env:
-          DOCKER_BUILDKIT: "1"
-        run: |
-          docker compose build api
-          docker compose up -d api
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: docker/api.Dockerfile
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
-      - name: Rebuild & restart Caddy
+      - name: Rolling restart API in Kubernetes
+        if: steps.diff.outputs.api == 'true'
+        run: kubectl rollout restart deployment/api -n iiiiibox
+
+      - name: Apply K8s manifests
         if: steps.diff.outputs.infra == 'true'
-        working-directory: /opt/iiiiibox
-        run: |
-          docker compose build caddy
-          docker compose up -d --remove-orphans caddy
+        run: kubectl apply -f k8s/
+
+      - name: Ensure base services running
+        run: kubectl rollout status deployment/postgres -n iiiiibox --timeout=60s || true

@@ -65,8 +65,8 @@ services:
         condition: service_healthy
       meilisearch:
         condition: service_healthy
-    expose:
-      - "4000"
+    ports:
+      - "4000:4000"
 
   caddy:
     build:

@@ -1,6 +1,6 @@
 export function Logo({ size = 32 }: { size?: number }) {
   return (
-    <div className="flex items-center gap-1.5">
+    <div className="flex items-center gap-1">
       {/* Gift box icon */}
       <svg
         width={size}
@@ -43,7 +43,7 @@ export function Logo({ size = 32 }: { size?: number }) {
       </svg>
 
       {/* BOX wordmark */}
-      <span className="text-xl font-extrabold tracking-widest text-black">BOX</span>
+      <span className="font-extrabold tracking-widest text-black" style={{ fontSize: size * 0.75 + 'px', lineHeight: 1 }}>BOX</span>
     </div>
   );
 }

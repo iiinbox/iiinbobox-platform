@@ -19,6 +19,7 @@ function slugify(str: string) {
 export default function CategoriesPage() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   // New parent category form
   const [newName, setNewName] = useState("");
@@ -33,8 +34,20 @@ export default function CategoriesPage() {
 
   async function load() {
     setLoading(true);
-    const res = await fetch("/api/admin/categories");
-    setCategories(await res.json());
+    setError(null);
+    try {
+      const res = await fetch("/api/admin/categories");
+      if (!res.ok) {
+        setError(`Failed to load categories (${res.status})`);
+        setCategories([]);
+      } else {
+        const data = await res.json();
+        setCategories(Array.isArray(data) ? data : []);
+      }
+    } catch (e) {
+      setError("Could not reach API. The API may need to be rebuilt.");
+      setCategories([]);
+    }
     setLoading(false);
   }
 
@@ -101,10 +114,17 @@ export default function CategoriesPage() {
         </Button>
       </div>
 
+      {/* Error state */}
+      {error && (
+        <div className="mb-4 rounded-md bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
+          {error}
+        </div>
+      )}
+
       {/* Category list */}
       {loading ? (
         <p className="text-sm text-muted-foreground">Loading...</p>
-      ) : categories.length === 0 ? (
+      ) : categories.length === 0 && !error ? (
         <p className="text-sm text-muted-foreground">No categories yet.</p>
       ) : (
         <div className="flex flex-col gap-3">

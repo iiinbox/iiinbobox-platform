@@ -14,7 +14,8 @@ COPY --from=pruner /app/out/json/ .
 RUN --mount=type=cache,id=pnpm-web,target=/root/.local/share/pnpm/store \
     pnpm install --frozen-lockfile
 COPY --from=pruner /app/out/full/ .
-RUN pnpm turbo build --filter=@iiiiibox/web
+RUN --mount=type=cache,id=next-web,target=/app/apps/web/.next/cache \
+    pnpm turbo build --filter=@iiiiibox/web
 
 FROM node:20-alpine AS runner
 WORKDIR /app

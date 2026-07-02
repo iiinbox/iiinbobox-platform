@@ -6,8 +6,20 @@ const JWT_SECRET = new TextEncoder().encode(process.env.JWT_SECRET ?? "change-me
 
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
-  const token = req.cookies.get(ACCESS_TOKEN_COOKIE)?.value;
+  const host = req.headers.get("host") ?? "";
+  const isAdminSubdomain = host.startsWith("admin.");
 
+  // ── admin.iiinbox.com gate ──────────────────────────────────────
+  if (isAdminSubdomain) {
+    const grantedCookie = req.cookies.get("admin_gate")?.value;
+    if (!grantedCookie && pathname !== "/admin-gate" && !pathname.startsWith("/api/admin-gate")) {
+      return NextResponse.redirect(new URL("/admin-gate", req.url));
+    }
+    return NextResponse.next();
+  }
+
+  // ── Role-based route protection (www) ──────────────────────────
+  const token = req.cookies.get(ACCESS_TOKEN_COOKIE)?.value;
   let role: string | undefined;
   if (token) {
     try {
@@ -20,8 +32,6 @@ export async function middleware(req: NextRequest) {
 
   if (pathname.startsWith("/vendor")) {
     if (!role) return NextResponse.redirect(new URL("/login", req.url));
-    // /vendor/apply is reachable by any authenticated user (that's how a
-    // CUSTOMER becomes a VENDOR); other /vendor/* routes require the role already.
     if (pathname !== "/vendor/apply" && role !== "VENDOR") {
       return NextResponse.redirect(new URL("/", req.url));
     }
@@ -36,5 +46,5 @@ export async function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/vendor/:path*", "/admin/:path*"],
+  matcher: ["/vendor/:path*", "/admin/:path*", "/admin-gate", "/api/admin-gate"],
 };

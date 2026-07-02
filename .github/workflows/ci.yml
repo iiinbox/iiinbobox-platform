@@ -1,10 +1,14 @@
 name: CI
 
+# Disabled during rapid UI iteration — re-enable by restoring the `on` trigger below:
+# on:
+#   push:
+#     branches: [main]
+#   pull_request:
+#     branches: [main]
+
 on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
+  workflow_dispatch:
 
 jobs:
   build:

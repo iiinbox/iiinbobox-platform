@@ -1,31 +1,23 @@
 name: Deploy
 
 on:
-  workflow_run:
-    workflows: [CI]
+  push:
     branches: [main]
-    types: [completed]
   workflow_dispatch:
 
 jobs:
   deploy:
     name: Deploy to production
     runs-on: self-hosted
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
 
-      - name: Ensure .env exists
+      - name: Sync code to server
         run: |
-          if [ ! -f /opt/iiiiibox/.env ]; then
-            echo "ERROR: /opt/iiiiibox/.env not found"
-            exit 1
-          fi
-
-      - name: Copy code to deployment directory
-        run: |
-          rsync -a \
+          rsync -a --delete \
             --exclude='.git' \
             --exclude='node_modules' \
             --exclude='dist' \
@@ -34,42 +26,54 @@ jobs:
             --exclude='.env.local' \
             $GITHUB_WORKSPACE/ /opt/iiiiibox/
 
-      - name: Install dependencies
-        working-directory: /opt/iiiiibox
+      - name: Detect changed services
+        id: diff
         run: |
-          corepack enable
-          pnpm install --frozen-lockfile
+          CHANGED=$(git diff --name-only HEAD~1 HEAD 2>/dev/null || echo "all")
+          echo "Changed files: $CHANGED"
+          if echo "$CHANGED" | grep -qE '^(apps/api/|packages/)' || [ "$CHANGED" = "all" ]; then
+            echo "api=true" >> $GITHUB_OUTPUT
+          else
+            echo "api=false" >> $GITHUB_OUTPUT
+          fi
+          if echo "$CHANGED" | grep -qE '^(apps/web/|packages/)' || [ "$CHANGED" = "all" ]; then
+            echo "web=true" >> $GITHUB_OUTPUT
+          else
+            echo "web=false" >> $GITHUB_OUTPUT
+          fi
 
-      - name: Build shared packages
+      - name: Start infrastructure
         working-directory: /opt/iiiiibox
-        run: |
-          export DATABASE_URL=$(grep "^DATABASE_URL" .env | cut -d= -f2-)
-          pnpm turbo build \
-            --filter=@iiiiibox/shared-types \
-            --filter=@iiiiibox/database \
-            --filter=@iiiiibox/api-client
+        run: docker compose up -d postgres minio meilisearch
 
-      - name: Start infrastructure containers
+      - name: Wait for postgres
         working-directory: /opt/iiiiibox
         run: |
-          docker compose up -d postgres minio meilisearch
-          # Wait for postgres to be ready
-          sleep 10
+          for i in $(seq 1 30); do
+            docker compose exec -T postgres pg_isready && break
+            sleep 1
+          done
 
-      - name: Run database migrations (on host, not in container)
+      - name: Build changed images
         working-directory: /opt/iiiiibox
+        env:
+          DOCKER_BUILDKIT: "1"
+          COMPOSE_DOCKER_CLI_BUILD: "1"
         run: |
-          PGUSER=$(grep "^POSTGRES_USER" .env | cut -d= -f2-)
-          PGPASS=$(grep "^POSTGRES_PASSWORD" .env | cut -d= -f2-)
-          PGDB=$(grep "^POSTGRES_DB" .env | cut -d= -f2-)
-          export DATABASE_URL="postgresql://${PGUSER}:${PGPASS}@localhost:5433/${PGDB}"
-          echo "Running migrations against localhost:5433/${PGDB}"
-          pnpm --filter @iiiiibox/database exec prisma migrate deploy
+          SVCS=""
+          [ "${{ steps.diff.outputs.api }}" = "true" ] && SVCS="$SVCS api"
+          [ "${{ steps.diff.outputs.web }}" = "true" ] && SVCS="$SVCS web"
+          SVCS="${SVCS## }"
+          if [ -n "$SVCS" ]; then
+            echo "Building: $SVCS"
+            docker compose build --parallel $SVCS
+          else
+            echo "No app changes — skipping image build"
+          fi
 
-      - name: Build and start app containers
+      - name: Start all services
         working-directory: /opt/iiiiibox
         run: |
-          docker compose build --parallel api web
           docker compose up -d --remove-orphans
           docker image prune -f
-          echo "Deploy complete at $(date)"
+          echo "Deploy complete $(date)"

@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 FROM node:20-alpine AS pruner
 RUN corepack enable
 WORKDIR /app
@@ -9,7 +10,8 @@ RUN apk add --no-cache openssl
 RUN corepack enable
 WORKDIR /app
 COPY --from=pruner /app/out/json/ .
-RUN pnpm install --frozen-lockfile
+RUN --mount=type=cache,id=pnpm-api,target=/root/.local/share/pnpm/store \
+    pnpm install --frozen-lockfile
 COPY --from=pruner /app/out/full/ .
 RUN pnpm --filter @iiiiibox/database exec prisma generate
 RUN pnpm turbo build --filter=@iiiiibox/api

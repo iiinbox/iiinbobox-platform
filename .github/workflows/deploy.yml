@@ -22,6 +22,7 @@ jobs:
             --exclude='node_modules' \
             --exclude='dist' \
             --exclude='.next' \
+            --exclude='.turbo' \
             --exclude='.env' \
             --exclude='.env.local' \
             $GITHUB_WORKSPACE/ /opt/iiiiibox/
@@ -30,18 +31,16 @@ jobs:
         id: diff
         run: |
           CHANGED=$(git diff --name-only HEAD~1 HEAD 2>/dev/null || echo "all")
-          echo "Changed files: $CHANGED"
-          if echo "$CHANGED" | grep -qE '^(apps/api/|packages/)' || [ "$CHANGED" = "all" ]; then
-            echo "api=true" >> $GITHUB_OUTPUT
-          else
-            echo "api=false" >> $GITHUB_OUTPUT
-          fi
-          if echo "$CHANGED" | grep -qE '^(apps/web/|packages/)' || [ "$CHANGED" = "all" ]; then
-            echo "web=true" >> $GITHUB_OUTPUT
-          else
-            echo "web=false" >> $GITHUB_OUTPUT
-          fi
+          echo "Files changed: $CHANGED"
+          # Infra = Dockerfile or docker-compose changed → need full Docker rebuild
+          echo "$CHANGED" | grep -qE '^(docker/|docker-compose\.yml|pnpm-lock\.yaml)' \
+            && echo "infra=true" >> $GITHUB_OUTPUT || echo "infra=false" >> $GITHUB_OUTPUT
+          echo "$CHANGED" | grep -qE '^(apps/api/|packages/)' || [ "$CHANGED" = "all" ] \
+            && echo "api=true" >> $GITHUB_OUTPUT  || echo "api=false" >> $GITHUB_OUTPUT
+          echo "$CHANGED" | grep -qE '^(apps/web/|packages/)' || [ "$CHANGED" = "all" ] \
+            && echo "web=true" >> $GITHUB_OUTPUT  || echo "web=false" >> $GITHUB_OUTPUT
 
+      # ── Infrastructure ───────────────────────────────────────────
       - name: Start infrastructure
         working-directory: /opt/iiiiibox
         run: docker compose up -d postgres minio meilisearch
@@ -50,28 +49,54 @@ jobs:
         working-directory: /opt/iiiiibox
         run: |
           for i in $(seq 1 30); do
-            docker compose exec -T postgres pg_isready && break
-            sleep 1
+            docker compose exec -T postgres pg_isready && break; sleep 1
           done
 
-      - name: Build changed images
+      # ── API: Docker rebuild (runs on API or infra changes) ────────
+      - name: Rebuild & restart API
+        if: steps.diff.outputs.api == 'true' || steps.diff.outputs.infra == 'true'
         working-directory: /opt/iiiiibox
         env:
           DOCKER_BUILDKIT: "1"
-          COMPOSE_DOCKER_CLI_BUILD: "1"
         run: |
-          SVCS=""
-          [ "${{ steps.diff.outputs.api }}" = "true" ] && SVCS="$SVCS api"
-          [ "${{ steps.diff.outputs.web }}" = "true" ] && SVCS="$SVCS web"
-          SVCS="${SVCS## }"
-          if [ -n "$SVCS" ]; then
-            echo "Building: $SVCS"
-            docker compose build --parallel $SVCS
-          else
-            echo "No app changes — skipping image build"
-          fi
+          docker compose build api
+          docker compose up -d api
 
-      - name: Start all services
+      # ── Web: build on host, inject into container — no Docker build ──
+      - name: Install dependencies (uses cached node_modules)
+        if: steps.diff.outputs.web == 'true'
+        working-directory: /opt/iiiiibox
+        run: |
+          corepack enable
+          pnpm install --frozen-lockfile
+
+      - name: Build Next.js on host (uses Turborepo cache)
+        if: steps.diff.outputs.web == 'true'
+        working-directory: /opt/iiiiibox
+        run: |
+          export NEXT_PUBLIC_API_URL=$(grep "^NEXT_PUBLIC_API_URL=" .env | cut -d= -f2-)
+          pnpm turbo build --filter=@iiiiibox/web
+
+      - name: Rebuild web Docker image (only when Dockerfile/lockfile changed)
+        if: steps.diff.outputs.infra == 'true'
+        working-directory: /opt/iiiiibox
+        env:
+          DOCKER_BUILDKIT: "1"
+        run: docker compose build web
+
+      - name: Inject new build into running web container
+        if: steps.diff.outputs.web == 'true' && steps.diff.outputs.infra != 'true'
+        working-directory: /opt/iiiiibox
+        run: |
+          docker compose up -d web
+          WEB=$(docker compose ps -q web)
+          docker cp apps/web/.next/standalone/. $WEB:/app/
+          docker cp apps/web/.next/static/.   $WEB:/app/apps/web/.next/static/
+          docker cp apps/web/public/.         $WEB:/app/apps/web/public/
+          docker compose restart web
+
+      # ── Finalize ─────────────────────────────────────────────────
+      - name: Bring up all services
         working-directory: /opt/iiiiibox
         run: |
           docker compose up -d --remove-orphans

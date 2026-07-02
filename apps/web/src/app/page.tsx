@@ -1,33 +1,44 @@
-"use client";
+import Link from "next/link";
+import { HomeSearch } from "@/components/home-search";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+interface Category {
+  id: string;
+  name: string;
+  slug: string;
+}
 
-export default function HomePage() {
-  const router = useRouter();
-  const [query, setQuery] = useState("");
-
-  function onSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    router.push(query.trim() ? `/products?search=${encodeURIComponent(query.trim())}` : "/products");
+async function getCategories(): Promise<Category[]> {
+  try {
+    const apiUrl = process.env.API_INTERNAL_URL ?? "http://api:4000";
+    const res = await fetch(`${apiUrl}/categories`, {
+      next: { revalidate: 3600 },
+    });
+    if (!res.ok) return [];
+    return res.json();
+  } catch {
+    return [];
   }
+}
+
+export default async function HomePage() {
+  const categories = await getCategories();
 
   return (
-    <form onSubmit={onSubmit} className="flex w-full">
-      <input
-        type="text"
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        placeholder="Search..."
-        className="flex-1 px-4 py-3 text-sm outline-none bg-white text-black placeholder:text-gray-400"
-        autoFocus
-      />
-      <button
-        type="submit"
-        className="px-5 py-3 text-sm font-medium bg-black text-white"
-      >
-        Search
-      </button>
-    </form>
+    <div className="flex w-full items-stretch">
+      {categories.length > 0 && (
+        <div className="flex overflow-x-auto shrink-0 items-center border-r border-gray-100">
+          {categories.map((cat) => (
+            <Link
+              key={cat.id}
+              href={`/products?category=${cat.slug}`}
+              className="whitespace-nowrap px-4 py-3 text-sm font-medium text-black hover:bg-gray-50"
+            >
+              {cat.name}
+            </Link>
+          ))}
+        </div>
+      )}
+      <HomeSearch />
+    </div>
   );
 }

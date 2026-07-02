@@ -9,7 +9,13 @@ interface Category {
   slug: string;
 }
 
-export function CategoryDropdown({ categories }: { categories: Category[] }) {
+export function CategoryDropdown({
+  categories,
+  compact = false,
+}: {
+  categories: Category[];
+  compact?: boolean;
+}) {
   const [open, setOpen] = useState(false);
   const [panelTop, setPanelTop] = useState(0);
   const btnRef = useRef<HTMLButtonElement>(null);
@@ -40,7 +46,7 @@ export function CategoryDropdown({ categories }: { categories: Category[] }) {
       <button
         ref={btnRef}
         onClick={toggle}
-        className="flex shrink-0 items-center gap-2 px-4 py-3 text-sm font-medium text-black bg-white border-r border-gray-100 whitespace-nowrap hover:bg-gray-50 select-none"
+        className={`flex shrink-0 items-center gap-1.5 text-sm font-medium text-black bg-white whitespace-nowrap hover:bg-gray-50 select-none ${compact ? "px-3 py-2" : "px-4 py-3 border-r border-gray-100"}`}
       >
         <span className="sm:hidden">Category</span>
         <span className="hidden sm:inline">Shop by category</span>

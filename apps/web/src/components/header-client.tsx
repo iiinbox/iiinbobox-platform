@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Menu, User } from "lucide-react";
 import { Logo } from "@/components/logo";
+import { CategoryDropdown } from "@/components/category-dropdown";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import {
   DropdownMenu,
@@ -17,8 +18,17 @@ import {
 } from "@/components/ui/dropdown-menu";
 import type { SessionUser } from "@/lib/session";
 
-export function HeaderClient({ user }: { user: SessionUser | null }) {
+interface Category { id: string; name: string; slug: string }
+
+export function HeaderClient({
+  user,
+  categories,
+}: {
+  user: SessionUser | null;
+  categories: Category[];
+}) {
   const router = useRouter();
+  const [query, setQuery] = useState("");
 
   async function logout() {
     await fetch("/api/auth/logout", { method: "POST" });
@@ -26,16 +36,69 @@ export function HeaderClient({ user }: { user: SessionUser | null }) {
     router.refresh();
   }
 
+  function onSearch(e: React.FormEvent) {
+    e.preventDefault();
+    router.push(
+      query.trim()
+        ? `/products?search=${encodeURIComponent(query.trim())}`
+        : "/products"
+    );
+  }
+
   return (
     <header className="w-full bg-white">
-      <div className="flex h-14 items-center px-4">
-        {/* Logo — left corner */}
-        <Link href="/" aria-label="iiinbox home">
+      <div className="flex h-14 items-center gap-2 px-4">
+
+        {/* Logo */}
+        <Link href="/" aria-label="iiinbox home" className="shrink-0">
           <Logo size={28} />
         </Link>
 
-        {/* Right corner: profile + menu */}
-        <div className="ml-auto flex items-center gap-1">
+        {/* Search bar — rounded border container */}
+        <form
+          onSubmit={onSearch}
+          className="flex flex-1 items-center border border-gray-200 rounded-full overflow-visible mx-1"
+        >
+          {/* Category dropdown */}
+          <CategoryDropdown categories={categories} compact />
+
+          {/* Thin divider */}
+          <div className="w-px h-5 bg-gray-200 shrink-0" />
+
+          {/* Search icon + input */}
+          <div className="flex flex-1 items-center px-3 min-w-0">
+            <svg
+              width="14" height="14" viewBox="0 0 16 16" fill="none"
+              className="shrink-0 text-gray-400"
+              aria-hidden
+            >
+              <circle cx="6.5" cy="6.5" r="5.5" stroke="currentColor" strokeWidth="1.5" />
+              <path d="M10.5 10.5L14 14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+            </svg>
+            <input
+              type="text"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search for anything"
+              className="flex-1 min-w-0 pl-2 py-2 text-sm outline-none bg-transparent text-black placeholder:text-gray-400"
+            />
+          </div>
+
+          {/* Search button — sits inside form, outside rounded border visually */}
+          <button
+            type="submit"
+            className="shrink-0 px-4 py-2 text-sm font-medium bg-black text-white rounded-full m-0.5"
+          >
+            <span className="hidden sm:inline">Search</span>
+            <svg className="sm:hidden" width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden>
+              <circle cx="6.5" cy="6.5" r="5.5" stroke="white" strokeWidth="1.5" />
+              <path d="M10.5 10.5L14 14" stroke="white" strokeWidth="1.5" strokeLinecap="round" />
+            </svg>
+          </button>
+        </form>
+
+        {/* Right icons */}
+        <div className="flex shrink-0 items-center gap-1">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button className="flex items-center justify-center w-8 h-8">
@@ -77,18 +140,13 @@ export function HeaderClient({ user }: { user: SessionUser | null }) {
                 </>
               ) : (
                 <>
-                  <DropdownMenuItem asChild>
-                    <Link href="/login">Log in</Link>
-                  </DropdownMenuItem>
-                  <DropdownMenuItem asChild>
-                    <Link href="/register">Register</Link>
-                  </DropdownMenuItem>
+                  <DropdownMenuItem asChild><Link href="/login">Log in</Link></DropdownMenuItem>
+                  <DropdownMenuItem asChild><Link href="/register">Register</Link></DropdownMenuItem>
                 </>
               )}
             </DropdownMenuContent>
           </DropdownMenu>
 
-          {/* Menu icon */}
           <Sheet>
             <SheetTrigger asChild>
               <button className="flex items-center justify-center w-8 h-8">

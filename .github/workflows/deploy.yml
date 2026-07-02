@@ -41,12 +41,18 @@ jobs:
           else
             echo "api=false" >> $GITHUB_OUTPUT
           fi
-          if echo "$CHANGED" | grep -qE '^(apps/web/|packages/|docker/web\.Dockerfile|pnpm-lock\.yaml)' || [ "$CHANGED" = "all" ]; then
+          if echo "$CHANGED" | grep -qE '^(apps/web/|packages/|pnpm-lock\.yaml)' || [ "$CHANGED" = "all" ]; then
             echo "web=true" >> $GITHUB_OUTPUT
           else
             echo "web=false" >> $GITHUB_OUTPUT
           fi
+          if echo "$CHANGED" | grep -qE '^(docker/Caddyfile|docker/caddy\.Dockerfile|docker-compose\.yml)' || [ "$CHANGED" = "all" ]; then
+            echo "infra=true" >> $GITHUB_OUTPUT
+          else
+            echo "infra=false" >> $GITHUB_OUTPUT
+          fi
 
+      # ── Infrastructure (Caddy + API) ────────────────────────────
       - name: Start infrastructure
         working-directory: /opt/iiiiibox
         run: docker compose up -d postgres minio meilisearch
@@ -58,26 +64,56 @@ jobs:
             docker compose exec -T postgres pg_isready && break; sleep 1
           done
 
-      - name: Build changed images
+      - name: Rebuild & restart API
+        if: steps.diff.outputs.api == 'true'
         working-directory: /opt/iiiiibox
         env:
           DOCKER_BUILDKIT: "1"
-          COMPOSE_DOCKER_CLI_BUILD: "1"
         run: |
-          SVCS=""
-          [ "${{ steps.diff.outputs.api }}" = "true" ] && SVCS="$SVCS api"
-          [ "${{ steps.diff.outputs.web }}" = "true" ] && SVCS="$SVCS web"
-          SVCS="${SVCS## }"
-          if [ -n "$SVCS" ]; then
-            echo "Building: $SVCS"
-            docker compose build --parallel $SVCS
-          else
-            echo "Nothing to rebuild"
-          fi
+          docker compose build api
+          docker compose up -d api
 
-      - name: Deploy all services
+      - name: Rebuild & restart Caddy
+        if: steps.diff.outputs.infra == 'true'
+        working-directory: /opt/iiiiibox
+        run: |
+          docker compose build caddy
+          docker compose up -d caddy
+
+      # ── Web: build on host, restart PM2 — no Docker needed ──────
+      - name: Install dependencies
+        if: steps.diff.outputs.web == 'true'
+        working-directory: /opt/iiiiibox
+        run: |
+          corepack enable
+          pnpm install --frozen-lockfile
+
+      - name: Build Next.js
+        if: steps.diff.outputs.web == 'true'
+        working-directory: /opt/iiiiibox
+        run: |
+          export NEXT_PUBLIC_API_URL=$(grep "^NEXT_PUBLIC_API_URL=" .env | cut -d= -f2-)
+          pnpm turbo build --filter=@iiiiibox/web
+
+      - name: Restart web (PM2)
+        if: steps.diff.outputs.web == 'true'
+        working-directory: /opt/iiiiibox
+        env:
+          NODE_ENV: production
+          PORT: "3000"
+          HOSTNAME: "0.0.0.0"
+        run: |
+          SERVER=$(find apps/web/.next/standalone -name "server.js" | sort | head -1)
+          echo "Starting: $SERVER"
+          pm2 restart web 2>/dev/null || \
+            pm2 start "$SERVER" --name web \
+              --env production \
+              -e /opt/iiiiibox/.env
+          pm2 save
+
+      - name: Bring up all docker services
         working-directory: /opt/iiiiibox
         run: |
           docker compose up -d --remove-orphans
           docker image prune -f
-          echo "Done $(date)"
+          echo "Deploy complete $(date)"

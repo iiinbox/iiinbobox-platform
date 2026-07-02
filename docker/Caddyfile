@@ -11,7 +11,7 @@
 
     @www host www.iiinbox.com
     handle @www {
-        reverse_proxy web:3000
+        reverse_proxy host.docker.internal:3000
     }
 
     @api host api.iiinbox.com
@@ -26,7 +26,7 @@
 
     @adminsite host admin.iiinbox.com
     handle @adminsite {
-        reverse_proxy web:3000
+        reverse_proxy host.docker.internal:3000
     }
 
     handle {

@@ -68,19 +68,6 @@ services:
     expose:
       - "4000"
 
-  web:
-    build:
-      context: .
-      dockerfile: docker/web.Dockerfile
-      args:
-        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
-    restart: unless-stopped
-    env_file: .env
-    depends_on:
-      - api
-    expose:
-      - "3000"
-
   caddy:
     build:
       context: ./docker
@@ -93,7 +80,6 @@ services:
       - caddy_data:/data
       - caddy_config:/config
     depends_on:
-      - web
       - api
 
 volumes:

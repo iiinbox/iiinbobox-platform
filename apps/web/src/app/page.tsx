@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { HomeSearch } from "@/components/home-search";
+import { CategoryDropdown } from "@/components/category-dropdown";
 
 interface Category {
   id: string;
@@ -25,19 +26,7 @@ export default async function HomePage() {
 
   return (
     <div className="flex w-full items-stretch">
-      {categories.length > 0 && (
-        <div className="flex overflow-x-auto shrink-0 items-center border-r border-gray-100">
-          {categories.map((cat) => (
-            <Link
-              key={cat.id}
-              href={`/products?category=${cat.slug}`}
-              className="whitespace-nowrap px-4 py-3 text-sm font-medium text-black hover:bg-gray-50"
-            >
-              {cat.name}
-            </Link>
-          ))}
-        </div>
-      )}
+      <CategoryDropdown categories={categories} />
       <HomeSearch />
     </div>
   );

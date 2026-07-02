@@ -3,8 +3,9 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { User } from "lucide-react";
+import { Menu, User } from "lucide-react";
 import { Logo } from "@/components/logo";
+import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -33,8 +34,8 @@ export function HeaderClient({ user }: { user: SessionUser | null }) {
           <Logo size={28} />
         </Link>
 
-        {/* Profile icon — right corner */}
-        <div className="ml-auto">
+        {/* Right corner: profile + menu */}
+        <div className="ml-auto flex items-center gap-1">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button className="flex items-center justify-center w-8 h-8">
@@ -86,6 +87,34 @@ export function HeaderClient({ user }: { user: SessionUser | null }) {
               )}
             </DropdownMenuContent>
           </DropdownMenu>
+
+          {/* Menu icon */}
+          <Sheet>
+            <SheetTrigger asChild>
+              <button className="flex items-center justify-center w-8 h-8">
+                <Menu className="h-4 w-4 text-black" />
+              </button>
+            </SheetTrigger>
+            <SheetContent side="right" className="w-64 p-6">
+              <nav className="flex flex-col gap-4 mt-6">
+                <Link href="/products" className="text-sm font-medium">Browse</Link>
+                <Link href="/orders" className="text-sm font-medium">My orders</Link>
+                <Link href="/cart" className="text-sm font-medium">Cart</Link>
+                {user?.role === "VENDOR" && (
+                  <Link href="/vendor/dashboard" className="text-sm font-medium">Vendor dashboard</Link>
+                )}
+                {user?.role === "ADMIN" && (
+                  <Link href="/admin/vendors" className="text-sm font-medium">Admin panel</Link>
+                )}
+                {!user && (
+                  <>
+                    <Link href="/login" className="text-sm font-medium">Log in</Link>
+                    <Link href="/register" className="text-sm font-medium">Register</Link>
+                  </>
+                )}
+              </nav>
+            </SheetContent>
+          </Sheet>
         </div>
       </div>
     </header>

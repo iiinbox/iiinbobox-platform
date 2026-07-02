@@ -95,20 +95,23 @@ jobs:
           export NEXT_PUBLIC_API_URL=$(grep "^NEXT_PUBLIC_API_URL=" .env | cut -d= -f2-)
           pnpm turbo build --filter=@iiiiibox/web
 
+      - name: Stage static files for standalone server
+        if: steps.diff.outputs.web == 'true'
+        working-directory: /opt/iiiiibox
+        run: |
+          cp -r apps/web/.next/static \
+            apps/web/.next/standalone/apps/web/.next/
+          cp -r apps/web/public \
+            apps/web/.next/standalone/apps/web/
+
       - name: Restart web (PM2)
         if: steps.diff.outputs.web == 'true'
         working-directory: /opt/iiiiibox
-        env:
-          NODE_ENV: production
-          PORT: "3000"
-          HOSTNAME: "0.0.0.0"
         run: |
-          SERVER=$(find apps/web/.next/standalone -name "server.js" | sort | head -1)
+          SERVER=/opt/iiiiibox/apps/web/.next/standalone/apps/web/server.js
           echo "Starting: $SERVER"
-          pm2 restart web 2>/dev/null || \
-            pm2 start "$SERVER" --name web \
-              --env production \
-              -e /opt/iiiiibox/.env
+          PORT=3000 NODE_ENV=production pm2 restart web 2>/dev/null || \
+            PORT=3000 NODE_ENV=production pm2 start "$SERVER" --name web
           pm2 save
 
       - name: Bring up all docker services

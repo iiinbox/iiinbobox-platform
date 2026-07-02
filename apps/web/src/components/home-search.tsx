@@ -41,9 +41,13 @@ export function HomeSearch() {
       </div>
       <button
         type="submit"
-        className="px-5 py-3 text-sm font-medium bg-black text-white whitespace-nowrap"
+        className="px-4 sm:px-5 py-3 text-sm font-medium bg-black text-white whitespace-nowrap"
       >
-        Search
+        <span className="hidden sm:inline">Search</span>
+        <svg className="sm:hidden" width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
+          <circle cx="6.5" cy="6.5" r="5.5" stroke="white" strokeWidth="1.5" />
+          <path d="M10.5 10.5L14 14" stroke="white" strokeWidth="1.5" strokeLinecap="round" />
+        </svg>
       </button>
     </form>
   );

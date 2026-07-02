@@ -42,7 +42,8 @@ export function CategoryDropdown({ categories }: { categories: Category[] }) {
         onClick={toggle}
         className="flex shrink-0 items-center gap-2 px-4 py-3 text-sm font-medium text-black bg-white border-r border-gray-100 whitespace-nowrap hover:bg-gray-50 select-none"
       >
-        Shop by category
+        <span className="sm:hidden">Category</span>
+        <span className="hidden sm:inline">Shop by category</span>
         <svg
           width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden
           style={{ transform: open ? "rotate(180deg)" : "rotate(0deg)", transition: "transform 0.15s" }}

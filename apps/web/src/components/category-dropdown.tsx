@@ -74,6 +74,7 @@ export function CategoryDropdown({
                   key={cat.id}
                   href={`/products?category=${cat.slug}`}
                   onClick={() => setOpen(false)}
+                  prefetch={false}
                   className="text-sm font-semibold text-black hover:underline underline-offset-2"
                 >
                   {cat.name}

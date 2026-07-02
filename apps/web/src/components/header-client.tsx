@@ -102,7 +102,7 @@ export function HeaderClient({
             </DropdownMenuContent>
           </DropdownMenu>
 
-          <Link href="/cart" className="flex items-center justify-center w-11 h-11">
+          <Link href="/cart" prefetch={false} className="flex items-center justify-center w-11 h-11">
             <ShoppingCart className="h-6 w-6 text-black" />
           </Link>
 

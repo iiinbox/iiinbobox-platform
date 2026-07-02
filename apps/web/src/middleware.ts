@@ -7,18 +7,32 @@ const JWT_SECRET = new TextEncoder().encode(process.env.JWT_SECRET ?? "change-me
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
   const host = req.headers.get("host") ?? "";
-  const isAdminSubdomain = host.startsWith("admin.");
+  const isAdminSubdomain = host === "admin.iiinbox.com" || host.startsWith("admin.iiinbox.");
 
-  // ── admin.iiinbox.com gate ──────────────────────────────────────
+  // ── admin.iiinbox.com — password gate ──────────────────────────
   if (isAdminSubdomain) {
-    const grantedCookie = req.cookies.get("admin_gate")?.value;
-    if (!grantedCookie && pathname !== "/admin-gate" && !pathname.startsWith("/api/admin-gate")) {
-      return NextResponse.redirect(new URL("/admin-gate", req.url));
+    const isGatePath = pathname === "/admin-gate";
+    const isGateApi = pathname.startsWith("/api/admin-gate");
+
+    if (isGatePath || isGateApi) {
+      return NextResponse.next();
     }
+
+    const granted = req.cookies.get("admin_gate")?.value;
+    if (!granted) {
+      const gateUrl = new URL("https://admin.iiinbox.com/admin-gate");
+      return NextResponse.redirect(gateUrl);
+    }
+
+    // Gate passed — redirect root to the admin panel
+    if (pathname === "/" || pathname === "") {
+      return NextResponse.redirect(new URL("https://admin.iiinbox.com/admin/vendors"));
+    }
+
     return NextResponse.next();
   }
 
-  // ── Role-based route protection (www) ──────────────────────────
+  // ── www role-based protection ───────────────────────────────────
   const token = req.cookies.get(ACCESS_TOKEN_COOKIE)?.value;
   let role: string | undefined;
   if (token) {
@@ -46,5 +60,6 @@ export async function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/vendor/:path*", "/admin/:path*", "/admin-gate", "/api/admin-gate"],
+  // Match all paths except Next.js internals and static files
+  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
 };

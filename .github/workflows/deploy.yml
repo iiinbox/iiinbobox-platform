@@ -11,25 +11,13 @@ concurrency:
 
 jobs:
   deploy:
-    name: Deploy to production
+    name: Deploy API / infra changes
     runs-on: self-hosted
 
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 2
-
-      - name: Sync code to server
-        run: |
-          rsync -a --delete \
-            --exclude='.git' \
-            --exclude='node_modules' \
-            --exclude='dist' \
-            --exclude='.next' \
-            --exclude='.turbo' \
-            --exclude='.env' \
-            --exclude='.env.local' \
-            $GITHUB_WORKSPACE/ /opt/iiiiibox/
 
       - name: Detect changed services
         id: diff
@@ -41,23 +29,32 @@ jobs:
           else
             echo "api=false" >> $GITHUB_OUTPUT
           fi
-          if echo "$CHANGED" | grep -qE '^(apps/web/|packages/|pnpm-lock\.yaml)' || [ "$CHANGED" = "all" ]; then
-            echo "web=true" >> $GITHUB_OUTPUT
-          else
-            echo "web=false" >> $GITHUB_OUTPUT
-          fi
           if echo "$CHANGED" | grep -qE '^(docker/Caddyfile|docker/caddy\.Dockerfile|docker-compose\.yml)' || [ "$CHANGED" = "all" ]; then
             echo "infra=true" >> $GITHUB_OUTPUT
           else
             echo "infra=false" >> $GITHUB_OUTPUT
           fi
 
-      # ── Infrastructure (Caddy + API) ────────────────────────────
+      - name: Sync infra files to server
+        if: steps.diff.outputs.api == 'true' || steps.diff.outputs.infra == 'true'
+        run: |
+          rsync -a --delete \
+            --exclude='.git' \
+            --exclude='node_modules' \
+            --exclude='dist' \
+            --exclude='.next' \
+            --exclude='.turbo' \
+            --exclude='.env' \
+            --exclude='.env.local' \
+            $GITHUB_WORKSPACE/ /opt/iiiiibox/
+
       - name: Start infrastructure
+        if: steps.diff.outputs.api == 'true' || steps.diff.outputs.infra == 'true'
         working-directory: /opt/iiiiibox
         run: docker compose up -d postgres minio meilisearch
 
       - name: Wait for postgres
+        if: steps.diff.outputs.api == 'true'
         working-directory: /opt/iiiiibox
         run: |
           for i in $(seq 1 30); do
@@ -78,45 +75,4 @@ jobs:
         working-directory: /opt/iiiiibox
         run: |
           docker compose build caddy
-          docker compose up -d caddy
-
-      # ── Web: build on host, restart PM2 — no Docker needed ──────
-      - name: Install dependencies
-        if: steps.diff.outputs.web == 'true'
-        working-directory: /opt/iiiiibox
-        run: |
-          corepack enable
-          pnpm install --frozen-lockfile
-
-      - name: Build Next.js
-        if: steps.diff.outputs.web == 'true'
-        working-directory: /opt/iiiiibox
-        run: |
-          export NEXT_PUBLIC_API_URL=$(grep "^NEXT_PUBLIC_API_URL=" .env | cut -d= -f2-)
-          pnpm turbo build --filter=@iiiiibox/web
-
-      - name: Stage static files for standalone server
-        if: steps.diff.outputs.web == 'true'
-        working-directory: /opt/iiiiibox
-        run: |
-          cp -r apps/web/.next/static \
-            apps/web/.next/standalone/apps/web/.next/
-          cp -r apps/web/public \
-            apps/web/.next/standalone/apps/web/
-
-      - name: Restart web (PM2)
-        if: steps.diff.outputs.web == 'true'
-        working-directory: /opt/iiiiibox
-        run: |
-          SERVER=/opt/iiiiibox/apps/web/.next/standalone/apps/web/server.js
-          echo "Starting: $SERVER"
-          PORT=3000 NODE_ENV=production pm2 restart web 2>/dev/null || \
-            PORT=3000 NODE_ENV=production pm2 start "$SERVER" --name web
-          pm2 save
-
-      - name: Bring up all docker services
-        working-directory: /opt/iiiiibox
-        run: |
-          docker compose up -d --remove-orphans
-          docker image prune -f
-          echo "Deploy complete $(date)"
+          docker compose up -d --remove-orphans caddy

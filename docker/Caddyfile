@@ -29,6 +29,11 @@
         reverse_proxy host.docker.internal:3000
     }
 
+    @deploy host deploy.iiinbox.com
+    handle @deploy {
+        reverse_proxy host.docker.internal:9001
+    }
+
     handle {
         respond "not found" 404
     }

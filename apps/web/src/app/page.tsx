@@ -13,7 +13,7 @@ export default function HomePage() {
   }
 
   return (
-    <form onSubmit={onSubmit} className="flex w-full border-b border-black">
+    <form onSubmit={onSubmit} className="flex w-full">
       <input
         type="text"
         value={query}

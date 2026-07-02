@@ -26,7 +26,7 @@ export function HeaderClient({ user }: { user: SessionUser | null }) {
   }
 
   return (
-    <header className="w-full border-b bg-white">
+    <header className="w-full bg-white">
       <div className="flex h-14 items-center px-4">
         {/* Logo — left corner */}
         <Link href="/" aria-label="iiinbox home">
@@ -37,7 +37,7 @@ export function HeaderClient({ user }: { user: SessionUser | null }) {
         <div className="ml-auto">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <button className="flex items-center justify-center w-8 h-8 rounded-full border border-black">
+              <button className="flex items-center justify-center w-8 h-8">
                 <User className="h-4 w-4 text-black" />
               </button>
             </DropdownMenuTrigger>

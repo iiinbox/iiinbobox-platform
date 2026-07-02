@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Menu, User } from "lucide-react";
+import { Menu, User, ShoppingCart } from "lucide-react";
 import { Logo } from "@/components/logo";
 import { CategoryDropdown } from "@/components/category-dropdown";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
@@ -47,62 +47,17 @@ export function HeaderClient({
 
   return (
     <header className="w-full bg-white">
-      <div className="flex h-16 items-center gap-3 px-6">
-
-        {/* Logo */}
+      {/* Row 1: Logo + Icons */}
+      <div className="flex items-center justify-between px-4 md:px-6 pt-3 pb-2">
         <Link href="/" aria-label="iiinbox home" className="shrink-0">
-          <Logo size={36} />
+          <Logo size={44} />
         </Link>
 
-        {/* Search bar — rounded border container */}
-        <form
-          onSubmit={onSearch}
-          className="flex flex-1 items-center border border-gray-200 rounded-full overflow-visible mx-1"
-        >
-          {/* Category dropdown */}
-          <CategoryDropdown categories={categories} compact />
-
-          {/* Thin divider */}
-          <div className="w-px h-5 bg-gray-200 shrink-0" />
-
-          {/* Search icon + input */}
-          <div className="flex flex-1 items-center px-3 min-w-0">
-            <svg
-              width="14" height="14" viewBox="0 0 16 16" fill="none"
-              className="shrink-0 text-gray-400"
-              aria-hidden
-            >
-              <circle cx="6.5" cy="6.5" r="5.5" stroke="currentColor" strokeWidth="1.5" />
-              <path d="M10.5 10.5L14 14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-            </svg>
-            <input
-              type="text"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search for anything"
-              className="flex-1 min-w-0 pl-2 py-3 text-sm outline-none bg-transparent text-black placeholder:text-gray-400"
-            />
-          </div>
-
-          {/* Search button — sits inside form, outside rounded border visually */}
-          <button
-            type="submit"
-            className="shrink-0 px-5 py-2.5 text-sm font-medium bg-black text-white rounded-full m-0.5"
-          >
-            <span className="hidden sm:inline">Search</span>
-            <svg className="sm:hidden" width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden>
-              <circle cx="6.5" cy="6.5" r="5.5" stroke="white" strokeWidth="1.5" />
-              <path d="M10.5 10.5L14 14" stroke="white" strokeWidth="1.5" strokeLinecap="round" />
-            </svg>
-          </button>
-        </form>
-
-        {/* Right icons */}
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="flex shrink-0 items-center gap-1">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <button className="flex items-center justify-center w-10 h-10">
-                <User className="h-5 w-5 text-black" />
+              <button className="flex items-center justify-center w-11 h-11">
+                <User className="h-6 w-6 text-black" />
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-48">
@@ -147,10 +102,14 @@ export function HeaderClient({
             </DropdownMenuContent>
           </DropdownMenu>
 
+          <Link href="/cart" className="flex items-center justify-center w-11 h-11">
+            <ShoppingCart className="h-6 w-6 text-black" />
+          </Link>
+
           <Sheet>
             <SheetTrigger asChild>
-              <button className="flex items-center justify-center w-10 h-10">
-                <Menu className="h-5 w-5 text-black" />
+              <button className="flex items-center justify-center w-11 h-11">
+                <Menu className="h-6 w-6 text-black" />
               </button>
             </SheetTrigger>
             <SheetContent side="right" className="w-64 p-6">
@@ -174,6 +133,47 @@ export function HeaderClient({
             </SheetContent>
           </Sheet>
         </div>
+      </div>
+
+      {/* Row 2: Full-width search bar */}
+      <div className="px-4 md:px-6 pb-3">
+        <form
+          onSubmit={onSearch}
+          className="flex items-stretch border border-gray-800 rounded overflow-hidden"
+        >
+          <CategoryDropdown categories={categories} compact />
+
+          <div className="w-px bg-gray-300 shrink-0" />
+
+          <div className="flex flex-1 items-center px-3 min-w-0">
+            <svg
+              width="16" height="16" viewBox="0 0 16 16" fill="none"
+              className="shrink-0 text-gray-400"
+              aria-hidden
+            >
+              <circle cx="6.5" cy="6.5" r="5.5" stroke="currentColor" strokeWidth="1.5" />
+              <path d="M10.5 10.5L14 14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+            </svg>
+            <input
+              type="text"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search for anything"
+              className="flex-1 min-w-0 pl-2 py-3 text-sm outline-none bg-transparent text-black placeholder:text-gray-400"
+            />
+          </div>
+
+          <button
+            type="submit"
+            className="shrink-0 px-6 py-3 text-sm font-semibold bg-black text-white hover:bg-gray-900 transition-colors"
+          >
+            <span className="hidden sm:inline">Search</span>
+            <svg className="sm:hidden" width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
+              <circle cx="6.5" cy="6.5" r="5.5" stroke="white" strokeWidth="1.5" />
+              <path d="M10.5 10.5L14 14" stroke="white" strokeWidth="1.5" strokeLinecap="round" />
+            </svg>
+          </button>
+        </form>
       </div>
     </header>
   );

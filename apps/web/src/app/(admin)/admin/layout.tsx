@@ -1,11 +1,12 @@
 import Link from "next/link";
-import { Users, Package, ShoppingBag, Shield } from "lucide-react";
+import { Users, Package, ShoppingBag, Shield, LayoutGrid } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 
 const NAV = [
   { href: "/admin/vendors", label: "Vendors", icon: Users },
   { href: "/admin/products", label: "Products", icon: Package },
   { href: "/admin/orders", label: "Orders", icon: ShoppingBag },
+  { href: "/admin/categories", label: "Categories", icon: LayoutGrid },
 ];
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {

@@ -8,6 +8,19 @@ export class CategoriesService {
     return prisma.category.findMany({ orderBy: { name: "asc" } });
   }
 
+  async listWithChildren() {
+    return prisma.category.findMany({
+      where: { parentId: null },
+      orderBy: { name: "asc" },
+      include: { children: { orderBy: { name: "asc" } } },
+    });
+  }
+
+  async remove(id: string) {
+    await prisma.category.deleteMany({ where: { parentId: id } });
+    return prisma.category.delete({ where: { id } });
+  }
+
   async create(input: CategoryCreateInput) {
     const existing = await prisma.category.findUnique({ where: { slug: input.slug } });
     if (existing) {

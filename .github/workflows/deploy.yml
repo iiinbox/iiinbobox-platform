@@ -11,7 +11,7 @@ concurrency:
 
 jobs:
   deploy:
-    name: Deploy API / infra changes
+    name: Deploy to production
     runs-on: self-hosted
 
     steps:
@@ -19,24 +19,7 @@ jobs:
         with:
           fetch-depth: 2
 
-      - name: Detect changed services
-        id: diff
-        run: |
-          CHANGED=$(git diff --name-only HEAD~1 HEAD 2>/dev/null || echo "all")
-          echo "Changed: $CHANGED"
-          if echo "$CHANGED" | grep -qE '^(apps/api/|packages/|docker/api\.Dockerfile|pnpm-lock\.yaml)' || [ "$CHANGED" = "all" ]; then
-            echo "api=true" >> $GITHUB_OUTPUT
-          else
-            echo "api=false" >> $GITHUB_OUTPUT
-          fi
-          if echo "$CHANGED" | grep -qE '^(docker/Caddyfile|docker/caddy\.Dockerfile|docker-compose\.yml)' || [ "$CHANGED" = "all" ]; then
-            echo "infra=true" >> $GITHUB_OUTPUT
-          else
-            echo "infra=false" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Sync infra files to server
-        if: steps.diff.outputs.api == 'true' || steps.diff.outputs.infra == 'true'
+      - name: Sync code to server
         run: |
           rsync -a --delete \
             --exclude='.git' \
@@ -48,8 +31,28 @@ jobs:
             --exclude='.env.local' \
             $GITHUB_WORKSPACE/ /opt/iiiiibox/
 
+      - name: Detect changed services
+        id: diff
+        run: |
+          CHANGED=$(git diff --name-only HEAD~1 HEAD 2>/dev/null || echo "all")
+          echo "Changed: $CHANGED"
+          if echo "$CHANGED" | grep -qE '^(apps/api/|packages/|docker/api\.Dockerfile|pnpm-lock\.yaml)' || [ "$CHANGED" = "all" ]; then
+            echo "api=true" >> $GITHUB_OUTPUT
+          else
+            echo "api=false" >> $GITHUB_OUTPUT
+          fi
+          if echo "$CHANGED" | grep -qE '^(apps/web/|packages/|pnpm-lock\.yaml)' || [ "$CHANGED" = "all" ]; then
+            echo "web=true" >> $GITHUB_OUTPUT
+          else
+            echo "web=false" >> $GITHUB_OUTPUT
+          fi
+          if echo "$CHANGED" | grep -qE '^(docker/Caddyfile|docker/caddy\.Dockerfile|docker-compose\.yml)' || [ "$CHANGED" = "all" ]; then
+            echo "infra=true" >> $GITHUB_OUTPUT
+          else
+            echo "infra=false" >> $GITHUB_OUTPUT
+          fi
+
       - name: Start infrastructure
-        if: steps.diff.outputs.api == 'true' || steps.diff.outputs.infra == 'true'
         working-directory: /opt/iiiiibox
         run: docker compose up -d postgres minio meilisearch
 
@@ -76,3 +79,21 @@ jobs:
         run: |
           docker compose build caddy
           docker compose up -d --remove-orphans caddy
+
+      - name: Build web on host
+        if: steps.diff.outputs.web == 'true'
+        working-directory: /opt/iiiiibox
+        run: |
+          corepack enable
+          pnpm install --frozen-lockfile
+          export NEXT_PUBLIC_API_URL=$(grep "^NEXT_PUBLIC_API_URL=" .env | cut -d= -f2-)
+          pnpm turbo build --filter=@iiiiibox/web
+
+      - name: Deploy web via PM2
+        if: steps.diff.outputs.web == 'true'
+        working-directory: /opt/iiiiibox
+        run: |
+          cp -r apps/web/.next/static  apps/web/.next/standalone/apps/web/.next/
+          cp -r apps/web/public         apps/web/.next/standalone/apps/web/
+          pm2 restart web
+          echo "Web deployed at $(date)"

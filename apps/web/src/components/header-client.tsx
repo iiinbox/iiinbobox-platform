@@ -47,11 +47,11 @@ export function HeaderClient({
 
   return (
     <header className="w-full bg-white">
-      <div className="flex h-14 items-center gap-2 px-4">
+      <div className="flex h-16 items-center gap-3 px-6">
 
         {/* Logo */}
         <Link href="/" aria-label="iiinbox home" className="shrink-0">
-          <Logo size={28} />
+          <Logo size={36} />
         </Link>
 
         {/* Search bar — rounded border container */}
@@ -80,14 +80,14 @@ export function HeaderClient({
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search for anything"
-              className="flex-1 min-w-0 pl-2 py-2 text-sm outline-none bg-transparent text-black placeholder:text-gray-400"
+              className="flex-1 min-w-0 pl-2 py-3 text-sm outline-none bg-transparent text-black placeholder:text-gray-400"
             />
           </div>
 
           {/* Search button — sits inside form, outside rounded border visually */}
           <button
             type="submit"
-            className="shrink-0 px-4 py-2 text-sm font-medium bg-black text-white rounded-full m-0.5"
+            className="shrink-0 px-5 py-2.5 text-sm font-medium bg-black text-white rounded-full m-0.5"
           >
             <span className="hidden sm:inline">Search</span>
             <svg className="sm:hidden" width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden>
@@ -98,11 +98,11 @@ export function HeaderClient({
         </form>
 
         {/* Right icons */}
-        <div className="flex shrink-0 items-center gap-1">
+        <div className="flex shrink-0 items-center gap-2">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <button className="flex items-center justify-center w-8 h-8">
-                <User className="h-4 w-4 text-black" />
+              <button className="flex items-center justify-center w-10 h-10">
+                <User className="h-5 w-5 text-black" />
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-48">
@@ -149,8 +149,8 @@ export function HeaderClient({
 
           <Sheet>
             <SheetTrigger asChild>
-              <button className="flex items-center justify-center w-8 h-8">
-                <Menu className="h-4 w-4 text-black" />
+              <button className="flex items-center justify-center w-10 h-10">
+                <Menu className="h-5 w-5 text-black" />
               </button>
             </SheetTrigger>
             <SheetContent side="right" className="w-64 p-6">

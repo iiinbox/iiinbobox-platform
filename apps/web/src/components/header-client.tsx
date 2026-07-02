@@ -139,7 +139,7 @@ export function HeaderClient({
       <div className="px-4 md:px-6 pb-3">
         <form
           onSubmit={onSearch}
-          className="flex items-stretch border border-gray-800 rounded overflow-hidden"
+          className="flex items-stretch border-2 border-black rounded overflow-hidden"
         >
           <CategoryDropdown categories={categories} compact />
 
@@ -165,12 +165,11 @@ export function HeaderClient({
 
           <button
             type="submit"
-            className="shrink-0 px-6 py-3 text-sm font-semibold bg-black text-white hover:bg-gray-900 transition-colors"
+            className="shrink-0 px-5 py-3 bg-blue-600 text-white hover:bg-blue-700 transition-colors flex items-center justify-center"
           >
-            <span className="hidden sm:inline">Search</span>
-            <svg className="sm:hidden" width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
-              <circle cx="6.5" cy="6.5" r="5.5" stroke="white" strokeWidth="1.5" />
-              <path d="M10.5 10.5L14 14" stroke="white" strokeWidth="1.5" strokeLinecap="round" />
+            <svg width="18" height="18" viewBox="0 0 16 16" fill="none" aria-hidden>
+              <circle cx="6.5" cy="6.5" r="5.5" stroke="white" strokeWidth="1.8" />
+              <path d="M10.5 10.5L14 14" stroke="white" strokeWidth="1.8" strokeLinecap="round" />
             </svg>
           </button>
         </form>

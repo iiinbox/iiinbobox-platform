@@ -43,7 +43,7 @@ export function Logo({ size = 32 }: { size?: number }) {
       </svg>
 
       {/* BOX wordmark */}
-      <span className="text-lg font-bold tracking-widest text-black">BOX</span>
+      <span className="text-sm font-extrabold tracking-widest text-black">BOX</span>
     </div>
   );
 }

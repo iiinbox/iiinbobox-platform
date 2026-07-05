@@ -13,7 +13,7 @@ COPY --from=pruner /app/out/json/ .
 RUN --mount=type=cache,id=pnpm-api,target=/root/.local/share/pnpm/store \
     pnpm install --frozen-lockfile
 COPY --from=pruner /app/out/full/ .
-RUN pnpm --filter @iiiiibox/database exec prisma generate
+RUN PRISMA_ENGINES_CHECKSUM_IGNORE_MISSING=1 pnpm --filter @iiiiibox/database exec prisma generate
 RUN pnpm turbo build --filter=@iiiiibox/api
 
 FROM node:20-alpine AS runner

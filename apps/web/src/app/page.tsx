@@ -1,8 +1,11 @@
 const API = process.env.API_INTERNAL_URL ?? "http://localhost:4000";
 
+type ButtonStyle = "solid" | "outline" | "ghost" | "link";
+type ButtonActionType = "url" | "buy" | "search" | "custom";
+
 interface PageComponent {
   id: string;
-  type: "text" | "header" | "shape" | "image";
+  type: "text" | "header" | "shape" | "image" | "button";
   x: number;
   y: number;
   width: number;
@@ -19,6 +22,11 @@ interface PageComponent {
   italic?: boolean;
   textAlign?: "left" | "center" | "right";
   imageUrl?: string;
+  buttonStyle?: ButtonStyle;
+  borderColor?: string;
+  hoverBgColor?: string;
+  hoverFontColor?: string;
+  buttonAction?: { type: ButtonActionType; value: string };
 }
 
 async function getPageConfig() {
@@ -31,55 +39,134 @@ async function getPageConfig() {
   }
 }
 
+function buttonHref(comp: PageComponent): string | undefined {
+  const action = comp.buttonAction;
+  if (!action?.value) return undefined;
+  switch (action.type) {
+    case "url": return action.value;
+    case "buy": return `/products/${action.value}`;
+    case "search": return `/search?q=${encodeURIComponent(action.value)}`;
+    default: return undefined;
+  }
+}
+
 function Canvas({ components, canvasW, canvasH }: { components: PageComponent[]; canvasW: number; canvasH: number }) {
+  // Generate per-button hover CSS so we don't need a client component
+  const hoverCss = components
+    .filter((c) => c.type === "button")
+    .map((c) => {
+      const isSolid = !c.buttonStyle || c.buttonStyle === "solid";
+      const hoverBg = c.hoverBgColor ?? (isSolid ? (c.bgColor ?? "#2563eb") : "rgba(0,0,0,0.05)");
+      const hoverColor = c.hoverFontColor ?? c.fontColor;
+      return [
+        `#hpbtn-${c.id}:hover{`,
+        hoverBg ? `background-color:${hoverBg}!important;` : "",
+        hoverColor ? `color:${hoverColor}!important;` : "",
+        `}`,
+      ].join("");
+    })
+    .join("");
+
   return (
-    <div className="w-full overflow-hidden">
-      <div className="relative w-full" style={{ paddingBottom: `${(canvasH / canvasW) * 100}%` }}>
-        {components.map((comp) => (
-          <div
-            key={comp.id}
-            className="absolute"
-            style={{
-              left: `${(comp.x / canvasW) * 100}%`,
-              top: `${(comp.y / canvasH) * 100}%`,
-              width: `${(comp.width / canvasW) * 100}%`,
-              height: `${(comp.height / canvasH) * 100}%`,
-              borderRadius: comp.borderRadius ?? 0,
-              backgroundColor: comp.bgColor === "transparent" ? "transparent" : (comp.bgColor ?? "transparent"),
-            }}
-          >
-            {(comp.type === "text" || comp.type === "header") && (
+    <>
+      {hoverCss && <style>{hoverCss}</style>}
+      <div className="w-full overflow-hidden">
+        <div className="relative w-full" style={{ paddingBottom: `${(canvasH / canvasW) * 100}%` }}>
+          {components.map((comp) => {
+            const left = `${(comp.x / canvasW) * 100}%`;
+            const top = `${(comp.y / canvasH) * 100}%`;
+            const width = `${(comp.width / canvasW) * 100}%`;
+            const height = `${(comp.height / canvasH) * 100}%`;
+            const isBtn = comp.type === "button";
+            const isSolid = !comp.buttonStyle || comp.buttonStyle === "solid";
+            const isOutline = comp.buttonStyle === "outline";
+            const isGhost = comp.buttonStyle === "ghost";
+            const isLink = comp.buttonStyle === "link";
+
+            return (
               <div
-                className="w-full h-full flex items-center px-1 overflow-hidden"
+                key={comp.id}
+                className="absolute"
                 style={{
-                  fontSize: `${((comp.fontSize ?? 16) / canvasW) * 100}vw`,
-                  fontFamily: comp.fontFamily ?? "system-ui, -apple-system, sans-serif",
-                  fontWeight: comp.fontWeight ?? (comp.bold ? 700 : 400),
-                  fontStyle: comp.italic ? "italic" : "normal",
-                  lineHeight: comp.lineHeight ?? 1.4,
-                  color: comp.fontColor ?? "#111",
-                  textAlign: comp.textAlign ?? "left",
-                  justifyContent:
-                    comp.textAlign === "center" ? "center"
-                    : comp.textAlign === "right" ? "flex-end"
-                    : "flex-start",
+                  left, top, width, height,
+                  borderRadius: isBtn ? 0 : (comp.borderRadius ?? 0),
+                  backgroundColor: isBtn
+                    ? "transparent"
+                    : (comp.bgColor === "transparent" ? "transparent" : (comp.bgColor ?? "transparent")),
                 }}
               >
-                {comp.content}
+                {(comp.type === "text" || comp.type === "header") && (
+                  <div
+                    className="w-full h-full flex items-center px-1 overflow-hidden"
+                    style={{
+                      fontSize: `${((comp.fontSize ?? 16) / canvasW) * 100}vw`,
+                      fontFamily: comp.fontFamily ?? "system-ui, -apple-system, sans-serif",
+                      fontWeight: comp.fontWeight ?? (comp.bold ? 700 : 400),
+                      fontStyle: comp.italic ? "italic" : "normal",
+                      lineHeight: comp.lineHeight ?? 1.4,
+                      color: comp.fontColor ?? "#111",
+                      textAlign: comp.textAlign ?? "left",
+                      justifyContent:
+                        comp.textAlign === "center" ? "center"
+                        : comp.textAlign === "right" ? "flex-end"
+                        : "flex-start",
+                    }}
+                  >
+                    {comp.content}
+                  </div>
+                )}
+
+                {comp.type === "image" && comp.imageUrl && (
+                  <img
+                    src={comp.imageUrl}
+                    alt=""
+                    className="w-full h-full object-cover"
+                    style={{ borderRadius: comp.borderRadius ?? 4 }}
+                  />
+                )}
+
+                {isBtn && (() => {
+                  const href = buttonHref(comp);
+                  const sharedStyle: React.CSSProperties = {
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    width: "100%",
+                    height: "100%",
+                    borderRadius: comp.borderRadius ?? 8,
+                    backgroundColor: isSolid ? (comp.bgColor ?? "#3b82f6") : "transparent",
+                    color: comp.fontColor ?? (isSolid ? "#ffffff" : (comp.bgColor ?? "#3b82f6")),
+                    border: (isOutline || isGhost) ? `2px solid ${comp.borderColor ?? comp.bgColor ?? "#3b82f6"}` : "none",
+                    textDecoration: isLink ? "underline" : "none",
+                    fontSize: `${((comp.fontSize ?? 16) / canvasW) * 100}vw`,
+                    fontFamily: comp.fontFamily ?? "system-ui, -apple-system, sans-serif",
+                    fontWeight: comp.fontWeight ?? 600,
+                    cursor: "pointer",
+                    transition: "background-color 0.15s, color 0.15s",
+                    overflow: "hidden",
+                  };
+                  return href ? (
+                    <a
+                      id={`hpbtn-${comp.id}`}
+                      href={href}
+                      target={comp.buttonAction?.type === "url" ? "_blank" : undefined}
+                      rel="noopener noreferrer"
+                      style={sharedStyle}
+                    >
+                      {comp.content ?? "Button"}
+                    </a>
+                  ) : (
+                    <button id={`hpbtn-${comp.id}`} type="button" style={sharedStyle}>
+                      {comp.content ?? "Button"}
+                    </button>
+                  );
+                })()}
               </div>
-            )}
-            {comp.type === "image" && comp.imageUrl && (
-              <img
-                src={comp.imageUrl}
-                alt=""
-                className="w-full h-full object-cover"
-                style={{ borderRadius: comp.borderRadius ?? 4 }}
-              />
-            )}
-          </div>
-        ))}
+            );
+          })}
+        </div>
       </div>
-    </div>
+    </>
   );
 }
 
@@ -87,7 +174,7 @@ export default async function HomePage() {
   const config = await getPageConfig();
   if (!config) return null;
 
-  // New dual-view format: { desktop: { components, height }, mobile: { components, height } }
+  // Dual-view format: { desktop: { components, height }, mobile: { components, height } }
   if (config.desktop) {
     const desktopComps: PageComponent[] = Array.isArray(config.desktop.components) ? config.desktop.components : [];
     const mobileComps: PageComponent[] = Array.isArray(config.mobile?.components) ? config.mobile.components : [];
@@ -115,7 +202,7 @@ export default async function HomePage() {
     );
   }
 
-  // Legacy format: { components: [] } — treated as a 1200×700 desktop canvas
+  // Legacy format: { components: [] }
   const components: PageComponent[] = Array.isArray(config.components) ? config.components : [];
   if (components.length === 0) return null;
   return <Canvas components={components} canvasW={1200} canvasH={700} />;

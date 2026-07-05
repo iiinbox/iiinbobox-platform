@@ -29,6 +29,11 @@ jobs:
           else
             echo "api=false" >> $GITHUB_OUTPUT
           fi
+          if echo "$CHANGED" | grep -qE '^(apps/web/|packages/|pnpm-lock\.yaml)' || [ "$CHANGED" = "all" ]; then
+            echo "web=true" >> $GITHUB_OUTPUT
+          else
+            echo "web=false" >> $GITHUB_OUTPUT
+          fi
 
       - name: Rebuild & restart API
         if: steps.diff.outputs.api == 'true'
@@ -36,6 +41,15 @@ jobs:
         run: |
           docker compose build api
           docker compose up -d api
+
+      - name: Rebuild & restart web
+        if: steps.diff.outputs.web == 'true'
+        working-directory: /opt/iiiiibox
+        run: |
+          pnpm turbo build --filter=@iiiiibox/web
+          cp -r apps/web/.next/static apps/web/.next/standalone/apps/web/.next/static
+          cp -r apps/web/public apps/web/.next/standalone/apps/web/public 2>/dev/null || true
+          pm2 restart web --update-env
 
       - name: Ensure base services running
         working-directory: /opt/iiiiibox

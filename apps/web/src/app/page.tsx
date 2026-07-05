@@ -36,12 +36,7 @@ export default async function HomePage() {
   const components = Array.isArray(config?.components) ? config.components : [];
 
   if (components.length === 0) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh] text-center px-4">
-        <h1 className="text-3xl font-bold mb-3">Welcome to BOX</h1>
-        <p className="text-muted-foreground">Design your homepage from the admin panel.</p>
-      </div>
-    );
+    return null;
   }
 
   return (

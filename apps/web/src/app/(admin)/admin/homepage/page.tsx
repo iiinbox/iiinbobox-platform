@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Plus, Trash2, Image as ImageIcon, Type, Square, Heading, Check, Move } from "lucide-react";
+import { Plus, Trash2, Image as ImageIcon, Type, Square, Heading, Check, Move, Monitor } from "lucide-react";
 
 type ComponentType = "text" | "header" | "shape" | "image";
 
@@ -160,6 +160,16 @@ export default function HomepageEditorPage() {
 
   return (
     <div className="flex flex-col h-full">
+      {/* Mobile gate */}
+      <div className="flex md:hidden flex-col items-center justify-center min-h-[60vh] text-center px-6 gap-4">
+        <Monitor className="h-12 w-12 text-muted-foreground" />
+        <h2 className="text-lg font-semibold">Desktop only</h2>
+        <p className="text-sm text-muted-foreground max-w-xs">
+          The homepage editor uses a drag-and-drop canvas that requires a desktop browser. Please open this page on a laptop or desktop.
+        </p>
+      </div>
+
+      <div className="hidden md:flex flex-col h-full">
       <div className="flex items-center justify-between mb-4">
         <h1 className="text-xl font-semibold">Homepage Editor</h1>
         <Button onClick={save} disabled={saving} className="gap-2">
@@ -361,6 +371,7 @@ export default function HomepageEditorPage() {
           </div>
           <p className="text-center text-xs text-muted-foreground mt-2">Canvas {CANVAS_W}×{CANVAS_H} — drag to move, corner to resize</p>
         </div>
+      </div>
       </div>
     </div>
   );

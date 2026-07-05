@@ -12,12 +12,23 @@ export class CategoriesService {
     return prisma.category.findMany({
       where: { parentId: null },
       orderBy: { name: "asc" },
-      include: { children: { orderBy: { name: "asc" } } },
+      include: {
+        children: {
+          orderBy: { name: "asc" },
+          include: {
+            children: { orderBy: { name: "asc" } },
+          },
+        },
+      },
     });
   }
 
   async remove(id: string) {
-    await prisma.category.deleteMany({ where: { parentId: id } });
+    // Recursively remove children first
+    const children = await prisma.category.findMany({ where: { parentId: id } });
+    for (const child of children) {
+      await this.remove(child.id);
+    }
     return prisma.category.delete({ where: { id } });
   }
 
@@ -34,6 +45,18 @@ export class CategoriesService {
       }
       parentId = parent.id;
     }
-    return prisma.category.create({ data: { name: input.name, slug: input.slug, parentId } });
+    return prisma.category.create({
+      data: {
+        name: input.name,
+        slug: input.slug,
+        description: input.description || null,
+        imageUrl: input.imageUrl || null,
+        parentId,
+      },
+    });
+  }
+
+  async updateImage(id: string, imageUrl: string) {
+    return prisma.category.update({ where: { id }, data: { imageUrl } });
   }
 }

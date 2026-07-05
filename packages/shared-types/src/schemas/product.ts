@@ -5,6 +5,8 @@ const slugRegex = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 export const categoryCreateSchema = z.object({
   name: z.string().min(1),
   slug: z.string().min(1).regex(slugRegex, "lowercase letters, numbers, and hyphens only"),
+  description: z.string().optional(),
+  imageUrl: z.string().url().optional().or(z.literal("")),
   parentSlug: z.string().optional(),
 });
 export type CategoryCreateInput = z.infer<typeof categoryCreateSchema>;

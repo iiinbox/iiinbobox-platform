@@ -17,6 +17,9 @@ interface PageComponent {
   height: number;
   content?: string;
   fontSize?: number;
+  fontFamily?: string;
+  fontWeight?: number;
+  lineHeight?: number;
   fontColor?: string;
   bgColor?: string;
   borderRadius?: number;
@@ -36,12 +39,34 @@ function uid() {
   return Math.random().toString(36).slice(2);
 }
 
+const FONT_FAMILIES = [
+  { label: "Default", value: "system-ui, -apple-system, sans-serif" },
+  { label: "Serif", value: "Georgia, 'Times New Roman', serif" },
+  { label: "Monospace", value: "ui-monospace, 'Courier New', monospace" },
+  { label: "Arial", value: "Arial, Helvetica, sans-serif" },
+  { label: "Verdana", value: "Verdana, Geneva, sans-serif" },
+  { label: "Impact", value: "Impact, Charcoal, sans-serif" },
+  { label: "Trebuchet", value: "'Trebuchet MS', Helvetica, sans-serif" },
+  { label: "Palatino", value: "Palatino, 'Palatino Linotype', serif" },
+];
+
+const FONT_WEIGHTS = [
+  { label: "Thin", value: 100 },
+  { label: "Light", value: 300 },
+  { label: "Regular", value: 400 },
+  { label: "Medium", value: 500 },
+  { label: "Semibold", value: 600 },
+  { label: "Bold", value: 700 },
+  { label: "Extrabold", value: 800 },
+  { label: "Black", value: 900 },
+];
+
 function defaults(type: ComponentType, canvasW: number): Partial<PageComponent> {
   switch (type) {
     case "header":
-      return { width: Math.round(canvasW * 0.35), height: 70, content: "Heading", fontSize: 36, fontColor: "#111111", bgColor: "transparent", bold: true, textAlign: "center" };
+      return { width: Math.round(canvasW * 0.35), height: 70, content: "Heading", fontSize: 36, fontFamily: "system-ui, -apple-system, sans-serif", fontWeight: 700, lineHeight: 1.2, fontColor: "#111111", bgColor: "transparent", italic: false, textAlign: "center" };
     case "text":
-      return { width: Math.round(canvasW * 0.22), height: 80, content: "Text block", fontSize: 16, fontColor: "#333333", bgColor: "transparent", textAlign: "left" };
+      return { width: Math.round(canvasW * 0.22), height: 80, content: "Text block", fontSize: 16, fontFamily: "system-ui, -apple-system, sans-serif", fontWeight: 400, lineHeight: 1.5, fontColor: "#333333", bgColor: "transparent", italic: false, textAlign: "left" };
     case "shape":
       return { width: Math.round(canvasW * 0.12), height: 120, bgColor: "#3b82f6", borderRadius: 8 };
     case "image":
@@ -308,13 +333,53 @@ export default function HomepageEditorPage() {
                       />
                     </div>
                     <div>
-                      <label className="text-xs text-muted-foreground">Font size</label>
-                      <Input
-                        type="number"
-                        value={selectedComp.fontSize ?? 16}
-                        onChange={(e) => updateComp(selectedComp.id, { fontSize: +e.target.value })}
-                        className="h-7 text-sm mt-1"
-                      />
+                      <label className="text-xs text-muted-foreground">Font family</label>
+                      <select
+                        value={selectedComp.fontFamily ?? "system-ui, -apple-system, sans-serif"}
+                        onChange={(e) => updateComp(selectedComp.id, { fontFamily: e.target.value })}
+                        className="w-full mt-1 text-xs border rounded px-2 py-1 bg-background"
+                      >
+                        {FONT_FAMILIES.map((f) => (
+                          <option key={f.value} value={f.value} style={{ fontFamily: f.value }}>
+                            {f.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="grid grid-cols-2 gap-1">
+                      <div>
+                        <label className="text-xs text-muted-foreground">Size</label>
+                        <Input
+                          type="number"
+                          value={selectedComp.fontSize ?? 16}
+                          onChange={(e) => updateComp(selectedComp.id, { fontSize: +e.target.value })}
+                          className="h-7 text-sm mt-1"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs text-muted-foreground">Line height</label>
+                        <Input
+                          type="number"
+                          step="0.1"
+                          min="0.8"
+                          max="4"
+                          value={selectedComp.lineHeight ?? 1.4}
+                          onChange={(e) => updateComp(selectedComp.id, { lineHeight: +e.target.value })}
+                          className="h-7 text-sm mt-1"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-xs text-muted-foreground">Font weight</label>
+                      <select
+                        value={selectedComp.fontWeight ?? (selectedComp.bold ? 700 : 400)}
+                        onChange={(e) => updateComp(selectedComp.id, { fontWeight: +e.target.value, bold: +e.target.value >= 700 })}
+                        className="w-full mt-1 text-xs border rounded px-2 py-1 bg-background"
+                      >
+                        {FONT_WEIGHTS.map((w) => (
+                          <option key={w.value} value={w.value}>{w.label}</option>
+                        ))}
+                      </select>
                     </div>
                     <div>
                       <label className="text-xs text-muted-foreground">Text color</label>
@@ -339,16 +404,12 @@ export default function HomepageEditorPage() {
                         ))}
                       </div>
                     </div>
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => updateComp(selectedComp.id, { bold: !selectedComp.bold })}
-                        className={`flex-1 text-xs py-1 rounded border font-bold ${selectedComp.bold ? "bg-black text-white" : "hover:bg-muted"}`}
-                      >B</button>
-                      <button
-                        onClick={() => updateComp(selectedComp.id, { italic: !selectedComp.italic })}
-                        className={`flex-1 text-xs py-1 rounded border italic ${selectedComp.italic ? "bg-black text-white" : "hover:bg-muted"}`}
-                      >I</button>
-                    </div>
+                    <button
+                      onClick={() => updateComp(selectedComp.id, { italic: !selectedComp.italic })}
+                      className={`w-full text-xs py-1 rounded border italic ${selectedComp.italic ? "bg-black text-white" : "hover:bg-muted"}`}
+                    >
+                      Italic
+                    </button>
                   </>
                 )}
 
@@ -388,9 +449,15 @@ export default function HomepageEditorPage() {
                           className="hidden"
                           onChange={async (e) => {
                             const file = e.target.files?.[0];
-                            if (file) {
-                              const url = await uploadImage(file);
-                              if (url) updateComp(selectedComp.id, { imageUrl: url });
+                            if (!file) return;
+                            // Show instant local preview before the upload finishes
+                            const localUrl = URL.createObjectURL(file);
+                            updateComp(selectedComp.id, { imageUrl: localUrl });
+                            // Upload and swap in the persistent URL
+                            const remoteUrl = await uploadImage(file);
+                            if (remoteUrl) {
+                              updateComp(selectedComp.id, { imageUrl: remoteUrl });
+                              URL.revokeObjectURL(localUrl);
                             }
                           }}
                         />
@@ -494,9 +561,11 @@ export default function HomepageEditorPage() {
                         className="w-full h-full flex items-center overflow-hidden px-1"
                         style={{
                           fontSize: `calc(${comp.fontSize ?? 16}px * (${canvasRef.current?.clientWidth ?? canvasW} / ${canvasW}))`,
-                          color: comp.fontColor ?? "#111",
-                          fontWeight: comp.bold ? "bold" : "normal",
+                          fontFamily: comp.fontFamily ?? "system-ui, -apple-system, sans-serif",
+                          fontWeight: comp.fontWeight ?? (comp.bold ? 700 : 400),
                           fontStyle: comp.italic ? "italic" : "normal",
+                          lineHeight: comp.lineHeight ?? 1.4,
+                          color: comp.fontColor ?? "#111",
                           textAlign: comp.textAlign ?? "left",
                           justifyContent:
                             comp.textAlign === "center" ? "center"

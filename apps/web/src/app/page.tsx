@@ -9,6 +9,9 @@ interface PageComponent {
   height: number;
   content?: string;
   fontSize?: number;
+  fontFamily?: string;
+  fontWeight?: number;
+  lineHeight?: number;
   fontColor?: string;
   bgColor?: string;
   borderRadius?: number;
@@ -50,9 +53,11 @@ function Canvas({ components, canvasW, canvasH }: { components: PageComponent[];
                 className="w-full h-full flex items-center px-1 overflow-hidden"
                 style={{
                   fontSize: `${((comp.fontSize ?? 16) / canvasW) * 100}vw`,
-                  color: comp.fontColor ?? "#111",
-                  fontWeight: comp.bold ? "bold" : "normal",
+                  fontFamily: comp.fontFamily ?? "system-ui, -apple-system, sans-serif",
+                  fontWeight: comp.fontWeight ?? (comp.bold ? 700 : 400),
                   fontStyle: comp.italic ? "italic" : "normal",
+                  lineHeight: comp.lineHeight ?? 1.4,
+                  color: comp.fontColor ?? "#111",
                   textAlign: comp.textAlign ?? "left",
                   justifyContent:
                     comp.textAlign === "center" ? "center"

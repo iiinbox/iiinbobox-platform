@@ -18,74 +18,100 @@ interface PageComponent {
   imageUrl?: string;
 }
 
-const CANVAS_W = 1200;
-const CANVAS_H = 700;
-
-async function getPageConfig(): Promise<{ components: PageComponent[] }> {
+async function getPageConfig() {
   try {
     const res = await fetch(`${API}/page-config/home`, { next: { revalidate: 10 } });
-    if (!res.ok) return { components: [] };
+    if (!res.ok) return null;
     return res.json();
   } catch {
-    return { components: [] };
+    return null;
   }
+}
+
+function Canvas({ components, canvasW, canvasH }: { components: PageComponent[]; canvasW: number; canvasH: number }) {
+  return (
+    <div className="w-full overflow-hidden">
+      <div className="relative w-full" style={{ paddingBottom: `${(canvasH / canvasW) * 100}%` }}>
+        {components.map((comp) => (
+          <div
+            key={comp.id}
+            className="absolute"
+            style={{
+              left: `${(comp.x / canvasW) * 100}%`,
+              top: `${(comp.y / canvasH) * 100}%`,
+              width: `${(comp.width / canvasW) * 100}%`,
+              height: `${(comp.height / canvasH) * 100}%`,
+              borderRadius: comp.borderRadius ?? 0,
+              backgroundColor: comp.bgColor === "transparent" ? "transparent" : (comp.bgColor ?? "transparent"),
+            }}
+          >
+            {(comp.type === "text" || comp.type === "header") && (
+              <div
+                className="w-full h-full flex items-center px-1 overflow-hidden"
+                style={{
+                  fontSize: `${((comp.fontSize ?? 16) / canvasW) * 100}vw`,
+                  color: comp.fontColor ?? "#111",
+                  fontWeight: comp.bold ? "bold" : "normal",
+                  fontStyle: comp.italic ? "italic" : "normal",
+                  textAlign: comp.textAlign ?? "left",
+                  justifyContent:
+                    comp.textAlign === "center" ? "center"
+                    : comp.textAlign === "right" ? "flex-end"
+                    : "flex-start",
+                }}
+              >
+                {comp.content}
+              </div>
+            )}
+            {comp.type === "image" && comp.imageUrl && (
+              <img
+                src={comp.imageUrl}
+                alt=""
+                className="w-full h-full object-cover"
+                style={{ borderRadius: comp.borderRadius ?? 4 }}
+              />
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 export default async function HomePage() {
   const config = await getPageConfig();
-  const components = Array.isArray(config?.components) ? config.components : [];
+  if (!config) return null;
 
-  if (components.length === 0) {
-    return null;
+  // New dual-view format: { desktop: { components, height }, mobile: { components, height } }
+  if (config.desktop) {
+    const desktopComps: PageComponent[] = Array.isArray(config.desktop.components) ? config.desktop.components : [];
+    const mobileComps: PageComponent[] = Array.isArray(config.mobile?.components) ? config.mobile.components : [];
+    const desktopH: number = typeof config.desktop.height === "number" ? config.desktop.height : 900;
+    const mobileH: number = typeof config.mobile?.height === "number" ? config.mobile.height : 812;
+
+    const hasDesktop = desktopComps.length > 0;
+    const hasMobile = mobileComps.length > 0;
+
+    if (!hasDesktop && !hasMobile) return null;
+
+    return (
+      <>
+        {hasDesktop && (
+          <div className={hasMobile ? "hidden md:block" : undefined}>
+            <Canvas components={desktopComps} canvasW={1920} canvasH={desktopH} />
+          </div>
+        )}
+        {hasMobile && (
+          <div className={hasDesktop ? "md:hidden" : undefined}>
+            <Canvas components={mobileComps} canvasW={375} canvasH={mobileH} />
+          </div>
+        )}
+      </>
+    );
   }
 
-  return (
-    <div className="w-full overflow-hidden">
-      <div className="relative w-full" style={{ paddingBottom: `${(CANVAS_H / CANVAS_W) * 100}%` }}>
-        {components.map((comp) => {
-          const left = `${(comp.x / CANVAS_W) * 100}%`;
-          const top = `${(comp.y / CANVAS_H) * 100}%`;
-          const width = `${(comp.width / CANVAS_W) * 100}%`;
-          const height = `${(comp.height / CANVAS_H) * 100}%`;
-          const fontSize = `${(comp.fontSize ?? 16) / CANVAS_W * 100}vw`;
-
-          return (
-            <div
-              key={comp.id}
-              className="absolute"
-              style={{
-                left, top, width, height,
-                borderRadius: comp.borderRadius ?? 0,
-                backgroundColor: comp.bgColor === "transparent" ? "transparent" : (comp.bgColor ?? "transparent"),
-              }}
-            >
-              {(comp.type === "text" || comp.type === "header") && (
-                <div
-                  className="w-full h-full flex items-center px-1 overflow-hidden"
-                  style={{
-                    fontSize,
-                    color: comp.fontColor ?? "#111",
-                    fontWeight: comp.bold ? "bold" : "normal",
-                    fontStyle: comp.italic ? "italic" : "normal",
-                    textAlign: comp.textAlign ?? "left",
-                    justifyContent: comp.textAlign === "center" ? "center" : comp.textAlign === "right" ? "flex-end" : "flex-start",
-                  }}
-                >
-                  {comp.content}
-                </div>
-              )}
-              {comp.type === "image" && comp.imageUrl && (
-                <img
-                  src={comp.imageUrl}
-                  alt=""
-                  className="w-full h-full object-cover"
-                  style={{ borderRadius: comp.borderRadius ?? 4 }}
-                />
-              )}
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
+  // Legacy format: { components: [] } — treated as a 1200×700 desktop canvas
+  const components: PageComponent[] = Array.isArray(config.components) ? config.components : [];
+  if (components.length === 0) return null;
+  return <Canvas components={components} canvasW={1200} canvasH={700} />;
 }

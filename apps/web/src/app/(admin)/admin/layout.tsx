@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Users, Package, ShoppingBag, Shield, LayoutGrid } from "lucide-react";
+import { Users, Package, ShoppingBag, Shield, LayoutGrid, Layout } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 
 const NAV = [
@@ -7,6 +7,7 @@ const NAV = [
   { href: "/admin/products", label: "Products", icon: Package },
   { href: "/admin/orders", label: "Orders", icon: ShoppingBag },
   { href: "/admin/categories", label: "Categories", icon: LayoutGrid },
+  { href: "/admin/homepage", label: "Homepage", icon: Layout },
 ];
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {

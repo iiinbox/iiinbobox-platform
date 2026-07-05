@@ -12,6 +12,7 @@ import { PaymentsModule } from "./modules/payments/payments.module";
 import { OrdersModule } from "./modules/orders/orders.module";
 import { PayoutsModule } from "./modules/payouts/payouts.module";
 import { ReviewsModule } from "./modules/reviews/reviews.module";
+import { PageConfigModule } from "./modules/page-config/page-config.module";
 
 @Module({
   imports: [
@@ -29,6 +30,7 @@ import { ReviewsModule } from "./modules/reviews/reviews.module";
     OrdersModule,
     PayoutsModule,
     ReviewsModule,
+    PageConfigModule,
   ],
   controllers: [HealthController],
 })

@@ -261,3 +261,10 @@ model Review {
 
   @@unique([productId, userId])
 }
+
+model PageConfig {
+  id        String   @id @default(cuid())
+  page      String   @unique
+  config    Json     @default("{\"components\":[]}")
+  updatedAt DateTime @updatedAt
+}

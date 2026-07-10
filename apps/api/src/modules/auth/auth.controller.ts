@@ -25,6 +25,15 @@ export class AuthController {
     return this.authService.refresh(refreshToken);
   }
 
+  // Item 2: actually revokes the session server-side (deletes it from Redis)
+  // instead of just being a client-side cookie clear — a stolen/old refresh
+  // token stops working immediately rather than staying valid for 30 days.
+  @Post("logout")
+  async logout(@Body("refreshToken") refreshToken: string) {
+    if (refreshToken) await this.authService.logout(refreshToken);
+    return { ok: true };
+  }
+
   @UseGuards(JwtAuthGuard)
   @Get("me")
   me(@CurrentUser() user: RequestUser) {

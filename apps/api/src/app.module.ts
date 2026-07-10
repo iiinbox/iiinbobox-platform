@@ -1,6 +1,7 @@
 import { Module } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
 import { HealthController } from "./health.controller";
+import { RedisModule } from "./modules/redis/redis.module";
 import { AuthModule } from "./modules/auth/auth.module";
 import { VendorsModule } from "./modules/vendors/vendors.module";
 import { CategoriesModule } from "./modules/categories/categories.module";
@@ -13,12 +14,14 @@ import { OrdersModule } from "./modules/orders/orders.module";
 import { PayoutsModule } from "./modules/payouts/payouts.module";
 import { ReviewsModule } from "./modules/reviews/reviews.module";
 import { PageConfigModule } from "./modules/page-config/page-config.module";
+import { SettingsModule } from "./modules/settings/settings.module";
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
     }),
+    RedisModule,
     AuthModule,
     VendorsModule,
     CategoriesModule,
@@ -31,6 +34,7 @@ import { PageConfigModule } from "./modules/page-config/page-config.module";
     PayoutsModule,
     ReviewsModule,
     PageConfigModule,
+    SettingsModule,
   ],
   controllers: [HealthController],
 })

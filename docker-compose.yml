@@ -50,6 +50,21 @@ services:
     ports:
       - "7700:7700"
 
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    # No `ports:` mapping — deliberately unreachable from outside the Docker
+    # network (not even bound to the host's localhost), unlike postgres/minio
+    # above. Only the api service (same network) can reach it, at redis:6379.
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
   api:
     build:
       context: .
@@ -65,6 +80,14 @@ services:
         condition: service_healthy
       meilisearch:
         condition: service_healthy
+      # service_started (not service_healthy): redis is a best-effort
+      # cache/session store, not a hard requirement — the api must still start
+      # and run fine even if redis is unhealthy (see RedisService's graceful
+      # degradation). A service_healthy gate here would block api startup
+      # entirely on a redis outage, which is exactly what we don't want —
+      # this only orders "launch redis before api", nothing more.
+      redis:
+        condition: service_started
     ports:
       - "4000:4000"
 
@@ -86,5 +109,6 @@ volumes:
   postgres_data:
   minio_data:
   meilisearch_data:
+  redis_data:
   caddy_data:
   caddy_config:

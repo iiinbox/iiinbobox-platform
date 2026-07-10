@@ -268,5 +268,59 @@ model PageConfig {
   id        String   @id @default(cuid())
   page      String   @unique
   config    Json     @default("{\"components\":[]}")
+  // Draft (`config`) vs live is a real split — editing/autosaving only ever
+  // touches `config`. A page only goes live when its Folder is published,
+  // which copies `config` -> `publishedConfig` for every page in that folder
+  // at once. null = never published = not reachable on the live site at all.
+  publishedConfig Json?
   updatedAt DateTime @updatedAt
+
+  folderId   String?
+  folder     Folder?  @relation("FolderPages", fields: [folderId], references: [id], onDelete: SetNull)
+  rootOfFolder Folder? @relation("FolderRootPage")
+}
+
+// Mostly an admin-organizational layer, EXCEPT: a Folder with a non-null
+// `subdomain` is now live-routing-relevant — see middleware.ts, which
+// resolves the Host header to a folder's root page via the API instead of
+// the old hardcoded slug list.
+model Project {
+  id        String   @id @default(cuid())
+  name      String
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
+  folders   Folder[]
+}
+
+// Arbitrary count per project — no longer fixed at 3. `subdomain` (nullable,
+// globally unique) is what middleware.ts now looks up to decide which
+// folder's root page serves a given Host header; a folder with `subdomain:
+// null` is a plain organizational container with no live-routing meaning at
+// all. rootPageId is a nullable-unique FK (not a boolean on PageConfig) so
+// "at most one folder can claim a given page as its root" is DB-enforced.
+model Folder {
+  id         String       @id @default(cuid())
+  name       String
+  subdomain  String?      @unique
+  projectId  String
+  project    Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  rootPageId String?      @unique
+  rootPage   PageConfig?  @relation("FolderRootPage", fields: [rootPageId], references: [id])
+  pages      PageConfig[] @relation("FolderPages")
+  createdAt  DateTime     @default(now())
+}
+
+// Singleton row (always id "global") — the only site-wide, not-per-page
+// settings in the app. Everything else (canvas background, header
+// sticky/hide behavior, etc.) intentionally lives inside each page's own
+// PageConfig.config instead.
+model SiteSettings {
+  id                 String   @id @default("global")
+  logoUrl            String?
+  logoWidth          Int      @default(120)
+  logoAlign          String   @default("left")
+  logoLink           String   @default("/")
+  faviconUrl         String?
+  faviconContentType String   @default("image/png")
+  updatedAt          DateTime @updatedAt
 }

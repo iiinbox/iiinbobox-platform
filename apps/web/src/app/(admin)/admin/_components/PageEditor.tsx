@@ -10,12 +10,36 @@ import {
   Group as GroupIcon, Ungroup as UngroupIcon, Link2, Ruler,
   ChevronLeft, ChevronRight, Infinity as InfinityIcon, Timer,
   GalleryHorizontal, Tag, Component as ComponentIcon, Grid3x3, GripVertical, Layers,
-  BarChart3, Users, Activity, Cloud, Rocket, Palette, Radio, History, RotateCw, ShieldCheck,
+  BarChart3, Users, Activity, Cloud, Rocket, Palette, Radio, History, RotateCw,
+  Lock, Unlock, EyeOff, AlignLeft, AlignCenter, AlignRight, AlignJustify,
+  AlignVerticalJustifyStart, AlignVerticalJustifyCenter, AlignVerticalJustifyEnd,
+  AlignHorizontalDistributeCenter, AlignVerticalDistributeCenter,
+  ArrowUpToLine, ArrowDownToLine, Undo2, Redo2, Minus, Plus, Maximize,
+  FileText, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, X, LogOut,
+  MapPin, Map as MapIcon, CalendarClock, CarFront, BadgeCheck, Receipt, Calendar, Clock, Navigation, Star,
+  MoreVertical, GalleryHorizontalEnd, Paintbrush, ClipboardPaste, Search, LayoutGrid,
+  List, ListOrdered, Indent, Outdent, ExternalLink, AlertTriangle, Settings,
+  Folder as FolderIcon, FolderPlus,
 } from "lucide-react";
 import { HOME_ICONS, HOME_ICON_CATEGORIES, getHomeIcon } from "@/lib/homepage-icons";
+import { usePagesList } from "../_lib/usePagesList";
+import { useProjectsTree, type ProjectFolder } from "../_lib/useProjectsTree";
+import { NewPageDialog } from "./NewPageDialog";
+import { PreviewOverlay, type PreviewPageData } from "./PreviewOverlay";
+import { extractZonesFromTemplate, buildTemplateZone } from "@/lib/page-template-zones";
 
-type ComponentType = "text" | "header" | "shape" | "image" | "button" | "carousel" | "icon";
+export type ComponentType = "text" | "header" | "shape" | "image" | "button" | "carousel" | "icon"
+  | "location-input" | "map" | "datetime-picker" | "vehicle-selector" | "driver-badge" | "fare-display"
+  | "hero-carousel" | "category-carousel" | "header-block" | "footer-block";
+type CardStyle = "image-first" | "icon-text" | "split";
+type CardAspectRatio = "1:1" | "3:4";
+type SnapMode = "single" | "double";
 type ViewMode = "desktop" | "mobile";
+// The three fixed Layers-tab zones. Header/Footer are shared/global (same
+// canvas mechanics as Template, stored under reserved page-config slugs);
+// Template is this page's own unique content. Not to be confused with the
+// unrelated PageComponent `type: "header"` (a heading/text component type).
+type Zone = "header" | "template" | "footer";
 type ButtonStyle = "solid" | "outline" | "ghost" | "link";
 type ButtonActionType = "url" | "buy" | "search" | "custom";
 type TextStyle = "heading" | "subheading" | "body";
@@ -25,8 +49,10 @@ type ResizeCorner = "tl" | "tr" | "bl" | "br";
 type ImageMode = "single" | "slideshow";
 type ImageSizePreset = "square" | "portrait" | "landscape" | "wide";
 type SyncStatus = "idle" | "dirty" | "syncing" | "synced" | "error";
+type PropertySection = "layout" | "appearance" | "typography" | "responsive" | "effects" | "advanced";
+interface UndoSnapshot { components: PageComponent[]; height: number }
 
-interface CarouselItem {
+export interface CarouselItem {
   id: string;
   imageUrl?: string;
   label?: string;
@@ -40,7 +66,27 @@ interface CategoryOption {
   imageUrl?: string | null;
 }
 
-interface PageComponent {
+export interface MapMarker { id: string; lat: number; lng: number; label?: string }
+export interface VehicleOption { id: string; label: string; iconId?: string; fareText?: string }
+type DateOption = "today" | "tomorrow" | "custom";
+export interface HeroSlide {
+  id: string;
+  imageUrl?: string;
+  headline?: string;
+  subtext?: string;
+  buttonLabel?: string;
+  buttonLink?: string;
+}
+export interface CategoryCarouselItem {
+  id: string;
+  imageUrl?: string;
+  name?: string;
+  descriptor?: string;
+  badge?: string;
+  link?: string;
+}
+
+export interface PageComponent {
   id: string;
   type: ComponentType;
   x: number;
@@ -48,6 +94,12 @@ interface PageComponent {
   width: number;
   height: number;
   rotation?: number;
+  // header-block/footer-block only — see lib/page-template-zones.ts. `rotation`
+  // above spins just the block's own outer bar; `children` render in a
+  // counter-rotated inner wrapper so they stay upright regardless.
+  children?: PageComponent[];
+  hideOnScrollUpPx?: number | null;
+  hideOnScrollDownPx?: number | null;
   content?: string;
   fontSize?: number;
   fontFamily?: string;
@@ -55,15 +107,29 @@ interface PageComponent {
   lineHeight?: number;
   fontColor?: string;
   italic?: boolean;
-  textAlign?: "left" | "center" | "right";
+  underline?: boolean;
+  strikethrough?: boolean;
+  textAlign?: "left" | "center" | "right" | "justify";
   bold?: boolean;
   textStyle?: TextStyle;
   letterSpacing?: number;
+  textTransform?: "none" | "uppercase" | "capitalize";
+  listType?: "none" | "bullet" | "number";
+  listIndent?: number;
+  maxLines?: number;
+  linkNewTab?: boolean;
   textEffect?: TextEffect;
   effectStrength?: number;
   bgColor?: string;
   borderRadius?: number;
   opacity?: number;
+  // Shadow/blur — shape/image/button/icon/carousel only (text keeps its own textEffect system).
+  shadowX?: number;
+  shadowY?: number;
+  shadowBlur?: number;
+  shadowSpread?: number;
+  shadowColor?: string;
+  blurAmount?: number;
   shapeType?: ShapeType;
   imageUrl?: string;
   imageMode?: ImageMode;
@@ -83,7 +149,101 @@ interface PageComponent {
   carouselItems?: CarouselItem[];
   carouselItemWidth?: number;
   carouselZoom?: number;
+  carouselStyle?: "zoom" | "row";
+  carouselGap?: number;
+  carouselItemBg?: string;
   iconName?: string;
+  // Location Input (taxi/ride-hailing)
+  locationPlaceholder?: string;
+  locationLabel?: string;
+  // Map — static/decorative pins + service-radius circle, not real-time
+  // driver tracking (no such backend exists — see PageEditor plan notes).
+  mapCenterLat?: number;
+  mapCenterLng?: number;
+  mapZoom?: number;
+  mapMarkers?: MapMarker[];
+  mapServiceRadiusKm?: number;
+  // Date & Time Picker
+  dtDefaultOption?: DateOption;
+  dtCustomDate?: string;
+  dtTime?: string;
+  // Vehicle Selector
+  vehicleOptions?: VehicleOption[];
+  selectedVehicleId?: string;
+  // Driver Rating Badge — static, admin-entered content, not a real driver assignment.
+  driverName?: string;
+  driverRating?: number;
+  driverVehicle?: string;
+  driverPhotoUrl?: string;
+  // Fare Display — arithmetic on admin-entered numbers, not a real fare engine.
+  fareCurrency?: string;
+  fareBase?: number;
+  fareDistanceKm?: number;
+  fareRatePerKm?: number;
+  fareSurgeMultiplier?: number;
+  // Hero Carousel — full-width banner slides. Editor shows a static per-slide
+  // preview (prev/next buttons work, but no autoplay/swipe-physics while
+  // editing); the live page gets real swipe/drag + autoplay (see HeroCarousel.tsx).
+  heroSlides?: HeroSlide[];
+  heroAutoplay?: boolean;
+  heroAutoplaySeconds?: number;
+  heroShowArrows?: boolean;
+  heroShowDots?: boolean;
+  heroPeekPercent?: number;
+  heroHeadlineColor?: string;
+  heroSubtextColor?: string;
+  heroOverlayOpacity?: number;
+  heroCtaBgColor?: string;
+  heroCtaFontColor?: string;
+  // Category Carousel — separate from the existing Carousel component (never
+  // shares code/fields with it). Snap-scrolling row of category cards with an
+  // optional section header; no autoplay, unlike Hero Carousel.
+  catCarouselItems?: CategoryCarouselItem[];
+  catCarouselTitle?: string;
+  catCarouselSubtitle?: string;
+  catCarouselCardStyle?: CardStyle;
+  catCarouselAspectRatio?: CardAspectRatio;
+  catCarouselCornerRadius?: number;
+  catCarouselShowDescriptor?: boolean;
+  catCarouselShowBadge?: boolean;
+  catCarouselSnapMode?: SnapMode;
+  catCarouselDesktopCards?: number;
+  catCarouselGapDesktop?: number;
+  catCarouselGapMobile?: number;
+  catCarouselTitleColor?: string;
+  catCarouselSubtitleColor?: string;
+  // Editor-only convenience toggles from the Layers panel — do not affect the
+  // published page (there's no draft/live distinction in the data model; a
+  // component still publishes normally while hidden/locked in the editor).
+  hidden?: boolean;
+  locked?: boolean;
+  // Reusable Components library (opt-in, not automatic): set via the
+  // right-click "Save as Reusable Component" action. reusableName is the
+  // display name shown in the sidebar list — round-trips through save/load
+  // like any other field, no special persistence path.
+  reusable?: boolean;
+  reusableName?: string;
+  // Text Templates (Canva-style groups) — editor-only constraint, doesn't need
+  // to be mirrored into the live page since by publish time the text already
+  // has concrete font values baked in like any other text component. When
+  // lockedTypography is set, the Text/Header properties panel hides font
+  // size/weight/family/letter+line-spacing/bold-italic controls (content,
+  // alignment, and color stay editable) — see renderTypographyFields.
+  textToken?: TextToken;
+  lockedTypography?: boolean;
+}
+
+// Mirrors ReusableComponentEntry on the backend
+// (apps/api/src/modules/page-config/page-config.service.ts) — one entry per
+// component flagged `reusable: true` anywhere in the project.
+interface ReusableComponentEntry {
+  id: string;
+  sourcePage: string;
+  zone: Zone;
+  viewport: ViewMode;
+  name: string;
+  type: ComponentType;
+  component: PageComponent;
 }
 
 interface VersionSnapshot {
@@ -98,6 +258,12 @@ const DESKTOP_W = 1920;
 const MOBILE_W = 375;
 const DEFAULT_DESKTOP_H = 900;
 const DEFAULT_MOBILE_H = 812;
+// Header/Footer share Template's canvas width (DESKTOP_W/MOBILE_W) but start
+// much shorter — just starting sizes, freely resizable like any other canvas.
+const DEFAULT_HEADER_DESKTOP_H = 200;
+const DEFAULT_HEADER_MOBILE_H = 150;
+const DEFAULT_FOOTER_DESKTOP_H = 300;
+const DEFAULT_FOOTER_MOBILE_H = 220;
 
 function uid() { return Math.random().toString(36).slice(2); }
 
@@ -174,15 +340,200 @@ const SHAPES: { type: ShapeType; label: string }[] = [
   { type: "star", label: "Star" },
 ];
 
-interface TextPreset { id: string; label: string; sample: string; patch: Partial<PageComponent> }
+// ── Typography tokens ─────────────────────────────────────────────────────
+// Single source of truth for all text sizing in the editor: 12 tokens, each
+// baking in fontFamily/fontSize/fontWeight/lineHeight/letterSpacing/
+// textTransform. Sizes sit on a 1.25 ratio scale off a 16px body base
+// (12/14/16/20/25/31); heading-xl is rounded to 40 (from a strict 39) to land
+// on a clean number, matching the spec's own 40/32 desktop/mobile example.
+// Every token also carries an explicit mobile variant (not a blanket scale
+// factor) — headings shrink ~0.8-0.9x on mobile, body/label/caption/legal
+// stay constant since shrinking already-small text hurts legibility.
+type TextToken =
+  | "heading-xl" | "heading-l" | "heading-m" | "heading-s"
+  | "body-l" | "body-m" | "body-s"
+  | "button-l" | "button-m"
+  | "label" | "caption" | "legal";
+interface TextTokenSpec {
+  fontFamily: string;
+  fontSizeDesktop: number;
+  fontSizeMobile: number;
+  fontWeight: number;
+  lineHeight: number;
+  letterSpacing: number;
+  textTransform: "none" | "uppercase";
+}
+const TOKEN_FONT_FAMILY = "'Inter', system-ui, -apple-system, sans-serif";
+const TEXT_TOKENS: Record<TextToken, TextTokenSpec> = {
+  "heading-xl": { fontFamily: TOKEN_FONT_FAMILY, fontSizeDesktop: 40, fontSizeMobile: 32, fontWeight: 700, lineHeight: 1.2,  letterSpacing: -0.8,  textTransform: "none" },
+  "heading-l":  { fontFamily: TOKEN_FONT_FAMILY, fontSizeDesktop: 31, fontSizeMobile: 26, fontWeight: 700, lineHeight: 1.2,  letterSpacing: -0.6,  textTransform: "none" },
+  "heading-m":  { fontFamily: TOKEN_FONT_FAMILY, fontSizeDesktop: 25, fontSizeMobile: 21, fontWeight: 700, lineHeight: 1.25, letterSpacing: -0.25, textTransform: "none" },
+  "heading-s":  { fontFamily: TOKEN_FONT_FAMILY, fontSizeDesktop: 20, fontSizeMobile: 18, fontWeight: 700, lineHeight: 1.3,  letterSpacing: 0,     textTransform: "none" },
+  "body-l":     { fontFamily: TOKEN_FONT_FAMILY, fontSizeDesktop: 20, fontSizeMobile: 18, fontWeight: 400, lineHeight: 1.5,  letterSpacing: 0,     textTransform: "none" },
+  "body-m":     { fontFamily: TOKEN_FONT_FAMILY, fontSizeDesktop: 16, fontSizeMobile: 16, fontWeight: 400, lineHeight: 1.5,  letterSpacing: 0,     textTransform: "none" },
+  "body-s":     { fontFamily: TOKEN_FONT_FAMILY, fontSizeDesktop: 14, fontSizeMobile: 14, fontWeight: 400, lineHeight: 1.5,  letterSpacing: 0,     textTransform: "none" },
+  "button-l":   { fontFamily: TOKEN_FONT_FAMILY, fontSizeDesktop: 20, fontSizeMobile: 18, fontWeight: 600, lineHeight: 1.2,  letterSpacing: 0,     textTransform: "none" },
+  "button-m":   { fontFamily: TOKEN_FONT_FAMILY, fontSizeDesktop: 16, fontSizeMobile: 16, fontWeight: 600, lineHeight: 1.2,  letterSpacing: 0,     textTransform: "none" },
+  label:        { fontFamily: TOKEN_FONT_FAMILY, fontSizeDesktop: 12, fontSizeMobile: 12, fontWeight: 600, lineHeight: 1.2,  letterSpacing: 0.24,  textTransform: "uppercase" },
+  caption:      { fontFamily: TOKEN_FONT_FAMILY, fontSizeDesktop: 12, fontSizeMobile: 12, fontWeight: 500, lineHeight: 1.4,  letterSpacing: 0.2,   textTransform: "none" },
+  legal:        { fontFamily: TOKEN_FONT_FAMILY, fontSizeDesktop: 12, fontSizeMobile: 12, fontWeight: 400, lineHeight: 1.4,  letterSpacing: 0,     textTransform: "none" },
+};
+const TEXT_TOKEN_ORDER: TextToken[] = [
+  "heading-xl", "heading-l", "heading-m", "heading-s",
+  "body-l", "body-m", "body-s",
+  "button-l", "button-m",
+  "label", "caption", "legal",
+];
+const TEXT_TOKEN_LABELS: Record<TextToken, string> = {
+  "heading-xl": "Heading 1", "heading-l": "Heading 2", "heading-m": "Heading 3", "heading-s": "Heading 4",
+  "body-l": "Body L", "body-m": "Body M", "body-s": "Body S",
+  "button-l": "Button L", "button-m": "Button M",
+  label: "Label", caption: "Caption", legal: "Legal",
+};
+function tokenFontSize(token: TextToken, canvasW: number): number {
+  const spec = TEXT_TOKENS[token];
+  return canvasW <= MOBILE_W ? spec.fontSizeMobile : spec.fontSizeDesktop;
+}
+
+// Approved font families for token-driven text — capped at 3 (vs. the ~100-entry
+// FONT_FAMILIES list used by Button/Shape text) so token-based typography stays
+// visually consistent site-wide. Inter is first/default, matching the primary
+// font-stack requirement.
+const APPROVED_FONT_FAMILIES = ["Inter", "Poppins", "Georgia"].map((name) => FONT_FAMILIES.find((f) => f.label === name)!);
+
+// Migration for pre-token saved pages (item 7): existing text/header components
+// have concrete fontSize/fontWeight but no textToken. Rather than mutating
+// stored data on load — which would risk a visual diff on someone else's saved
+// page — the nearest token is computed on demand purely for the Style
+// dropdown's displayed value. Actual rendering always reads the component's
+// own concrete fontSize/fontWeight/etc (never overwritten here), so this can
+// never change how an existing page looks; it only makes the dropdown show a
+// sensible pre-selection until the user actively picks a style.
+function nearestTextToken(comp: PageComponent): TextToken {
+  const size = comp.fontSize ?? 16;
+  const isBold = (comp.fontWeight ?? (comp.bold ? 700 : 400)) >= 700;
+  const pool = TEXT_TOKEN_ORDER.filter((t) => (t.startsWith("heading") ? isBold : !t.startsWith("heading")));
+  const candidates = pool.length ? pool : TEXT_TOKEN_ORDER;
+  return candidates.reduce((best, t) =>
+    Math.abs(TEXT_TOKENS[t].fontSizeDesktop - size) < Math.abs(TEXT_TOKENS[best].fontSizeDesktop - size) ? t : best,
+    candidates[0]);
+}
+function effectiveTextToken(comp: PageComponent): TextToken {
+  return comp.textToken ?? nearestTextToken(comp);
+}
+
+// Size presets (item 1): steps around the current token's base size rather
+// than a free px slider. "Medium" is the token's own size; the others scale
+// off it, then get clamped by the mobile body-size floor below.
+const SIZE_PRESETS = [
+  { id: "small", label: "S", mult: 0.8 },
+  { id: "medium", label: "M", mult: 1 },
+  { id: "large", label: "L", mult: 1.25 },
+  { id: "xl", label: "XL", mult: 1.5 },
+] as const;
+const MIN_MOBILE_BODY_SIZE = 14;
+// Headings/buttons/label/caption/legal all have their own deliberate scale
+// (label/caption/legal are intentionally small print); the 14px mobile floor
+// is only meant to protect plain body copy from becoming unreadably small.
+function isBodyToken(token: TextToken): boolean {
+  return token === "body-l" || token === "body-m" || token === "body-s";
+}
+function applySizePreset(comp: PageComponent, mult: number, canvasW: number): number {
+  const token = effectiveTextToken(comp);
+  const base = comp.textToken ? tokenFontSize(token, canvasW) : (comp.fontSize ?? tokenFontSize(token, canvasW));
+  let size = Math.round(base * mult);
+  if (canvasW <= MOBILE_W && isBodyToken(token)) size = Math.max(MIN_MOBILE_BODY_SIZE, size);
+  return size;
+}
+
+const LINE_HEIGHT_PRESETS = [
+  { id: "tight", label: "Tight", value: 1.1 },
+  { id: "normal", label: "Normal", value: 1.5 },
+  { id: "relaxed", label: "Relaxed", value: 1.8 },
+] as const;
+const LETTER_SPACING_PRESETS = [
+  { id: "tight", label: "Tight", value: -0.5 },
+  { id: "normal", label: "Normal", value: 0 },
+  { id: "wide", label: "Wide", value: 1 },
+] as const;
+
+// Brand palette (item 1): a small curated set of on-brand text-color presets
+// shown alongside the full hex picker (still in Appearance) for one-click use.
+const BRAND_TEXT_COLORS = ["#0f172a", "#334155", "#64748b", "#ffffff", "#2563eb", "#16a34a", "#dc2626", "#eab308"];
+
+// WCAG 2.x relative luminance / contrast ratio (item 4) — used to warn when
+// text color is hard to read against its background. Standard sRGB formula.
+function relativeLuminance(hex: string): number {
+  const c = hex.replace("#", "");
+  const full = c.length === 3 ? c.split("").map((ch) => ch + ch).join("") : c;
+  const [r, g, b] = [0, 2, 4].map((i) => parseInt(full.slice(i, i + 2), 16) / 255);
+  const lin = (v: number) => (v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4));
+  return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+}
+function contrastRatio(hexA: string, hexB: string): number {
+  const lA = relativeLuminance(hexA) + 0.05;
+  const lB = relativeLuminance(hexB) + 0.05;
+  return lA > lB ? lA / lB : lB / lA;
+}
+// Text/Header components can have a transparent background; we can't know
+// the real backdrop then, so we check against white as the common canvas
+// default — a useful heuristic warning rather than a guarantee.
+function textContrastRatio(comp: PageComponent): number {
+  const bg = comp.bgColor && comp.bgColor !== "transparent" ? comp.bgColor : "#ffffff";
+  return contrastRatio(comp.fontColor ?? "#000000", bg);
+}
+
+function textDecorationLine(comp: PageComponent): string {
+  const parts: string[] = [];
+  if (comp.underline) parts.push("underline");
+  if (comp.strikethrough) parts.push("line-through");
+  return parts.length ? parts.join(" ") : "none";
+}
+
+// Shared list/plain-text body renderer for Text/Header components (item 1's
+// bulleted/numbered lists + item 2's max-lines truncation) — used by both the
+// main canvas and PreviewCanvas render passes below (the live (home)/page.tsx
+// keeps its own mirrored copy, per this file's established convention of
+// duplicating render logic rather than sharing it across the editor/live
+// boundary).
+function renderTextBody(comp: PageComponent) {
+  if (comp.listType === "bullet" || comp.listType === "number") {
+    const items = (comp.content ?? "").split("\n").filter((l) => l.trim().length > 0);
+    const style: React.CSSProperties = { margin: 0, paddingLeft: 20 + (comp.listIndent ?? 0) * 16, ...textEffectStyle(comp) };
+    return comp.listType === "number"
+      ? <ol style={style}>{items.map((line, i) => <li key={i}>{line}</li>)}</ol>
+      : <ul style={style}>{items.map((line, i) => <li key={i}>{line}</li>)}</ul>;
+  }
+  const clamp = comp.maxLines && comp.maxLines > 0;
+  // The outer flex container positions the span via justifyContent (not real
+  // text-align, since the span is inline/shrink-to-fit) — that trick can't
+  // produce a "justify" look, so justify needs the span to actually be a
+  // full-width block with its own text-align instead.
+  return (
+    <span style={{
+      whiteSpace: "pre-wrap", wordBreak: "break-word",
+      ...(comp.textAlign === "justify" ? { display: "block", width: "100%", textAlign: "justify" as const } : {}),
+      ...(clamp ? { display: "-webkit-box", WebkitLineClamp: comp.maxLines, WebkitBoxOrient: "vertical" as const, overflow: "hidden" } : {}),
+      ...textEffectStyle(comp),
+    }}>
+      {comp.content}
+    </span>
+  );
+}
+
+// Quick-add presets in the Text accordion's empty state — now just thin
+// wrappers over the typography tokens (rather than their own hardcoded font
+// values) so every entry point into a new Text component stays consistent
+// with the token system. See textTokenPatch()/TEXT_TOKENS.
+interface TextPreset { id: string; label: string; sample: string; token: TextToken; fontColor: string }
 
 const TEXT_PRESETS: TextPreset[] = [
-  { id: "display",    label: "Display",    sample: "Display",    patch: { textStyle: "heading",    content: "Display",    fontSize: 72, fontWeight: 800, lineHeight: 1.05, letterSpacing: -1.5, fontColor: "#0f172a" } },
-  { id: "header",      label: "Header",     sample: "Header",     patch: { textStyle: "heading",    content: "Header",     fontSize: 44, fontWeight: 700, lineHeight: 1.15, letterSpacing: -0.5, fontColor: "#0f172a" } },
-  { id: "subheading",  label: "Subheading", sample: "Subheading", patch: { textStyle: "subheading", content: "Subheading", fontSize: 24, fontWeight: 600, lineHeight: 1.3,  letterSpacing: 0,    fontColor: "#334155" } },
-  { id: "body",        label: "Body",       sample: "Body text",  patch: { textStyle: "body",       content: "Body text",  fontSize: 16, fontWeight: 400, lineHeight: 1.6,  letterSpacing: 0,    fontColor: "#334155" } },
-  { id: "caption",     label: "Caption",    sample: "Caption",    patch: { textStyle: "body",       content: "Caption",    fontSize: 12, fontWeight: 500, lineHeight: 1.4,  letterSpacing: 0.5,  fontColor: "#64748b" } },
-  { id: "label",       label: "Label",      sample: "LABEL",      patch: { textStyle: "body",       content: "LABEL",      fontSize: 13, fontWeight: 700, lineHeight: 1.2,  letterSpacing: 1.5,  fontColor: "#0f172a" } },
+  { id: "display",    label: "Display",    sample: "Display",    token: "heading-xl", fontColor: "#0f172a" },
+  { id: "header",     label: "Header",     sample: "Header",     token: "heading-l",  fontColor: "#0f172a" },
+  { id: "subheading",  label: "Subheading", sample: "Subheading", token: "heading-m",  fontColor: "#334155" },
+  { id: "body",        label: "Body",       sample: "Body text",  token: "body-m",     fontColor: "#334155" },
+  { id: "caption",     label: "Caption",    sample: "Caption",    token: "caption",    fontColor: "#64748b" },
+  { id: "label",       label: "Label",      sample: "Label",      token: "label",      fontColor: "#0f172a" },
 ];
 
 interface ButtonPreset { id: string; label: string; patch: Partial<PageComponent> }
@@ -194,6 +545,8 @@ const BUTTON_PRESETS: ButtonPreset[] = [
   { id: "subscribe",   label: "Subscribe",   patch: { content: "Subscribe",   buttonStyle: "solid",  bgColor: "#4f46e5", fontColor: "#ffffff", hoverBgColor: "#4338ca", hoverFontColor: "#ffffff", borderRadius: 8,   fontWeight: 600 } },
   { id: "learn-more",  label: "Learn More",  patch: { content: "Learn More",  buttonStyle: "ghost",  bgColor: "#111827", fontColor: "#111827", hoverBgColor: "#f3f4f6", hoverFontColor: "#111827", borderRadius: 6,   fontWeight: 500 } },
   { id: "contact-us",  label: "Contact Us",  patch: { content: "Contact Us",  buttonStyle: "link",   fontColor: "#2563eb", hoverFontColor: "#1d4ed8", borderRadius: 0, fontWeight: 600 } },
+  { id: "book-now",    label: "Book Now",    patch: { content: "Book Now",    buttonStyle: "solid",  bgColor: "#eab308", fontColor: "#111827", hoverBgColor: "#ca8a04", hoverFontColor: "#111827", borderRadius: 999, fontWeight: 700 } },
+  { id: "request-ride", label: "Request Ride", patch: { content: "Request Ride", buttonStyle: "solid", bgColor: "#111827", fontColor: "#ffffff", hoverBgColor: "#000000", hoverFontColor: "#ffffff", borderRadius: 8, fontWeight: 700 } },
 ];
 
 const IMAGE_SIZES: { id: ImageSizePreset; label: string; ratio: number }[] = [
@@ -201,6 +554,28 @@ const IMAGE_SIZES: { id: ImageSizePreset; label: string; ratio: number }[] = [
   { id: "portrait",  label: "Portrait",  ratio: 4 / 5 },
   { id: "landscape", label: "Landscape", ratio: 16 / 9 },
   { id: "wide",      label: "Wide",      ratio: 21 / 9 },
+];
+
+// Quick Style Copy/Paste: an allowlist (not a blocklist) of genuinely visual
+// properties — deliberately excludes layout (x/y/width/height/rotation),
+// identity (id/type/name/link), and per-item content (text content, image
+// URLs, embedded item lists) so "paste style" can never silently move/resize/
+// retext the target component, only restyle it.
+const STYLE_KEYS: (keyof PageComponent)[] = [
+  "fontSize", "fontFamily", "fontWeight", "lineHeight", "fontColor", "italic", "textAlign", "bold",
+  "textStyle", "letterSpacing", "textTransform", "textToken", "textEffect", "effectStrength",
+  "bgColor", "borderRadius", "opacity",
+  "shadowX", "shadowY", "shadowBlur", "shadowSpread", "shadowColor", "blurAmount",
+  "buttonStyle", "borderColor", "hoverBgColor", "hoverFontColor",
+  "carouselItemWidth", "carouselZoom", "carouselStyle", "carouselGap", "carouselItemBg",
+  "heroAutoplay", "heroAutoplaySeconds", "heroShowArrows", "heroShowDots", "heroPeekPercent",
+  "heroHeadlineColor", "heroSubtextColor", "heroOverlayOpacity", "heroCtaBgColor", "heroCtaFontColor",
+];
+
+const ZONE_META: { zone: Zone; label: string }[] = [
+  { zone: "header", label: "Header" },
+  { zone: "template", label: "Template" },
+  { zone: "footer", label: "Footer" },
 ];
 
 const MARKET_WIDGETS = [
@@ -247,6 +622,18 @@ function shapeBorderRadius(comp: PageComponent): number | string {
   if (st === "circle" || st === "ellipse") return "50%";
   if (st === "square" || st === "rectangle") return comp.borderRadius ?? 0;
   return 0;
+}
+
+// Shadow/blur — shape/image/button/icon/carousel only; undefined (no style override)
+// when nothing's been set, so components without any shadow/blur configured render
+// exactly as before this feature existed.
+function buildBoxShadow(comp: PageComponent): string | undefined {
+  const { shadowX, shadowY, shadowBlur, shadowSpread, shadowColor } = comp;
+  if (shadowX == null && shadowY == null && shadowBlur == null && shadowSpread == null && !shadowColor) return undefined;
+  return `${shadowX ?? 0}px ${shadowY ?? 0}px ${Math.max(0, shadowBlur ?? 0)}px ${shadowSpread ?? 0}px ${shadowColor ?? "rgba(0,0,0,0.35)"}`;
+}
+function buildBlurFilter(comp: PageComponent): string | undefined {
+  return comp.blurAmount ? `blur(${comp.blurAmount}px)` : undefined;
 }
 
 function ShapeSwatch({ type, size = 16 }: { type: ShapeType; size?: number }) {
@@ -316,7 +703,12 @@ function CarouselBody({ comp, editable }: { comp: PageComponent; editable: boole
   const items = comp.carouselItems ?? [];
   const itemWidth = comp.carouselItemWidth ?? 160;
   const zoom = comp.carouselZoom ?? 1.25;
+  const gap = comp.carouselGap ?? 12;
   const radius = comp.borderRadius ?? 12;
+  // "row" = flat category-row style (Swiggy/Instamart-like): uniform item size,
+  // no scroll-position zoom, items start flush at the edge instead of centered.
+  // "zoom" (default, preserves pre-existing carousels) keeps the center-item zoom.
+  const isRow = comp.carouselStyle === "row";
   const trackRef = useRef<HTMLDivElement>(null);
   const rafRef = useRef<number | null>(null);
   const dragRef = useRef<{ startX: number; startScroll: number; dragged: boolean } | null>(null);
@@ -325,6 +717,7 @@ function CarouselBody({ comp, editable }: { comp: PageComponent; editable: boole
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
 
   const recompute = useCallback(() => {
+    if (isRow) return; // uniform size in row mode — no per-scroll recompute needed
     const track = trackRef.current;
     if (!track) return;
     const trackRect = track.getBoundingClientRect();
@@ -337,22 +730,24 @@ function CarouselBody({ comp, editable }: { comp: PageComponent; editable: boole
       const t = Math.max(0, 1 - dist / Math.max(1, maxDist));
       return 1 + t * (zoom - 1);
     }));
-  }, [zoom]);
+  }, [zoom, isRow]);
 
   const onScroll = useCallback(() => {
-    if (rafRef.current) return;
+    if (isRow || rafRef.current) return;
     rafRef.current = requestAnimationFrame(() => { rafRef.current = null; recompute(); });
-  }, [recompute]);
+  }, [recompute, isRow]);
 
   useEffect(() => {
     function updatePad() {
-      if (trackRef.current) setPad(Math.max(0, trackRef.current.clientWidth / 2 - itemWidth / 2));
+      // Row style: items start flush at the left edge (no centering pad) so the
+      // next item is naturally partially visible at the right edge, hinting more.
+      if (trackRef.current) setPad(isRow ? 0 : Math.max(0, trackRef.current.clientWidth / 2 - itemWidth / 2));
     }
     updatePad();
     recompute();
     window.addEventListener("resize", updatePad);
     return () => window.removeEventListener("resize", updatePad);
-  }, [itemWidth, items.length, recompute]);
+  }, [itemWidth, items.length, recompute, isRow]);
 
   useEffect(() => {
     function onMove(e: MouseEvent) {
@@ -407,23 +802,52 @@ function CarouselBody({ comp, editable }: { comp: PageComponent; editable: boole
         trackRef.current.style.scrollBehavior = "auto"; // instant 1:1 tracking while dragging
         dragRef.current = { startX: e.clientX, startScroll: trackRef.current.scrollLeft, dragged: false };
       }}
-      className="w-full h-full flex items-center gap-3 overflow-x-auto overflow-y-hidden cursor-grab active:cursor-grabbing"
-      style={{ borderRadius: radius, paddingLeft: pad, paddingRight: pad, scrollSnapType: "x proximity", scrollBehavior: "smooth", scrollbarWidth: "none" }}
+      // No JS is needed for touch — overflow-x-auto scrolls natively on touch devices
+      // (unlike mouse-drag, which browsers don't support natively, hence the handlers
+      // above); -webkit-overflow-scrolling adds momentum on older iOS Safari specifically.
+      // The [&::-webkit-scrollbar] variant hides the bar on Chrome/Safari/Edge; scrollbarWidth
+      // covers Firefox — between the two, no visible scrollbar on any engine.
+      className="w-full h-full flex items-center overflow-x-auto overflow-y-hidden cursor-grab active:cursor-grabbing [&::-webkit-scrollbar]:hidden"
+      style={{
+        borderRadius: radius, paddingLeft: pad, paddingRight: pad, gap,
+        scrollSnapType: "x proximity", scrollBehavior: "smooth", scrollbarWidth: "none",
+        WebkitOverflowScrolling: "touch",
+      }}
     >
       {items.map((item, i) => {
-        const baseScale = scales[i] ?? 1;
+        const baseScale = isRow ? 1 : (scales[i] ?? 1);
         const scale = hoverIndex === i ? baseScale + 0.08 : baseScale;
-        const card = (
+        // Row style: a Swiggy/Instamart-style "chip" — icon sits with visible padding
+        // inside a light colored square, and the label lives OUTSIDE/below that square
+        // as plain text (not sharing its background), rather than the zoom style's
+        // full-bleed photo card with the label captioned inside the same white card.
+        const card = isRow ? (
           <div
             data-carousel-item
             onMouseEnter={() => setHoverIndex(i)}
             onMouseLeave={() => setHoverIndex((h) => (h === i ? null : h))}
-            className="shrink-0 flex flex-col items-center gap-1 rounded-lg overflow-hidden bg-white shadow select-none"
-            style={{ width: itemWidth, transform: `scale(${scale})`, transition: "transform 0.25s ease-out", scrollSnapAlign: "center", zIndex: hoverIndex === i ? 999 : Math.round(baseScale * 10) }}
+            className="shrink-0 flex flex-col items-center select-none"
+            style={{ width: itemWidth, transform: `scale(${scale})`, transition: "transform 0.2s ease-out", scrollSnapAlign: "start", zIndex: hoverIndex === i ? 999 : 1 }}
+          >
+            <div className="w-full aspect-square flex items-center justify-center overflow-hidden p-2.5"
+              style={{ backgroundColor: comp.carouselItemBg ?? "#eef2f6", borderRadius: radius }}>
+              {item.imageUrl
+                ? <img src={item.imageUrl} alt="" draggable={false} className="w-full h-full object-contain pointer-events-none" />
+                : <ImageIcon className="h-5 w-5 text-gray-400" />}
+            </div>
+            {item.label && <span className="mt-1.5 text-xs font-medium text-center px-1 truncate w-full">{item.label}</span>}
+          </div>
+        ) : (
+          <div
+            data-carousel-item
+            onMouseEnter={() => setHoverIndex(i)}
+            onMouseLeave={() => setHoverIndex((h) => (h === i ? null : h))}
+            className="shrink-0 flex flex-col items-center gap-1 overflow-hidden bg-white select-none"
+            style={{ width: itemWidth, transform: `scale(${scale})`, transition: "transform 0.2s ease-out", scrollSnapAlign: "center", zIndex: hoverIndex === i ? 999 : Math.round(baseScale * 10), boxShadow: "0 1px 3px rgba(0,0,0,0.15)", borderRadius: radius }}
           >
             {item.imageUrl
-              ? <img src={item.imageUrl} alt="" draggable={false} className="w-full aspect-square object-cover pointer-events-none" />
-              : <div className="w-full aspect-square bg-gray-200 flex items-center justify-center"><ImageIcon className="h-5 w-5 text-gray-400" /></div>}
+              ? <img src={item.imageUrl} alt="" draggable={false} className="w-full aspect-square object-cover pointer-events-none" style={{ borderRadius: radius }} />
+              : <div className="w-full aspect-square bg-gray-200 flex items-center justify-center" style={{ borderRadius: radius }}><ImageIcon className="h-5 w-5 text-gray-400" /></div>}
             {item.label && <span className="text-xs font-medium text-center px-1 pb-1 truncate w-full">{item.label}</span>}
           </div>
         );
@@ -444,6 +868,200 @@ function CarouselBody({ comp, editable }: { comp: PageComponent; editable: boole
   );
 }
 
+// ── Hero Carousel: full-width banner slides ─────────────────────────────────
+// Editor preview is intentionally inert (prev/next/dots just cycle a local
+// index — no autoplay, no swipe physics) so it never fights the canvas's own
+// drag handling and no timers fire unexpectedly while editing — same
+// editor-inert/live-interactive split already used for Map/Location Input/
+// Vehicle Selector. The published homepage's HeroCarousel.tsx client island
+// has the real swipe/drag + autoplay + edge-bounce behavior.
+function HeroCarouselBody({ comp }: { comp: PageComponent }) {
+  const slides = comp.heroSlides ?? [];
+  const [index, setIndex] = useState(0);
+  const radius = comp.borderRadius ?? 0;
+  const overlay = (comp.heroOverlayOpacity ?? 35) / 100;
+
+  if (slides.length === 0) {
+    return (
+      <div className="w-full h-full flex items-center justify-center text-xs gap-1 text-muted-foreground border border-dashed rounded-lg" style={{ borderRadius: radius }}>
+        <GalleryHorizontalEnd className="h-4 w-4" /> Hero Carousel — add slides
+      </div>
+    );
+  }
+  const i = Math.min(index, slides.length - 1);
+  const slide = slides[i];
+
+  return (
+    <div className="relative w-full h-full overflow-hidden select-none" style={{ borderRadius: radius, backgroundColor: comp.bgColor ?? "#111827" }}>
+      {slide.imageUrl ? (
+        <img src={slide.imageUrl} alt="" className="absolute inset-0 w-full h-full object-cover" draggable={false} />
+      ) : (
+        <div className="absolute inset-0 flex items-center justify-center text-white/30"><ImageIcon className="h-8 w-8" /></div>
+      )}
+      <div className="absolute inset-0" style={{ backgroundColor: `rgba(0,0,0,${overlay})` }} />
+      <div className="relative z-10 w-full h-full flex flex-col justify-center gap-2 px-6 md:px-10 max-w-full md:max-w-[55%]">
+        {slide.headline && <h3 className="text-xl md:text-3xl font-bold truncate" style={{ color: comp.heroHeadlineColor ?? "#ffffff" }}>{slide.headline}</h3>}
+        {slide.subtext && <p className="text-sm md:text-base line-clamp-2" style={{ color: comp.heroSubtextColor ?? "#f3f4f6" }}>{slide.subtext}</p>}
+        {slide.buttonLabel && (
+          <div className="mt-1">
+            <span className="inline-block px-4 py-2 rounded-md text-sm font-semibold" style={{ backgroundColor: comp.heroCtaBgColor ?? "#ffffff", color: comp.heroCtaFontColor ?? "#111111" }}>
+              {slide.buttonLabel}
+            </span>
+          </div>
+        )}
+      </div>
+      {(comp.heroShowArrows ?? true) && slides.length > 1 && (
+        <>
+          <button type="button" onMouseDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); setIndex((v) => (v - 1 + slides.length) % slides.length); }}
+            className="absolute left-2 top-1/2 -translate-y-1/2 z-20 h-8 w-8 rounded-full bg-white/80 hover:bg-white flex items-center justify-center shadow">
+            <ChevronLeft className="h-4 w-4" />
+          </button>
+          <button type="button" onMouseDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); setIndex((v) => (v + 1) % slides.length); }}
+            className="absolute right-2 top-1/2 -translate-y-1/2 z-20 h-8 w-8 rounded-full bg-white/80 hover:bg-white flex items-center justify-center shadow">
+            <ChevronRight className="h-4 w-4" />
+          </button>
+        </>
+      )}
+      {(comp.heroShowDots ?? true) && slides.length > 1 && (
+        <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1.5">
+          {slides.map((_, si) => (
+            <button key={si} type="button" onMouseDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); setIndex(si); }}
+              className={`h-1.5 rounded-full transition-all ${si === i ? "w-4 bg-white" : "w-1.5 bg-white/50"}`} />
+          ))}
+        </div>
+      )}
+      <div className="absolute top-2 right-2 z-20 text-[10px] px-1.5 py-0.5 rounded bg-black/40 text-white">{i + 1}/{slides.length}</div>
+    </div>
+  );
+}
+
+// ── Category Carousel: snap-scrolling row of category cards ─────────────────
+// A separate component from Carousel (no shared code/fields) — unlike Hero
+// Carousel, this has no autoplay/edge-bounce physics, so — same as the
+// existing Carousel — native CSS scroll-snap works directly in the editor
+// canvas without fighting the canvas's own drag handling; no separate
+// editor-inert mode is needed here. Mirrored (not shared) into the live
+// homepage's CategoryCarousel.tsx client island for the clickable arrows.
+function categoryCardWidthStyle(comp: PageComponent, canvasW: number, index: number): React.CSSProperties {
+  const isMobile = canvasW <= 500;
+  const gap = (isMobile ? comp.catCarouselGapMobile ?? 12 : comp.catCarouselGapDesktop ?? 16);
+  // "double" snap mode only marks every other card as a snap stop, so the
+  // track settles two-at-a-time instead of on every single card.
+  const snapAlign = (comp.catCarouselSnapMode ?? "single") === "double" && index % 2 === 1 ? undefined : "start";
+  if (isMobile) return { flex: "0 0 88%", scrollSnapAlign: snapAlign };
+  const n = comp.catCarouselDesktopCards ?? 4;
+  return { flex: `0 0 calc((100% - ${(n - 1) * gap}px) / ${n})`, scrollSnapAlign: snapAlign };
+}
+
+function CategoryCarouselCard({ comp, item }: { comp: PageComponent; item: CategoryCarouselItem }) {
+  const style = comp.catCarouselCardStyle ?? "image-first";
+  const radius = comp.catCarouselCornerRadius ?? 12;
+  const aspect = (comp.catCarouselAspectRatio ?? "1:1") === "1:1" ? "aspect-square" : "aspect-[3/4]";
+  const showDescriptor = comp.catCarouselShowDescriptor ?? false;
+  const showBadge = comp.catCarouselShowBadge ?? false;
+
+  const image = (
+    <div className={`relative w-full ${style === "split" ? "h-full" : aspect} overflow-hidden bg-gray-100 shrink-0`} style={{ borderRadius: style === "split" ? 0 : radius }}>
+      {item.imageUrl ? (
+        <img src={item.imageUrl} alt="" className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-[1.04]" draggable={false} />
+      ) : (
+        <div className="w-full h-full flex items-center justify-center text-gray-300"><ImageIcon className="h-6 w-6" /></div>
+      )}
+      {showBadge && item.badge && (
+        <span className="absolute top-1.5 left-1.5 text-[10px] font-semibold px-1.5 py-0.5 rounded bg-black/70 text-white">{item.badge}</span>
+      )}
+      {style === "image-first" && (
+        <span className="absolute inset-0 flex items-end justify-center pb-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+          <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-white/90 text-black">Shop</span>
+        </span>
+      )}
+    </div>
+  );
+
+  const label = (
+    <div className={style === "icon-text" ? "text-center" : "px-0.5"}>
+      <p className="text-[13px] font-semibold truncate" style={{ color: comp.catCarouselTitleColor ?? "#111111" }}>{item.name || "Category"}</p>
+      {showDescriptor && item.descriptor && <p className="text-[11px] text-muted-foreground truncate">{item.descriptor}</p>}
+    </div>
+  );
+
+  const inner = style === "icon-text" ? (
+    <div className="group flex flex-col items-center gap-1.5 w-16">
+      <div className="w-14 h-14 rounded-full overflow-hidden bg-gray-100 flex items-center justify-center shrink-0">
+        {item.imageUrl ? <img src={item.imageUrl} alt="" className="w-full h-full object-cover" draggable={false} /> : <ImageIcon className="h-5 w-5 text-gray-300" />}
+      </div>
+      {label}
+    </div>
+  ) : style === "split" ? (
+    <div className="group flex h-full w-full overflow-hidden border border-gray-200" style={{ borderRadius: radius }}>
+      <div className="w-1/2 h-full">{image}</div>
+      <div className="w-1/2 h-full flex flex-col justify-center gap-1 p-2">{label}</div>
+    </div>
+  ) : (
+    <div className="group flex flex-col gap-1.5">
+      {image}
+      {label}
+    </div>
+  );
+
+  return item.link ? <div className="cursor-pointer">{inner}</div> : inner;
+}
+
+function CategoryCarouselBody({ comp, canvasW }: { comp: PageComponent; canvasW: number }) {
+  const items = comp.catCarouselItems ?? [];
+  const trackRef = useRef<HTMLDivElement>(null);
+  const gap = (canvasW <= 500 ? comp.catCarouselGapMobile ?? 12 : comp.catCarouselGapDesktop ?? 16);
+  const isIconText = (comp.catCarouselCardStyle ?? "image-first") === "icon-text";
+
+  return (
+    <div className="group/carousel w-full h-full flex flex-col gap-2">
+      {(comp.catCarouselTitle || comp.catCarouselSubtitle) && (
+        <div className="flex flex-col gap-0.5 px-0.5">
+          {comp.catCarouselTitle && <h3 className="text-xl font-bold" style={{ color: comp.catCarouselTitleColor ?? "#111111" }}>{comp.catCarouselTitle}</h3>}
+          {comp.catCarouselSubtitle && <p className="text-sm" style={{ color: comp.catCarouselSubtitleColor ?? "#6b7280" }}>{comp.catCarouselSubtitle}</p>}
+        </div>
+      )}
+      <div className="relative flex-1 min-h-0">
+        {items.length === 0 ? (
+          <div className="w-full h-full flex items-center justify-center text-xs gap-1 text-muted-foreground border border-dashed rounded-lg">
+            <LayoutGrid className="h-4 w-4" /> Category Carousel — add items
+          </div>
+        ) : (
+          <>
+            <div
+              ref={trackRef}
+              // Stop mousedown from bubbling to the canvas wrapper's onDragStart —
+              // otherwise scrolling/clicking inside the track would also start
+              // dragging the whole component (same fix CarouselBody already uses).
+              onMouseDown={(e) => e.stopPropagation()}
+              className="w-full h-full flex overflow-x-auto overflow-y-hidden [&::-webkit-scrollbar]:hidden"
+              style={{ gap, scrollSnapType: "x mandatory", scrollbarWidth: "none", alignItems: isIconText ? "flex-start" : "stretch" }}
+            >
+              {items.map((item, idx) => (
+                <div key={item.id} style={categoryCardWidthStyle(comp, canvasW, idx)}>
+                  <CategoryCarouselCard comp={comp} item={item} />
+                </div>
+              ))}
+            </div>
+            <button type="button"
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={(e) => { e.stopPropagation(); trackRef.current?.scrollBy({ left: -240, behavior: "smooth" }); }}
+              className="hidden md:flex absolute left-1 top-1/2 -translate-y-1/2 z-20 h-7 w-7 rounded-full bg-white shadow border items-center justify-center opacity-0 group-hover/carousel:opacity-100 transition-opacity">
+              <ChevronLeft className="h-3.5 w-3.5" />
+            </button>
+            <button type="button"
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={(e) => { e.stopPropagation(); trackRef.current?.scrollBy({ left: 240, behavior: "smooth" }); }}
+              className="hidden md:flex absolute right-1 top-1/2 -translate-y-1/2 z-20 h-7 w-7 rounded-full bg-white shadow border items-center justify-center opacity-0 group-hover/carousel:opacity-100 transition-opacity">
+              <ChevronRight className="h-3.5 w-3.5" />
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Icon: a single glyph from the shared homepage icon registry ─────────────
 
 function IconGlyph({ comp }: { comp: PageComponent }) {
@@ -455,6 +1073,154 @@ function IconGlyph({ comp }: { comp: PageComponent }) {
       {Ico
         ? <Ico style={{ width: size, height: size, color: comp.fontColor ?? "#111111" }} />
         : <Square className="text-muted-foreground" style={{ width: size, height: size }} />}
+    </div>
+  );
+}
+
+// ── Taxi/ride-hailing components ────────────────────────────────────────────
+// Editor renders a static/inert preview for all of these (matching how Button
+// and Carousel links are already inert in the editor) — only the live
+// published page (apps/web/src/app/(home)/page.tsx, a separate mirrored
+// implementation) wires up real interactivity/APIs. See the component plan
+// for why: Map's live pan/zoom would otherwise fight the canvas's own drag
+// handling, exactly like Carousel already has to work around.
+
+function LocationInputBody({ comp }: { comp: PageComponent }) {
+  return (
+    <div className="w-full h-full flex items-center gap-2 px-3 select-none"
+      style={{ backgroundColor: comp.bgColor ?? "#ffffff", border: `1px solid ${comp.borderColor ?? "#e5e7eb"}`, borderRadius: comp.borderRadius ?? 8 }}>
+      <MapPin className="h-4 w-4 shrink-0" style={{ color: comp.fontColor ?? "#111111" }} />
+      <span className="text-sm truncate" style={{ color: comp.fontColor ?? "#111111", opacity: 0.6 }}>
+        {comp.locationPlaceholder || "Enter location"}
+      </span>
+    </div>
+  );
+}
+
+// Static Maps API image — no JS SDK, no pan/zoom, so it never conflicts with
+// dragging/resizing the component itself on the canvas (live page uses the
+// real interactive Maps JavaScript API instead — see HomeCarousel-style
+// mirrored implementation in apps/web/src/app/(home)/page.tsx).
+function MapBody({ comp }: { comp: PageComponent }) {
+  const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
+  const lat = comp.mapCenterLat ?? 12.9716;
+  const lng = comp.mapCenterLng ?? 77.5946;
+  const zoom = comp.mapZoom ?? 13;
+  const markers = comp.mapMarkers ?? [];
+  const radius = comp.borderRadius ?? 12;
+
+  if (!apiKey) {
+    return (
+      <div className="w-full h-full flex flex-col items-center justify-center gap-1 text-center px-3 bg-gray-100 text-muted-foreground text-xs" style={{ borderRadius: radius }}>
+        <MapIcon className="h-5 w-5" />
+        Google Maps API key required
+        <span className="text-[10px]">Set NEXT_PUBLIC_GOOGLE_MAPS_API_KEY</span>
+      </div>
+    );
+  }
+  const markerParams = markers.map((m) => `markers=color:red%7C${m.lat},${m.lng}`).join("&");
+  const size = "640x400"; // Static Maps API max free size per dimension
+  const src = `https://maps.googleapis.com/maps/api/staticmap?center=${lat},${lng}&zoom=${zoom}&size=${size}&scale=2&${markerParams}&key=${apiKey}`;
+  return (
+    <div className="w-full h-full overflow-hidden" style={{ borderRadius: radius }}>
+      <img src={src} alt="Map preview" className="w-full h-full object-cover pointer-events-none select-none" draggable={false} />
+    </div>
+  );
+}
+
+function DateTimePickerBody({ comp }: { comp: PageComponent }) {
+  const opt = comp.dtDefaultOption ?? "today";
+  const dateLabel = opt === "today" ? "Today" : opt === "tomorrow" ? "Tomorrow" : (comp.dtCustomDate || "Pick a date");
+  return (
+    <div className="w-full h-full flex flex-col justify-center gap-1.5 px-3 select-none"
+      style={{ backgroundColor: comp.bgColor ?? "#ffffff", border: `1px solid ${comp.borderColor ?? "#e5e7eb"}`, borderRadius: comp.borderRadius ?? 8 }}>
+      <div className="flex items-center gap-2 text-sm" style={{ color: comp.fontColor ?? "#111111" }}>
+        <Calendar className="h-4 w-4 shrink-0" /> <span className="truncate">{dateLabel}</span>
+      </div>
+      <div className="flex items-center gap-2 text-sm" style={{ color: comp.fontColor ?? "#111111" }}>
+        <Clock className="h-4 w-4 shrink-0" /> <span>{comp.dtTime || "09:00"}</span>
+      </div>
+    </div>
+  );
+}
+
+function VehicleSelectorBody({ comp }: { comp: PageComponent }) {
+  const options = comp.vehicleOptions ?? [];
+  if (options.length === 0) {
+    return (
+      <div className="w-full h-full flex items-center justify-center text-xs text-muted-foreground border border-dashed rounded-lg gap-1">
+        <CarFront className="h-4 w-4" /> Vehicle Selector — add options
+      </div>
+    );
+  }
+  return (
+    <div className="w-full h-full flex items-center gap-2 overflow-hidden select-none">
+      {options.map((opt) => {
+        const def = getHomeIcon(opt.iconId);
+        const Ico = def?.Icon ?? CarFront;
+        const isSelected = (comp.selectedVehicleId ?? options[0]?.id) === opt.id;
+        return (
+          <div key={opt.id} className={`flex-1 flex flex-col items-center gap-0.5 py-2 px-1 rounded-lg border min-w-0 ${isSelected ? "border-black bg-muted" : "border-gray-200"}`}>
+            <Ico className="h-5 w-5 text-muted-foreground" />
+            <span className="text-[11px] font-medium truncate w-full text-center">{opt.label}</span>
+            {opt.fareText && <span className="text-[10px] text-muted-foreground truncate w-full text-center">{opt.fareText}</span>}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function DriverBadgeBody({ comp }: { comp: PageComponent }) {
+  const rating = Math.max(0, Math.min(5, comp.driverRating ?? 4.8));
+  return (
+    <div className="w-full h-full flex items-center gap-2.5 px-3 select-none"
+      style={{ backgroundColor: comp.bgColor ?? "#ffffff", borderRadius: comp.borderRadius ?? 12 }}>
+      <div className="h-10 w-10 rounded-full bg-gray-200 shrink-0 overflow-hidden flex items-center justify-center">
+        {comp.driverPhotoUrl
+          ? <img src={comp.driverPhotoUrl} alt="" className="w-full h-full object-cover" />
+          : <BadgeCheck className="h-5 w-5 text-gray-400" />}
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-semibold truncate" style={{ color: comp.fontColor ?? "#111111" }}>{comp.driverName || "Driver Name"}</p>
+        <div className="flex items-center gap-0.5">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <Star key={i} className="h-3 w-3" fill={i < Math.round(rating) ? "#f59e0b" : "none"} stroke="#f59e0b" />
+          ))}
+          <span className="text-[10px] text-muted-foreground ml-1">{rating.toFixed(1)}</span>
+        </div>
+        {comp.driverVehicle && <p className="text-[11px] text-muted-foreground truncate">{comp.driverVehicle}</p>}
+      </div>
+    </div>
+  );
+}
+
+function FareDisplayBody({ comp }: { comp: PageComponent }) {
+  const currency = comp.fareCurrency ?? "₹";
+  const base = comp.fareBase ?? 50;
+  const km = comp.fareDistanceKm ?? 5;
+  const rate = comp.fareRatePerKm ?? 12;
+  const surge = comp.fareSurgeMultiplier ?? 1;
+  const distanceFare = km * rate;
+  const total = Math.round((base + distanceFare) * surge);
+  return (
+    <div className="w-full h-full flex flex-col justify-center gap-1 px-3 py-2 select-none"
+      style={{ backgroundColor: comp.bgColor ?? "#ffffff", borderRadius: comp.borderRadius ?? 12 }}>
+      <div className="flex items-center gap-1.5 text-xs text-muted-foreground"><Receipt className="h-3.5 w-3.5" /> Fare estimate</div>
+      <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+        <span>Base fare</span><span>{currency}{base}</span>
+      </div>
+      <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+        <span>Distance ({km}km × {currency}{rate})</span><span>{currency}{distanceFare}</span>
+      </div>
+      {surge !== 1 && (
+        <div className="flex items-center justify-between text-[11px] text-amber-600">
+          <span>Surge ×{surge}</span><span></span>
+        </div>
+      )}
+      <div className="flex items-center justify-between text-sm font-semibold pt-1 border-t" style={{ color: comp.fontColor ?? "#111111" }}>
+        <span>Total</span><span>{currency}{total}</span>
+      </div>
     </div>
   );
 }
@@ -617,6 +1383,173 @@ function SpacingGuides({ guides, canvasW, canvasH }: { guides: SpacingGuide[]; c
   );
 }
 
+// ── Alignment guides — canvas-center + component edge/center snapping while
+// dragging a single component. A distinct visual system from SpacingGuides
+// above (which shows gap *distance*, not alignment) — rendered together but
+// styled differently (solid blue/violet vs. dashed pink) so they read as two
+// different kinds of information at a glance.
+interface AlignmentGuideLine { orientation: "vertical" | "horizontal"; pos: number; from: number; to: number }
+
+function computeAlignmentGuides(dragged: { x: number; y: number; width: number; height: number }, others: PageComponent[], canvasW: number, canvasH: number, tolerance = 6): AlignmentGuideLine[] {
+  const left = dragged.x, right = dragged.x + dragged.width, centerX = dragged.x + dragged.width / 2;
+  const top = dragged.y, bottom = dragged.y + dragged.height, centerY = dragged.y + dragged.height / 2;
+
+  let bestXDist = tolerance, bestXPos: number | null = null;
+  let bestYDist = tolerance, bestYPos: number | null = null;
+
+  function tryX(pos: number, current: number) {
+    const dist = Math.abs(current - pos);
+    if (dist <= bestXDist) { bestXDist = dist; bestXPos = pos; }
+  }
+  function tryY(pos: number, current: number) {
+    const dist = Math.abs(current - pos);
+    if (dist <= bestYDist) { bestYDist = dist; bestYPos = pos; }
+  }
+
+  tryX(canvasW / 2, centerX);
+  tryY(canvasH / 2, centerY);
+  for (const c of others) {
+    tryX(c.x, left); tryX(c.x + c.width, right); tryX(c.x + c.width / 2, centerX);
+    tryY(c.y, top); tryY(c.y + c.height, bottom); tryY(c.y + c.height / 2, centerY);
+  }
+
+  const guides: AlignmentGuideLine[] = [];
+  if (bestXPos !== null) guides.push({ orientation: "vertical", pos: bestXPos, from: 0, to: canvasH });
+  if (bestYPos !== null) guides.push({ orientation: "horizontal", pos: bestYPos, from: 0, to: canvasW });
+  return guides;
+}
+
+// Snaps a proposed drag position to the nearest alignment match per axis (if
+// any is within tolerance), returning both the (possibly adjusted) position
+// and the guide lines to render — one pass computes both.
+function snapPosition(rawX: number, rawY: number, width: number, height: number, others: PageComponent[], canvasW: number, canvasH: number, tolerance = 6) {
+  const guides = computeAlignmentGuides({ x: rawX, y: rawY, width, height }, others, canvasW, canvasH, tolerance);
+  let x = rawX, y = rawY;
+  for (const g of guides) {
+    if (g.orientation === "vertical") {
+      // Snap whichever of left/center/right is closest to this line to sit exactly on it.
+      const left = rawX, right = rawX + width, centerX = rawX + width / 2;
+      const dLeft = Math.abs(left - g.pos), dRight = Math.abs(right - g.pos), dCenter = Math.abs(centerX - g.pos);
+      const min = Math.min(dLeft, dRight, dCenter);
+      x = min === dCenter ? g.pos - width / 2 : min === dLeft ? g.pos : g.pos - width;
+    } else {
+      const top = rawY, bottom = rawY + height, centerY = rawY + height / 2;
+      const dTop = Math.abs(top - g.pos), dBottom = Math.abs(bottom - g.pos), dCenter = Math.abs(centerY - g.pos);
+      const min = Math.min(dTop, dBottom, dCenter);
+      y = min === dCenter ? g.pos - height / 2 : min === dTop ? g.pos : g.pos - height;
+    }
+  }
+  return { x, y, guides };
+}
+
+function AlignmentGuides({ guides, canvasW, canvasH }: { guides: AlignmentGuideLine[]; canvasW: number; canvasH: number }) {
+  const pct = (v: number, total: number) => `${(v / total) * 100}%`;
+  return (
+    <div className="absolute inset-0 pointer-events-none select-none z-40">
+      {guides.map((g, i) => g.orientation === "vertical" ? (
+        <div key={i} className="absolute bg-blue-500" style={{ left: pct(g.pos, canvasW), top: pct(g.from, canvasH), height: pct(g.to - g.from, canvasH), width: 1 }} />
+      ) : (
+        <div key={i} className="absolute bg-blue-500" style={{ top: pct(g.pos, canvasH), left: pct(g.from, canvasW), width: pct(g.to - g.from, canvasW), height: 1 }} />
+      ))}
+    </div>
+  );
+}
+
+// ── Floating contextual toolbar — shown above the selected component (single
+// mode) or above the multi-select bounding box (multi mode). One shared
+// component for both so button styling/spacing never drifts between them.
+
+type AlignEdge = "left" | "right" | "centerH" | "top" | "bottom" | "centerV";
+
+function ToolbarBtn({ title, onClick, destructive, disabled, children }: { title: string; onClick?: () => void; destructive?: boolean; disabled?: boolean; children: React.ReactNode }) {
+  return (
+    <button type="button" title={title} disabled={disabled}
+      className={`flex h-6 w-6 items-center justify-center rounded hover:bg-muted disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent ${destructive ? "text-destructive hover:bg-destructive/10" : ""}`}
+      onClick={(e) => { e.stopPropagation(); onClick?.(); }}
+    >
+      {children}
+    </button>
+  );
+}
+
+function ToolbarDivider() {
+  return <div className="w-px h-4 bg-border mx-0.5 shrink-0" />;
+}
+
+interface FloatingToolbarProps {
+  mode: "single" | "multi";
+  locked?: boolean;
+  hidden?: boolean;
+  canGroup?: boolean;
+  canUngroup?: boolean;
+  canDistribute?: boolean;
+  onDuplicate?: () => void;
+  onDelete: () => void;
+  onToggleLock?: () => void;
+  onToggleHide?: () => void;
+  onBringForward?: () => void;
+  onSendBackward?: () => void;
+  onBringToFront?: () => void;
+  onSendToBack?: () => void;
+  onGroup?: () => void;
+  onUngroup?: () => void;
+  onAlign?: (edge: AlignEdge) => void;
+  onDistribute?: (axis: "horizontal" | "vertical") => void;
+}
+
+function FloatingToolbar(props: FloatingToolbarProps) {
+  return (
+    <div className="absolute z-30 flex items-center gap-0.5 rounded-md border bg-white px-1 py-1 shadow-sm"
+      // -64 (not -38) so this never overlaps the purple rotate-dot handle non-text
+      // components render just above their own box (which occupies roughly y:[-20,0]) —
+      // an earlier version at -38 visually covered the dot, silently swallowing its clicks.
+      style={{ top: -64, left: "50%", transform: "translateX(-50%)", pointerEvents: "auto" }}
+      onMouseDown={(e) => e.stopPropagation()}
+    >
+      {props.mode === "single" && (
+        <>
+          <ToolbarBtn title="Duplicate" onClick={props.onDuplicate}><Copy className="h-3.5 w-3.5" /></ToolbarBtn>
+          <ToolbarBtn title="Delete" destructive onClick={props.onDelete}><Trash2 className="h-3.5 w-3.5" /></ToolbarBtn>
+          <ToolbarDivider />
+          <ToolbarBtn title={props.locked ? "Unlock" : "Lock"} onClick={props.onToggleLock}>
+            {props.locked ? <Unlock className="h-3.5 w-3.5" /> : <Lock className="h-3.5 w-3.5" />}
+          </ToolbarBtn>
+          <ToolbarBtn title={props.hidden ? "Show" : "Hide"} onClick={props.onToggleHide}>
+            {props.hidden ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
+          </ToolbarBtn>
+          <ToolbarDivider />
+          <ToolbarBtn title="Bring forward" onClick={props.onBringForward}><ChevronUp className="h-3.5 w-3.5" /></ToolbarBtn>
+          <ToolbarBtn title="Send backward" onClick={props.onSendBackward}><ChevronDown className="h-3.5 w-3.5" /></ToolbarBtn>
+          <ToolbarBtn title="Bring to front" onClick={props.onBringToFront}><ArrowUpToLine className="h-3.5 w-3.5" /></ToolbarBtn>
+          <ToolbarBtn title="Send to back" onClick={props.onSendToBack}><ArrowDownToLine className="h-3.5 w-3.5" /></ToolbarBtn>
+        </>
+      )}
+      {props.mode === "multi" && (
+        <>
+          {props.canGroup && <ToolbarBtn title="Group" onClick={props.onGroup}><GroupIcon className="h-3.5 w-3.5" /></ToolbarBtn>}
+          {props.canUngroup && <ToolbarBtn title="Ungroup" onClick={props.onUngroup}><UngroupIcon className="h-3.5 w-3.5" /></ToolbarBtn>}
+          {(props.canGroup || props.canUngroup) && <ToolbarDivider />}
+          <ToolbarBtn title="Align left" onClick={() => props.onAlign?.("left")}><AlignLeft className="h-3.5 w-3.5" /></ToolbarBtn>
+          <ToolbarBtn title="Align center" onClick={() => props.onAlign?.("centerH")}><AlignCenter className="h-3.5 w-3.5" /></ToolbarBtn>
+          <ToolbarBtn title="Align right" onClick={() => props.onAlign?.("right")}><AlignRight className="h-3.5 w-3.5" /></ToolbarBtn>
+          <ToolbarBtn title="Align top" onClick={() => props.onAlign?.("top")}><AlignVerticalJustifyStart className="h-3.5 w-3.5" /></ToolbarBtn>
+          <ToolbarBtn title="Align middle" onClick={() => props.onAlign?.("centerV")}><AlignVerticalJustifyCenter className="h-3.5 w-3.5" /></ToolbarBtn>
+          <ToolbarBtn title="Align bottom" onClick={() => props.onAlign?.("bottom")}><AlignVerticalJustifyEnd className="h-3.5 w-3.5" /></ToolbarBtn>
+          <ToolbarDivider />
+          <ToolbarBtn title={props.locked ? "Unlock all" : "Lock all"} onClick={props.onToggleLock}>
+            {props.locked ? <Unlock className="h-3.5 w-3.5" /> : <Lock className="h-3.5 w-3.5" />}
+          </ToolbarBtn>
+          <ToolbarDivider />
+          <ToolbarBtn title="Distribute horizontally" disabled={!props.canDistribute} onClick={() => props.onDistribute?.("horizontal")}><AlignHorizontalDistributeCenter className="h-3.5 w-3.5" /></ToolbarBtn>
+          <ToolbarBtn title="Distribute vertically" disabled={!props.canDistribute} onClick={() => props.onDistribute?.("vertical")}><AlignVerticalDistributeCenter className="h-3.5 w-3.5" /></ToolbarBtn>
+          <ToolbarDivider />
+          <ToolbarBtn title="Delete all" destructive onClick={props.onDelete}><Trash2 className="h-3.5 w-3.5" /></ToolbarBtn>
+        </>
+      )}
+    </div>
+  );
+}
+
 // Which Add Component accordion a given component type's settings live in.
 function toolForType(type: ComponentType): ComponentType {
   return type === "header" ? "text" : type;
@@ -630,6 +1563,14 @@ function componentTypeLabel(type: ComponentType): string {
     case "image": return "Image";
     case "carousel": return "Carousel";
     case "icon": return "Icon";
+    case "location-input": return "Location Input";
+    case "map": return "Map";
+    case "datetime-picker": return "Date & Time";
+    case "vehicle-selector": return "Vehicle Selector";
+    case "driver-badge": return "Driver Badge";
+    case "fare-display": return "Fare Display";
+    case "hero-carousel": return "Hero Carousel";
+    case "category-carousel": return "Category Carousel";
     default: return "Button";
   }
 }
@@ -641,18 +1582,73 @@ function layerIcon(comp: PageComponent) {
   if (comp.type === "image") return <ImageIcon className="h-3 w-3 text-muted-foreground shrink-0" />;
   if (comp.type === "carousel") return <GalleryHorizontal className="h-3 w-3 text-muted-foreground shrink-0" />;
   if (comp.type === "icon") return <Square className="h-3 w-3 text-muted-foreground shrink-0" />;
+  if (comp.type === "location-input") return <MapPin className="h-3 w-3 text-muted-foreground shrink-0" />;
+  if (comp.type === "map") return <MapIcon className="h-3 w-3 text-muted-foreground shrink-0" />;
+  if (comp.type === "datetime-picker") return <CalendarClock className="h-3 w-3 text-muted-foreground shrink-0" />;
+  if (comp.type === "vehicle-selector") return <CarFront className="h-3 w-3 text-muted-foreground shrink-0" />;
+  if (comp.type === "driver-badge") return <BadgeCheck className="h-3 w-3 text-muted-foreground shrink-0" />;
+  if (comp.type === "fare-display") return <Receipt className="h-3 w-3 text-muted-foreground shrink-0" />;
+  if (comp.type === "hero-carousel") return <GalleryHorizontalEnd className="h-3 w-3 text-muted-foreground shrink-0" />;
+  if (comp.type === "category-carousel") return <LayoutGrid className="h-3 w-3 text-muted-foreground shrink-0" />;
   return <ComponentIcon className="h-3 w-3 text-muted-foreground shrink-0" />;
 }
 
 function defaults(type: ComponentType, canvasW: number): Partial<PageComponent> {
   switch (type) {
-    case "header": return { width: Math.round(canvasW * 0.35), height: 70, content: "Heading", textStyle: "heading", fontSize: 56, fontFamily: "system-ui, -apple-system, sans-serif", fontWeight: 700, lineHeight: 1.15, letterSpacing: 0, fontColor: "#111111", bgColor: "transparent", italic: false, textAlign: "center", textEffect: "none", effectStrength: 30, opacity: 100, rotation: 0 };
-    case "text":   return { width: Math.round(canvasW * 0.28), height: 96, content: "Edit text", textStyle: "body", fontSize: 28, fontFamily: "system-ui, -apple-system, sans-serif", fontWeight: 400, lineHeight: 1.4, letterSpacing: 0, fontColor: "#111111", bgColor: "transparent", italic: false, textAlign: "left", textEffect: "none", effectStrength: 30, opacity: 100, rotation: 0 };
+    case "header": return { width: Math.round(canvasW * 0.35), height: 70, content: "Heading", textStyle: "heading", fontColor: "#111111", bgColor: "transparent", italic: false, textAlign: "center", textEffect: "none", effectStrength: 30, opacity: 100, rotation: 0, ...textTokenPatch("heading-xl", canvasW) };
+    case "text":   return { width: Math.round(canvasW * 0.28), height: 96, content: "Edit text", textStyle: "body", fontColor: "#111111", bgColor: "transparent", italic: false, textAlign: "left", textEffect: "none", effectStrength: 30, opacity: 100, rotation: 0, ...textTokenPatch("body-m", canvasW) };
     case "shape":  return { width: Math.round(canvasW * 0.12), height: 120, bgColor: "#3b82f6", borderRadius: 8, opacity: 100, shapeType: "rectangle", rotation: 0 };
     case "image":  return { width: Math.round(canvasW * 0.18), height: 180, bgColor: "#e5e7eb", borderRadius: 4, rotation: 0 };
     case "button": return { width: Math.round(canvasW * 0.1), height: 56, content: "Click me", fontSize: 16, fontFamily: "system-ui, -apple-system, sans-serif", fontWeight: 600, fontColor: "#ffffff", bgColor: "#3b82f6", borderRadius: 8, buttonStyle: "solid", borderColor: "#3b82f6", hoverBgColor: "#2563eb", hoverFontColor: "#ffffff", buttonAction: { type: "url", value: "" }, rotation: 0 };
     case "carousel": return { width: Math.round(canvasW * 0.6), height: 220, bgColor: "transparent", borderRadius: 12, opacity: 100, rotation: 0, carouselItems: [], carouselItemWidth: 160, carouselZoom: 1.25 };
     case "icon": return { width: 64, height: 64, fontColor: "#111111", fontSize: 32, opacity: 100, rotation: 0, iconName: "cart" };
+    case "location-input": return { width: Math.round(canvasW * 0.3), height: 52, bgColor: "#ffffff", borderColor: "#e5e7eb", fontColor: "#111111", borderRadius: 8, locationPlaceholder: "Enter pickup location", locationLabel: "Pickup", rotation: 0 };
+    case "map": return { width: Math.round(canvasW * 0.5), height: 320, borderRadius: 12, mapCenterLat: 12.9716, mapCenterLng: 77.5946, mapZoom: 13, mapMarkers: [], mapServiceRadiusKm: 5, rotation: 0 };
+    case "datetime-picker": return { width: Math.round(canvasW * 0.3), height: 100, bgColor: "#ffffff", borderColor: "#e5e7eb", fontColor: "#111111", borderRadius: 8, dtDefaultOption: "today", dtTime: "09:00", rotation: 0 };
+    case "vehicle-selector": return { width: Math.round(canvasW * 0.4), height: 120, bgColor: "transparent", borderRadius: 12, vehicleOptions: [
+        { id: uid(), label: "Economy", iconId: "car", fareText: "₹99" },
+        { id: uid(), label: "Premium", iconId: "car-side", fareText: "₹149" },
+        { id: uid(), label: "SUV", iconId: "van-shuttle", fareText: "₹249" },
+      ], rotation: 0 };
+    case "driver-badge": return { width: Math.round(canvasW * 0.22), height: 90, bgColor: "#ffffff", borderRadius: 12, fontColor: "#111111", driverName: "Rajesh Kumar", driverRating: 4.8, driverVehicle: "Swift Dzire · KA-01-AB-1234", rotation: 0 };
+    case "fare-display": return { width: Math.round(canvasW * 0.2), height: 140, bgColor: "#ffffff", borderRadius: 12, fontColor: "#111111", fareCurrency: "₹", fareBase: 50, fareDistanceKm: 5, fareRatePerKm: 12, fareSurgeMultiplier: 1, rotation: 0 };
+    case "hero-carousel": return {
+      // Narrow (mobile) canvases stack image-over-text, which needs proportionally
+      // more height than the side-by-side desktop layout to avoid feeling cramped.
+      width: canvasW, height: canvasW <= 500 ? Math.round(canvasW * 1.2) : Math.round(canvasW * 0.42), bgColor: "#111827", borderRadius: 0, opacity: 100, rotation: 0,
+      heroSlides: [
+        { id: uid(), headline: "Big Summer Sale", subtext: "Up to 50% off selected items, this week only.", buttonLabel: "Shop Now", buttonLink: "/products" },
+        { id: uid(), headline: "New Arrivals", subtext: "Check out the latest additions to the collection.", buttonLabel: "Explore", buttonLink: "/products" },
+        { id: uid(), headline: "Free Shipping", subtext: "On all orders over ₹999, for a limited time.", buttonLabel: "Learn More", buttonLink: "/products" },
+      ],
+      heroAutoplay: true, heroAutoplaySeconds: 5, heroShowArrows: true, heroShowDots: true, heroPeekPercent: 6,
+      heroHeadlineColor: "#ffffff", heroSubtextColor: "#f3f4f6", heroOverlayOpacity: 35,
+      heroCtaBgColor: "#ffffff", heroCtaFontColor: "#111111",
+    };
+    case "category-carousel": return {
+      width: Math.round(canvasW * 0.9), height: 380, bgColor: "transparent", borderRadius: 0, opacity: 100, rotation: 0,
+      catCarouselTitle: "Shop by Category", catCarouselSubtitle: "Find what you're looking for",
+      catCarouselItems: [
+        { id: uid(), name: "Electronics", link: "/category/electronics" },
+        { id: uid(), name: "Fashion", link: "/category/fashion" },
+        { id: uid(), name: "Home & Living", link: "/category/home-living" },
+        { id: uid(), name: "Beauty", link: "/category/beauty" },
+        { id: uid(), name: "Sports", link: "/category/sports" },
+      ],
+      catCarouselCardStyle: "image-first", catCarouselAspectRatio: "1:1", catCarouselCornerRadius: 12,
+      catCarouselShowDescriptor: false, catCarouselShowBadge: false,
+      catCarouselSnapMode: "single", catCarouselDesktopCards: 4,
+      catCarouselGapDesktop: 16, catCarouselGapMobile: 12,
+      catCarouselTitleColor: "#111111", catCarouselSubtitleColor: "#6b7280",
+    };
+    // header-block/footer-block are never created through this generic
+    // addComponent(type) factory — they're created via the "+ Add Header"/
+    // "+ Add Footer" buttons, which build the block directly (see
+    // hasHeaderBlock/hasFooterBlock and buildTemplateZone). This case only
+    // exists to keep the switch exhaustive.
+    case "header-block":
+    case "footer-block":
+      return { width: canvasW, height: 60, rotation: 0 };
   }
 }
 
@@ -802,6 +1798,116 @@ function buildMarketWidget(id: MarketWidgetId, center: { x: number; y: number },
   ];
 }
 
+// Applies a complete typography token to a component — the one function
+// behind both the Text component's "Style" dropdown (general, stays editable
+// afterward) and the Text Templates / Canva-groups feature (which additionally
+// passes `lockedTypography: true` via `extra` to keep its pieces locked).
+function textTokenPatch(token: TextToken, canvasW: number, extra: Partial<PageComponent> = {}): Partial<PageComponent> {
+  const spec = TEXT_TOKENS[token];
+  return {
+    fontFamily: spec.fontFamily,
+    fontSize: tokenFontSize(token, canvasW),
+    fontWeight: spec.fontWeight,
+    bold: spec.fontWeight >= 700,
+    lineHeight: spec.lineHeight,
+    letterSpacing: spec.letterSpacing,
+    textTransform: spec.textTransform,
+    textToken: token,
+    ...extra,
+  };
+}
+
+// Text Templates: Canva-style pre-designed text groups. Each template inserts
+// 2-3 "text" components sharing one groupId (the same grouping mechanism
+// buildMarketWidget already uses), with lockedTypography set on every piece
+// so the properties panel keeps typography fixed — only content, color, and
+// alignment stay editable.
+
+const TEXT_TEMPLATES = [
+  { id: "hero-title", label: "Hero Title Block", hint: "heading-xl + subtitle" },
+  { id: "section-header", label: "Section Header", hint: "heading-m + description" },
+  { id: "card-title-desc", label: "Card Title + Description", hint: "heading-s + body-s" },
+  { id: "testimonial", label: "Testimonial", hint: "Quote + author + role" },
+  { id: "pricing-block", label: "Pricing Block", hint: "Title + price + features" },
+] as const;
+type TextTemplateId = (typeof TEXT_TEMPLATES)[number]["id"];
+
+function buildTextTemplate(id: TextTemplateId, center: { x: number; y: number }, canvasW: number): PageComponent[] {
+  const gid = uid();
+  const gname = TEXT_TEMPLATES.find((t) => t.id === id)?.label ?? "Text Template";
+  const lineH = (token: TextToken, lines = 1) => Math.round(tokenFontSize(token, canvasW) * TEXT_TOKENS[token].lineHeight * lines);
+
+  if (id === "hero-title") {
+    const width = Math.max(220, Math.round(canvasW * 0.6));
+    const titleH = lineH("heading-xl") + 12;
+    const subH = lineH("body-l") + 8;
+    const gap = 8;
+    const x = center.x - width / 2;
+    const y = center.y - (titleH + gap + subH) / 2;
+    return [
+      makeWidgetText(gid, x, y, width, titleH, "Add a bold headline", textTokenPatch("heading-xl", canvasW, { groupName: gname, lockedTypography: true, bgColor: "transparent", textAlign: "center", fontColor: "#0f172a" })),
+      makeWidgetText(gid, x, y + titleH + gap, width, subH, "Add a supporting subtitle to set the tone", textTokenPatch("body-l", canvasW, { groupName: gname, lockedTypography: true, bgColor: "transparent", textAlign: "center", fontColor: "#475569" })),
+    ];
+  }
+
+  if (id === "section-header") {
+    const width = Math.max(200, Math.round(canvasW * 0.45));
+    const titleH = lineH("heading-m") + 10;
+    const descH = lineH("body-m") + 8;
+    const gap = 6;
+    const x = center.x - width / 2;
+    const y = center.y - (titleH + gap + descH) / 2;
+    return [
+      makeWidgetText(gid, x, y, width, titleH, "Section title", textTokenPatch("heading-m", canvasW, { groupName: gname, lockedTypography: true, bgColor: "transparent", textAlign: "left", fontColor: "#0f172a" })),
+      makeWidgetText(gid, x, y + titleH + gap, width, descH, "A short description that explains this section.", textTokenPatch("body-m", canvasW, { groupName: gname, lockedTypography: true, bgColor: "transparent", textAlign: "left", fontColor: "#475569" })),
+    ];
+  }
+
+  if (id === "card-title-desc") {
+    const width = Math.max(160, Math.round(canvasW * 0.26));
+    const titleH = lineH("heading-s") + 8;
+    const descH = lineH("body-s", 2) + 8;
+    const gap = 4;
+    const x = center.x - width / 2;
+    const y = center.y - (titleH + gap + descH) / 2;
+    return [
+      makeWidgetText(gid, x, y, width, titleH, "Card title", textTokenPatch("heading-s", canvasW, { groupName: gname, lockedTypography: true, bgColor: "transparent", textAlign: "left", fontColor: "#0f172a" })),
+      makeWidgetText(gid, x, y + titleH + gap, width, descH, "A brief description of this card's content goes here.", textTokenPatch("body-s", canvasW, { groupName: gname, lockedTypography: true, bgColor: "transparent", textAlign: "left", fontColor: "#64748b" })),
+    ];
+  }
+
+  if (id === "testimonial") {
+    const width = Math.max(220, Math.round(canvasW * 0.42));
+    const quoteH = lineH("body-l", 3) + 8;
+    const authorH = lineH("body-s") + 6;
+    const roleH = lineH("caption") + 4;
+    const gap = 4;
+    const totalH = quoteH + gap + authorH + roleH;
+    const x = center.x - width / 2;
+    const y = center.y - totalH / 2;
+    return [
+      makeWidgetText(gid, x, y, width, quoteH, "This product completely changed how we work — simple, fast, and reliable.", textTokenPatch("body-l", canvasW, { groupName: gname, lockedTypography: true, bgColor: "transparent", textAlign: "center", fontColor: "#1f2937", italic: true })),
+      makeWidgetText(gid, x, y + quoteH + gap, width, authorH, "Jordan Lee", textTokenPatch("body-s", canvasW, { groupName: gname, lockedTypography: true, bgColor: "transparent", textAlign: "center", fontColor: "#0f172a", fontWeight: 700 })),
+      makeWidgetText(gid, x, y + quoteH + gap + authorH, width, roleH, "Head of Operations, Acme Co.", textTokenPatch("caption", canvasW, { groupName: gname, lockedTypography: true, bgColor: "transparent", textAlign: "center", fontColor: "#94a3b8" })),
+    ];
+  }
+
+  // pricing-block
+  const width = Math.max(180, Math.round(canvasW * 0.3));
+  const titleH = lineH("heading-m") + 6;
+  const priceH = lineH("heading-l") + 8;
+  const featuresH = lineH("body-m", 3) + 10;
+  const gap = 6;
+  const totalH = titleH + priceH + featuresH + gap * 2;
+  const x = center.x - width / 2;
+  const y = center.y - totalH / 2;
+  return [
+    makeWidgetText(gid, x, y, width, titleH, "Pro Plan", textTokenPatch("heading-m", canvasW, { groupName: gname, lockedTypography: true, bgColor: "transparent", textAlign: "center", fontColor: "#0f172a" })),
+    makeWidgetText(gid, x, y + titleH + gap, width, priceH, "$29/mo", textTokenPatch("heading-l", canvasW, { groupName: gname, lockedTypography: true, bgColor: "transparent", textAlign: "center", fontColor: "#111827" })),
+    makeWidgetText(gid, x, y + titleH + gap + priceH + gap, width, featuresH, "• All core features\n• Priority support\n• Unlimited projects", textTokenPatch("body-m", canvasW, { groupName: gname, lockedTypography: true, bgColor: "transparent", textAlign: "left", fontColor: "#334155" })),
+  ];
+}
+
 function resolveButtonStyles(comp: PageComponent, hovered: boolean) {
   const isSolid = !comp.buttonStyle || comp.buttonStyle === "solid";
   const isOutline = comp.buttonStyle === "outline";
@@ -852,12 +1958,6 @@ function textEffectStyle(comp: PageComponent): React.CSSProperties {
   return {};
 }
 
-function textStylePatch(style: TextStyle): Partial<PageComponent> {
-  if (style === "heading") return { textStyle: style, fontSize: 64, fontWeight: 800, lineHeight: 1.1 };
-  if (style === "subheading") return { textStyle: style, fontSize: 36, fontWeight: 600, lineHeight: 1.25 };
-  return { textStyle: style, fontSize: 20, fontWeight: 400, lineHeight: 1.45 };
-}
-
 // ── Color picker with hex input ───────────────────────────────────────────────
 
 function ColorPicker({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
@@ -883,7 +1983,7 @@ function ColorPicker({ label, value, onChange }: { label: string; value: string;
 
 // ── Font picker with real per-font preview (native <select> can't render this reliably) ──
 
-function FontSelect({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+function FontSelect({ value, onChange, options = FONT_FAMILIES }: { value: string; onChange: (v: string) => void; options?: typeof FONT_FAMILIES }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -895,7 +1995,7 @@ function FontSelect({ value, onChange }: { value: string; onChange: (v: string) 
     return () => document.removeEventListener("mousedown", onDocDown);
   }, []);
 
-  const current = FONT_FAMILIES.find((f) => f.value === value) ?? FONT_FAMILIES[0];
+  const current = options.find((f) => f.value === value) ?? options[0];
 
   return (
     <div ref={ref} className="relative">
@@ -910,7 +2010,7 @@ function FontSelect({ value, onChange }: { value: string; onChange: (v: string) 
       </button>
       {open && (
         <div className="absolute z-40 mt-1 left-0 right-0 max-h-52 overflow-y-auto rounded-md border bg-white shadow-lg">
-          {FONT_FAMILIES.map((f) => (
+          {options.map((f) => (
             <button
               key={f.value}
               type="button"
@@ -927,9 +2027,120 @@ function FontSelect({ value, onChange }: { value: string; onChange: (v: string) 
   );
 }
 
+// ── Image picker: assets-first upload flow ─────────────────────────────────────
+// Every image entry point in the editor (Image component, slideshow photos,
+// carousel/hero slides, driver photo, etc.) goes through this one component so
+// the workflow is identical everywhere: pick an existing asset, or upload a new
+// one — which uploads straight to the asset library first and then drops you
+// into the asset grid to explicitly select it, rather than silently attaching
+// the just-uploaded file. A real upload progress bar (not just "Uploading…"
+// text) is shown while the request is in flight.
+interface AssetItem { key: string; url: string; name: string | null; size: number; lastModified: string | null }
+
+function ImagePickerButton({
+  label, uploading, uploadProgress, assetItems, assetsLoading, loadAssets,
+  onUpload, onSelect, buttonClassName, icon: Icon, children,
+}: {
+  label: string;
+  uploading: boolean;
+  uploadProgress: number;
+  assetItems: AssetItem[] | null;
+  assetsLoading: boolean;
+  loadAssets: () => void;
+  onUpload: (file: File) => Promise<string | null>;
+  onSelect: (url: string) => void;
+  buttonClassName?: string;
+  icon?: React.ComponentType<{ className?: string }>;
+  // Overrides the default icon+label trigger content — used by compact
+  // thumbnail-style triggers (carousel/hero slide items) that show the
+  // current image itself rather than a text button.
+  children?: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  const [view, setView] = useState<"choose" | "assets">("choose");
+  const ref = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    function onDocDown(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", onDocDown);
+    return () => document.removeEventListener("mousedown", onDocDown);
+  }, []);
+
+  async function handleFile(file: File) {
+    await onUpload(file);
+    // After upload, show the asset grid (now including the new file, prepended
+    // by the caller) so the user explicitly picks it — never auto-applied.
+    setView("assets");
+    loadAssets();
+  }
+
+  return (
+    <div ref={ref} className="relative">
+      <button type="button" onClick={() => { setOpen((o) => !o); setView("choose"); }}
+        className={buttonClassName ?? "flex items-center gap-1.5 cursor-pointer px-2 py-1 rounded border text-xs hover:bg-muted w-full"}>
+        {children ?? (
+          <>
+            {Icon && <Icon className="h-3 w-3" />}
+            {uploading ? `Uploading… ${uploadProgress}%` : label}
+          </>
+        )}
+      </button>
+      {open && (
+        <div className="absolute z-50 mt-1 left-0 right-0 min-w-[220px] rounded-md border bg-white shadow-lg p-2 flex flex-col gap-2">
+          {uploading ? (
+            <div className="flex flex-col gap-1.5 p-1.5">
+              <p className="text-[11px] text-muted-foreground">Uploading to assets…</p>
+              <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
+                <div className="h-full bg-blue-500 transition-all" style={{ width: `${uploadProgress}%` }} />
+              </div>
+            </div>
+          ) : view === "choose" ? (
+            <>
+              <button type="button" onClick={() => { setView("assets"); loadAssets(); }}
+                className="flex items-center gap-1.5 text-xs px-2 py-1.5 rounded hover:bg-muted text-left">
+                <ImageIcon className="h-3 w-3" /> Select from Asset
+              </button>
+              <button type="button" onClick={() => fileInputRef.current?.click()}
+                className="flex items-center gap-1.5 text-xs px-2 py-1.5 rounded hover:bg-muted text-left">
+                <Plus className="h-3 w-3" /> Upload New Image
+              </button>
+            </>
+          ) : (
+            <>
+              <div className="flex items-center justify-between px-0.5">
+                <button type="button" onClick={() => setView("choose")} className="text-[10px] text-muted-foreground hover:text-foreground">&larr; Back</button>
+                <button type="button" onClick={() => fileInputRef.current?.click()} className="text-[10px] text-blue-600 hover:underline">Upload new</button>
+              </div>
+              {assetsLoading ? (
+                <p className="text-[11px] text-muted-foreground text-center py-3">Loading…</p>
+              ) : (assetItems ?? []).length === 0 ? (
+                <p className="text-[11px] text-muted-foreground text-center py-3">No assets yet</p>
+              ) : (
+                <div className="grid grid-cols-3 gap-1 max-h-56 overflow-y-auto">
+                  {(assetItems ?? []).map((a) => (
+                    <button key={a.key} type="button" onClick={() => { onSelect(a.url); setOpen(false); }}
+                      className="aspect-square rounded border overflow-hidden hover:ring-2 hover:ring-blue-400" title={a.url}>
+                      <img src={a.url} alt="" className="w-full h-full object-cover" />
+                    </button>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+          <input ref={fileInputRef} type="file" accept="image/*" className="hidden"
+            onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = ""; }} />
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Preview canvas ─────────────────────────────────────────────────────────────
 
-function PreviewCanvas({ components, canvasW, canvasH }: { components: PageComponent[]; canvasW: number; canvasH: number }) {
+export function PreviewCanvas({ components, canvasW, canvasH }: { components: PageComponent[]; canvasW: number; canvasH: number }) {
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const ref = useRef<HTMLDivElement>(null);
   const pct = (v: number, total: number) => `${(v / total) * 100}%`;
@@ -942,16 +2153,19 @@ function PreviewCanvas({ components, canvasW, canvasH }: { components: PageCompo
         const isShape = comp.type === "shape";
         const isCarousel = comp.type === "carousel";
         const isIcon = comp.type === "icon";
+        const isTaxi = comp.type === "location-input" || comp.type === "map" || comp.type === "datetime-picker" || comp.type === "vehicle-selector" || comp.type === "driver-badge" || comp.type === "fare-display";
+        const isHero = comp.type === "hero-carousel";
+        const isCatCarousel = comp.type === "category-carousel";
         const btn = isBtn ? resolveButtonStyles(comp, isHovered) : null;
         return (
           <div key={comp.id} className="absolute"
-            style={{ left: pct(comp.x, canvasW), top: pct(comp.y, canvasH), width: pct(comp.width, canvasW), height: pct(comp.height, canvasH), borderRadius: isBtn || isShape || isCarousel || isIcon ? 0 : (comp.borderRadius ?? 0), backgroundColor: isBtn || isShape || isCarousel || isIcon ? "transparent" : (comp.bgColor === "transparent" ? "transparent" : (comp.bgColor ?? "transparent")), transform: `rotate(${comp.rotation ?? 0}deg)`, transformOrigin: "center" }}
+            style={{ left: pct(comp.x, canvasW), top: pct(comp.y, canvasH), width: pct(comp.width, canvasW), height: pct(comp.height, canvasH), borderRadius: isBtn || isShape || isCarousel || isIcon || isTaxi || isHero || isCatCarousel ? 0 : (comp.borderRadius ?? 0), backgroundColor: isBtn || isShape || isCarousel || isIcon || isTaxi || isHero || isCatCarousel ? "transparent" : (comp.bgColor === "transparent" ? "transparent" : (comp.bgColor ?? "transparent")), transform: `rotate(${comp.rotation ?? 0}deg)`, transformOrigin: "center", boxShadow: buildBoxShadow(comp), filter: buildBlurFilter(comp) }}
             onMouseEnter={() => isBtn && setHoveredId(comp.id)} onMouseLeave={() => isBtn && setHoveredId(null)}
           >
             {(comp.type === "text" || comp.type === "header") && (
               <div className="w-full h-full flex items-center overflow-hidden px-1"
-                style={{ fontSize: `calc(${comp.fontSize ?? 16}px * (${ref.current?.clientWidth ?? canvasW} / ${canvasW}))`, fontFamily: comp.fontFamily ?? "system-ui, -apple-system, sans-serif", fontWeight: comp.fontWeight ?? (comp.bold ? 700 : 400), fontStyle: comp.italic ? "italic" : "normal", lineHeight: comp.lineHeight ?? 1.4, letterSpacing: `${comp.letterSpacing ?? 0}px`, color: comp.fontColor ?? "#111", opacity: (comp.opacity ?? 100) / 100, textAlign: comp.textAlign ?? "left", justifyContent: comp.textAlign === "center" ? "center" : comp.textAlign === "right" ? "flex-end" : "flex-start" }}>
-                <span style={{ whiteSpace: "pre-wrap", wordBreak: "break-word", ...textEffectStyle(comp) }}>{comp.content}</span>
+                style={{ fontSize: `calc(${comp.fontSize ?? 16}px * (${ref.current?.clientWidth ?? canvasW} / ${canvasW}))`, fontFamily: comp.fontFamily ?? "system-ui, -apple-system, sans-serif", fontWeight: comp.fontWeight ?? (comp.bold ? 700 : 400), fontStyle: comp.italic ? "italic" : "normal", lineHeight: comp.lineHeight ?? 1.4, letterSpacing: `${comp.letterSpacing ?? 0}px`, color: comp.fontColor ?? "#111", opacity: (comp.opacity ?? 100) / 100, textAlign: comp.textAlign ?? "left", textTransform: comp.textTransform ?? "none", textDecoration: textDecorationLine(comp), justifyContent: comp.textAlign === "center" ? "center" : comp.textAlign === "right" ? "flex-end" : "flex-start" }}>
+                {renderTextBody(comp)}
               </div>
             )}
             {isShape && (
@@ -963,6 +2177,14 @@ function PreviewCanvas({ components, canvasW, canvasH }: { components: PageCompo
               </div>
             )}
             {isIcon && <IconGlyph comp={comp} />}
+            {comp.type === "location-input" && <LocationInputBody comp={comp} />}
+            {comp.type === "map" && <MapBody comp={comp} />}
+            {comp.type === "datetime-picker" && <DateTimePickerBody comp={comp} />}
+            {comp.type === "vehicle-selector" && <VehicleSelectorBody comp={comp} />}
+            {comp.type === "driver-badge" && <DriverBadgeBody comp={comp} />}
+            {comp.type === "fare-display" && <FareDisplayBody comp={comp} />}
+            {isHero && <HeroCarouselBody comp={comp} />}
+            {isCatCarousel && <CategoryCarouselBody comp={comp} canvasW={canvasW} />}
             {comp.type === "image" && <ImageBody comp={comp} placeholderClass="text-gray-300" />}
             {isBtn && btn && (
               <div className="w-full h-full flex items-center justify-center overflow-hidden cursor-pointer transition-colors duration-150"
@@ -981,18 +2203,159 @@ function PreviewCanvas({ components, canvasW, canvasH }: { components: PageCompo
 
 interface PageEditorProps { slug: string; label?: string }
 
+const VIEW_STORAGE_KEY = "iiinbox-editor-view";
+
 export function PageEditor({ slug, label }: PageEditorProps) {
   const router = useRouter();
+  // Persisted across refreshes (localStorage) so switching to Mobile and
+  // reloading — e.g. mid-edit — doesn't silently bounce back to Desktop.
+  // Always starts at "desktop" and restores from localStorage in an effect
+  // (not a lazy useState initializer) — this component is server-rendered
+  // before hydration, where `window`/localStorage don't exist yet, so reading
+  // it during initial render would make the client's first render disagree
+  // with the server's HTML and trigger a hydration mismatch.
   const [view, setView] = useState<ViewMode>("desktop");
-  const [desktopComponents, setDesktopComponents] = useState<PageComponent[]>([]);
-  const [mobileComponents, setMobileComponents] = useState<PageComponent[]>([]);
-  const [desktopHeight, setDesktopHeight] = useState(DEFAULT_DESKTOP_H);
-  const [mobileHeight, setMobileHeight] = useState(DEFAULT_MOBILE_H);
+  useEffect(() => {
+    const stored = window.localStorage.getItem(VIEW_STORAGE_KEY);
+    if (stored === "mobile") setView("mobile");
+  }, []);
+  useEffect(() => {
+    window.localStorage.setItem(VIEW_STORAGE_KEY, view);
+  }, [view]);
+  const [templateDesktopComponents, setTemplateDesktopComponents] = useState<PageComponent[]>([]);
+  const [templateMobileComponents, setTemplateMobileComponents] = useState<PageComponent[]>([]);
+  const [templateDesktopHeight, setTemplateDesktopHeight] = useState(DEFAULT_DESKTOP_H);
+  const [templateMobileHeight, setTemplateMobileHeight] = useState(DEFAULT_MOBILE_H);
+  // Header/Footer are page-independent — each page's own config embeds its own
+  // header/template/footer (see the single combined PUT in save() below); editing
+  // Header on one page never touches another page's Header. Same free-form canvas
+  // mechanics as Template either way. `activeZone` selects which zone's arrays the
+  // rest of this component (canvas, mutators, undo/redo) currently operates on.
+  const [activeZone, setActiveZone] = useState<Zone>("template");
+  const [headerDesktopComponents, setHeaderDesktopComponents] = useState<PageComponent[]>([]);
+  const [headerMobileComponents, setHeaderMobileComponents] = useState<PageComponent[]>([]);
+  const [headerDesktopHeight, setHeaderDesktopHeight] = useState(DEFAULT_HEADER_DESKTOP_H);
+  const [headerMobileHeight, setHeaderMobileHeight] = useState(DEFAULT_HEADER_MOBILE_H);
+  // Header/Footer are now optional "blocks" living inside the template's own
+  // component array (see lib/page-template-zones.ts) rather than
+  // always-present separate zones — hasHeaderBlock/hasFooterBlock track
+  // whether one currently exists on this page at all ("+ Add Header"/"+ Add
+  // Footer" flip these on; nothing forces every page to have either).
+  // Sticky positioning is implicit whenever a header/footer block exists;
+  // hideOnScrollUpPx/hideOnScrollDownPx (both nullable = never hides) replace
+  // the old single sticky+hideAfterPx pair with two independent thresholds.
+  const [hasHeaderBlock, setHasHeaderBlock] = useState(false);
+  // Stable per-viewport component ids for the header/footer block itself
+  // (not its children) — captured on load, reused on save so re-saving
+  // doesn't spuriously regenerate the block's own id every time. Plain refs
+  // since they're bookkeeping, not something the UI ever displays.
+  const headerBlockIdRef = useRef<{ desktop: string | null; mobile: string | null }>({ desktop: null, mobile: null });
+  const footerBlockIdRef = useRef<{ desktop: string | null; mobile: string | null }>({ desktop: null, mobile: null });
+  const [headerRotation, setHeaderRotation] = useState<0 | 90 | 180 | 270>(0);
+  const [headerHideOnScrollUpPx, setHeaderHideOnScrollUpPx] = useState<number | null>(null);
+  const [headerHideOnScrollDownPx, setHeaderHideOnScrollDownPx] = useState<number | null>(1400);
+  const [hasFooterBlock, setHasFooterBlock] = useState(false);
+  const [footerRotation, setFooterRotation] = useState<0 | 90 | 180 | 270>(0);
+  const [footerHideOnScrollUpPx, setFooterHideOnScrollUpPx] = useState<number | null>(null);
+  const [footerHideOnScrollDownPx, setFooterHideOnScrollDownPx] = useState<number | null>(null);
+  const [footerSettingsOpen, setFooterSettingsOpen] = useState(false);
+  const [headerHideUpPxDraft, setHeaderHideUpPxDraft] = useState<string | null>(null);
+  const [footerHideDownPxDraft, setFooterHideDownPxDraft] = useState<string | null>(null);
+  const [footerHideUpPxDraft, setFooterHideUpPxDraft] = useState<string | null>(null);
+  // Canvas Background — page-level (not per-zone), stored alongside name/header/
+  // template/footer in the same config row, so it's naturally per-page and
+  // round-trips through the existing save/load path with no schema change.
+  const [canvasBgColor, setCanvasBgColor] = useState("#ffffff");
+  // Logo & Favicon — genuinely global (not per-page, unlike everything else
+  // in this component): one row in the new SiteSettings table, shared across
+  // every page's header. Fetched once on mount, independent of `slug`.
+  const [siteSettings, setSiteSettings] = useState<{
+    logoUrl: string | null; logoWidth: number; logoAlign: "left" | "center" | "right"; logoLink: string;
+    faviconUrl: string | null; faviconContentType: string;
+  }>({ logoUrl: null, logoWidth: 120, logoAlign: "left", logoLink: "/", faviconUrl: null, faviconContentType: "image/png" });
+  const [logoUploading, setLogoUploading] = useState(false);
+  const [faviconUploading, setFaviconUploading] = useState(false);
+  useEffect(() => {
+    fetch("/api/settings")
+      .then((r) => r.json())
+      .then((d) => {
+        if (!d || typeof d !== "object") return;
+        setSiteSettings({
+          logoUrl: d.logoUrl ?? null,
+          logoWidth: typeof d.logoWidth === "number" ? d.logoWidth : 120,
+          logoAlign: d.logoAlign === "center" || d.logoAlign === "right" ? d.logoAlign : "left",
+          logoLink: typeof d.logoLink === "string" ? d.logoLink : "/",
+          faviconUrl: d.faviconUrl ?? null,
+          faviconContentType: typeof d.faviconContentType === "string" ? d.faviconContentType : "image/png",
+        });
+      })
+      .catch(() => {});
+  }, []);
+  // Deliberate vs. inferred edits are both immediate PUTs, unlike per-component
+  // canvas edits — these are rare, deliberate actions (upload/toggle), not
+  // continuous drags, so the existing 4s autosave debounce isn't needed here.
+  function updateSiteSettings(patch: Partial<typeof siteSettings>) {
+    const next = { ...siteSettings, ...patch };
+    setSiteSettings(next);
+    fetch("/api/settings", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(next),
+    }).catch(() => {});
+  }
+  function uploadSettingsImage(file: File, onProgress: (pct: number) => void): Promise<{ url: string; contentType: string } | null> {
+    // No compression here (unlike uploadImageWithProgress above) — logo/
+    // favicon files are typically small brand assets already, and
+    // compressImageForUpload's JPEG re-encode would strip transparency,
+    // which matters a lot more for a logo/favicon than a content photo.
+    return new Promise((resolve) => {
+      const fd = new FormData(); fd.append("file", file);
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", "/api/settings/upload");
+      xhr.upload.onprogress = (e) => { if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100)); };
+      xhr.onload = () => {
+        if (xhr.status < 200 || xhr.status >= 300) { resolve(null); return; }
+        try {
+          const data = JSON.parse(xhr.responseText);
+          resolve(data.url ? { url: data.url, contentType: data.contentType ?? file.type } : null);
+        } catch { resolve(null); }
+      };
+      xhr.onerror = () => resolve(null);
+      xhr.send(fd);
+    });
+  }
+  async function handleLogoUpload(file: File) {
+    setLogoUploading(true);
+    try {
+      const result = await uploadSettingsImage(file, () => {});
+      if (result) updateSiteSettings({ logoUrl: result.url });
+    } finally { setLogoUploading(false); }
+  }
+  async function handleFaviconUpload(file: File) {
+    setFaviconUploading(true);
+    try {
+      const result = await uploadSettingsImage(file, () => {});
+      if (result) updateSiteSettings({ faviconUrl: result.url, faviconContentType: result.contentType });
+    } finally { setFaviconUploading(false); }
+  }
+  const [headerSettingsOpen, setHeaderSettingsOpen] = useState(false);
+  // Bug fix: these number inputs used to call their real setter on every
+  // keystroke with a `+value || fallback` pattern — the instant the field was
+  // cleared to type a new value, `+"" || fallback` snapped the height/threshold
+  // to the fallback and the canvas visibly "unsized" mid-edit. Both now buffer
+  // the raw text locally and only commit (with proper clamping) on blur/Enter.
+  const [zoneHeightDrafts, setZoneHeightDrafts] = useState<Partial<Record<Zone, string>>>({});
+  const [headerHideDownPxDraft, setHeaderHideDownPxDraft] = useState<string | null>(null);
+  const [footerDesktopComponents, setFooterDesktopComponents] = useState<PageComponent[]>([]);
+  const [footerMobileComponents, setFooterMobileComponents] = useState<PageComponent[]>([]);
+  const [footerDesktopHeight, setFooterDesktopHeight] = useState(DEFAULT_FOOTER_DESKTOP_H);
+  const [footerMobileHeight, setFooterMobileHeight] = useState(DEFAULT_FOOTER_MOBILE_H);
   const [pageLabel, setPageLabel] = useState(label ?? "");
   const [editingName, setEditingName] = useState(false);
   const [nameInput, setNameInput] = useState(label ?? "");
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [loggingOut, setLoggingOut] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [marquee, setMarquee] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
@@ -1006,12 +2369,15 @@ export function PageEditor({ slug, label }: PageEditorProps) {
   const savingRef = useRef(false);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
-  const [showPreview, setShowPreview] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  // Preview is now folder-level only (see openFolderPreview/previewFolder
+  // above) — no more in-editor "preview the page I'm currently on" toggle.
   const [showGuides, setShowGuides] = useState(false);
   const [showGrid, setShowGrid] = useState(false);
   const [gridSize, setGridSize] = useState(50);
   const [openTool, setOpenTool] = useState<ComponentType | null>(null);
   const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [alignmentGuides, setAlignmentGuides] = useState<AlignmentGuideLine[]>([]);
   const [dragLayerId, setDragLayerId] = useState<string | null>(null);
   const [dragOverLayerId, setDragOverLayerId] = useState<string | null>(null);
   const [layersOpen, setLayersOpen] = useState(false);
@@ -1019,12 +2385,199 @@ export function PageEditor({ slug, label }: PageEditorProps) {
   const [categoryOptions, setCategoryOptions] = useState<CategoryOption[] | null>(null);
   const [loadingCategories, setLoadingCategories] = useState(false);
   const [showCategoryPicker, setShowCategoryPicker] = useState(false);
+  // ── Design-tool redesign: additive UI state (inert until wired into JSX) ──
+  const [zoom, setZoom] = useState(100);
+  const [activeLeftTab, setActiveLeftTab] = useState<"project" | "assets" | "history">("project");
+  const [leftSidebarCollapsed, setLeftSidebarCollapsed] = useState(false);
+  const [rightSidebarCollapsed, setRightSidebarCollapsed] = useState(false);
+  const [openPropertySections, setOpenPropertySections] = useState<Record<PropertySection, boolean>>({
+    layout: true, appearance: true, typography: true, responsive: true, effects: true, advanced: false,
+  });
+  const pagesList = usePagesList();
+  const projectsTree = useProjectsTree();
+  // pagesList.createPage assigns folderId (when set) via a direct fetch
+  // inside usePagesList itself — that hook has no knowledge of projectsTree,
+  // so its own tree state would otherwise miss the newly-created page until
+  // an unrelated action happened to refetch it. Wrap it here instead.
+  async function createPageAndSync(opts: Parameters<typeof pagesList.createPage>[0], onDone?: () => void) {
+    await pagesList.createPage(opts, onDone);
+    await projectsTree.fetchProjects();
+  }
+  // Folder-level Preview overlay — fetches the target folder's root page draft
+  // fresh (GET /api/pages/:slug, same uncached route the editor itself loads
+  // from) rather than reusing PageEditor's own live state, since Preview can
+  // now be opened for any folder's root page, not just the one being edited.
+  const [previewFolder, setPreviewFolder] = useState<ProjectFolder | null>(null);
+  const [previewPageData, setPreviewPageData] = useState<PreviewPageData | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  async function openFolderPreview(folder: ProjectFolder) {
+    const rootSlug = folder.rootPage?.page;
+    if (!rootSlug) return;
+    setPreviewFolder(folder);
+    setPreviewPageData(null);
+    setPreviewLoading(true);
+    try {
+      const res = await fetch(`/api/pages/${encodeURIComponent(rootSlug)}`, { cache: "no-store" });
+      const d = await res.json();
+      const desktopZones = extractZonesFromTemplate(d?.template?.desktop, DEFAULT_DESKTOP_H);
+      const mobileZones = extractZonesFromTemplate(d?.template?.mobile, DEFAULT_MOBILE_H);
+      setPreviewPageData({
+        header: { desktop: desktopZones.header, mobile: mobileZones.header },
+        template: { desktop: desktopZones.template, mobile: mobileZones.template },
+        footer: { desktop: desktopZones.footer, mobile: mobileZones.footer },
+      } as PreviewPageData);
+    } finally {
+      setPreviewLoading(false);
+    }
+  }
+  const [publishingFromPreview, setPublishingFromPreview] = useState(false);
+  async function handlePublishFolder(folder: ProjectFolder) {
+    const ok = await projectsTree.publishFolder(folder.id);
+    if (ok) await projectsTree.fetchProjects();
+    return ok;
+  }
+  async function handlePublishProject(projectId: string) {
+    const ok = await projectsTree.publishProject(projectId);
+    if (ok) await projectsTree.fetchProjects();
+    return ok;
+  }
+  // Cross-folder drag/drop (existing drag/dragOver/drop state, generalized
+  // from the old flat pinned-then-custom Pages list to the new tree) — same
+  // pattern as the Layers tree's drag state above.
+  const [dragPageSlug, setDragPageSlug] = useState<string | null>(null);
+  const [dragOverBucketId, setDragOverBucketId] = useState<string | null>(null);
+  const [dragOverPageSlug, setDragOverPageSlug] = useState<string | null>(null);
+  async function reorderBucket(bucketSlugs: string[]) {
+    try {
+      await fetch("/api/pages/reorder", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ slugs: bucketSlugs }),
+      });
+    } finally {
+      pagesList.fetchPages();
+      projectsTree.fetchProjects();
+    }
+  }
+  const [newPageOpen, setNewPageOpen] = useState(false);
+  // Set when "+" is clicked on a folder row (vs. the Unassigned bucket's own
+  // "+") — the new page is assigned straight into that folder. Null means
+  // "land in Unassigned", the existing default.
+  const [newPageFolderId, setNewPageFolderId] = useState<string | null>(null);
+  // Tree "..." menu (project or folder row) — id of whichever row's menu is
+  // open, or null. Same single-open-at-a-time pattern as openRowMenu in the
+  // Layers tree above.
+  const [openTreeMenu, setOpenTreeMenu] = useState<string | null>(null);
+  const [confirmDeleteFolderId, setConfirmDeleteFolderId] = useState<string | null>(null);
+  const [confirmDeleteProjectId, setConfirmDeleteProjectId] = useState<string | null>(null);
+  const [newFolderProjectId, setNewFolderProjectId] = useState<string | null>(null);
+  const [newFolderNameInput, setNewFolderNameInput] = useState("");
+  // Project drag-reorder — separate from the page drag state above since a
+  // project row and a page row are never valid drop targets for each other.
+  const [dragProjectId, setDragProjectId] = useState<string | null>(null);
+  const [dragOverProjectId, setDragOverProjectId] = useState<string | null>(null);
+  const [assetItems, setAssetItems] = useState<AssetItem[] | null>(null);
+  const [assetsLoading, setAssetsLoading] = useState(false);
+  const [renamingAssetKey, setRenamingAssetKey] = useState<string | null>(null);
+  const [renameAssetInput, setRenameAssetInput] = useState("");
+  // Metadata-only rename (see StorageService.rename) — the key/URL never
+  // changes, so this can't break any page that already placed this image.
+  async function commitAssetRename(key: string) {
+    const name = renameAssetInput.trim();
+    setRenamingAssetKey(null);
+    if (!name) return;
+    setAssetItems((prev) => (prev ? prev.map((a) => (a.key === key ? { ...a, name } : a)) : prev));
+    try {
+      await fetch("/api/page-config/assets", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key, name }),
+      });
+    } catch {}
+  }
+  // Reusable Components sidebar (opt-in — see "Save as Reusable Component" in
+  // the right-click menu). Fetched once on mount since it's a persistent drag
+  // source, not a lazily-opened accordion like Image's asset picker above.
+  const [reusableComponents, setReusableComponents] = useState<ReusableComponentEntry[]>([]);
+  const [reusablePrompt, setReusablePrompt] = useState<{ id: string; name: string; x: number; y: number } | null>(null);
+  const refreshReusableComponents = useCallback(() => {
+    fetch("/api/page-config/reusable-components")
+      .then((r) => r.json())
+      .then((data) => setReusableComponents(Array.isArray(data) ? data : []))
+      .catch(() => {});
+  }, []);
+  useEffect(() => { refreshReusableComponents(); }, [refreshReusableComponents]);
+  // Marking a component reusable only updates local editor state immediately —
+  // the actual PUT that persists it happens on the debounced autosave (~4s
+  // later, see the syncStatus effect below). Refetching the sidebar list right
+  // away would race that and miss the just-added component, so instead flag
+  // that a refresh is owed and fire it once syncStatus confirms the save
+  // actually landed.
+  const [reusableRefreshPending, setReusableRefreshPending] = useState(false);
+  // syncStatus is very likely already "synced" (steady state) at the moment
+  // reusableRefreshPending is set, and the sibling effect that flips it to
+  // "dirty" hasn't run yet in this same commit — so "synced" alone isn't a
+  // reliable trigger. Wait for an actual dirty/syncing → synced transition.
+  const sawDirtySinceReusableFlag = useRef(false);
+  useEffect(() => {
+    if (!reusableRefreshPending) return;
+    if (syncStatus === "dirty" || syncStatus === "syncing") {
+      sawDirtySinceReusableFlag.current = true;
+    } else if (syncStatus === "synced" && sawDirtySinceReusableFlag.current) {
+      refreshReusableComponents();
+      setReusableRefreshPending(false);
+      sawDirtySinceReusableFlag.current = false;
+    }
+  }, [reusableRefreshPending, syncStatus, refreshReusableComponents]);
+  // ── Layers tree state (Header/Template/Footer zones) ──────────────────────
+  const [expandedZones, setExpandedZones] = useState<Record<Zone, boolean>>({ header: true, template: true, footer: true });
+  const [zoneAddMenuOpen, setZoneAddMenuOpen] = useState<Zone | null>(null);
+  const [openRowMenu, setOpenRowMenu] = useState<string | null>(null);
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameInput, setRenameInput] = useState("");
+  const [expandedContainers, setExpandedContainers] = useState<Record<string, boolean>>({});
+  const [layerSearch, setLayerSearch] = useState("");
+  const [showTextTemplates, setShowTextTemplates] = useState(false);
   const nameInputRef = useRef<HTMLInputElement>(null);
-  const isHomePage = slug === "home";
+  // Pinned pages never get a delete button — any folder's root page across
+  // any project, not just the default project's literal home/seller-dashboard/
+  // rider-dashboard slugs (custom projects get their own root pages with
+  // generated slugs — see createProject in page-config.service.ts). The
+  // backend also rejects re-parenting a root page out of its own folder
+  // (movePageToFolder) for the same "a folder must always keep its root
+  // page" reason.
+  const isPinnedPage = projectsTree.projects.some((p) => p.folders.some((f) => f.rootPage?.page === slug));
+
+  // Zone lookup — the single place that resolves "which zone's arrays are we
+  // editing right now" for the rest of this component. Kept as three flat
+  // per-zone-per-view array pairs (not a `zone` field on PageComponent) so
+  // every existing mutator below keeps operating on one complete flat array.
+  const zoneComponents: Record<Zone, Record<ViewMode, PageComponent[]>> = {
+    header:   { desktop: headerDesktopComponents,   mobile: headerMobileComponents },
+    template: { desktop: templateDesktopComponents, mobile: templateMobileComponents },
+    footer:   { desktop: footerDesktopComponents,   mobile: footerMobileComponents },
+  };
+  const zoneHeights: Record<Zone, Record<ViewMode, number>> = {
+    header:   { desktop: headerDesktopHeight,   mobile: headerMobileHeight },
+    template: { desktop: templateDesktopHeight, mobile: templateMobileHeight },
+    footer:   { desktop: footerDesktopHeight,   mobile: footerMobileHeight },
+  };
+  const zoneSetters: Record<Zone, {
+    setDesktop: (v: React.SetStateAction<PageComponent[]>) => void;
+    setMobile: (v: React.SetStateAction<PageComponent[]>) => void;
+    setDesktopHeight: (v: React.SetStateAction<number>) => void;
+    setMobileHeight: (v: React.SetStateAction<number>) => void;
+  }> = {
+    header:   { setDesktop: setHeaderDesktopComponents,   setMobile: setHeaderMobileComponents,   setDesktopHeight: setHeaderDesktopHeight,   setMobileHeight: setHeaderMobileHeight },
+    template: { setDesktop: setTemplateDesktopComponents, setMobile: setTemplateMobileComponents, setDesktopHeight: setTemplateDesktopHeight, setMobileHeight: setTemplateMobileHeight },
+    footer:   { setDesktop: setFooterDesktopComponents,   setMobile: setFooterMobileComponents,   setDesktopHeight: setFooterDesktopHeight,   setMobileHeight: setFooterMobileHeight },
+  };
 
   const canvasW = view === "desktop" ? DESKTOP_W : MOBILE_W;
-  const canvasH = view === "desktop" ? desktopHeight : mobileHeight;
-  const components = view === "desktop" ? desktopComponents : mobileComponents;
+  const canvasH = zoneHeights[activeZone][view];
+  const components = zoneComponents[activeZone][view];
+  const setComponents = view === "desktop" ? zoneSetters[activeZone].setDesktop : zoneSetters[activeZone].setMobile;
+  const setCanvasHeight = view === "desktop" ? zoneSetters[activeZone].setDesktopHeight : zoneSetters[activeZone].setMobileHeight;
 
   // Mouse drag refs
   const dragRef        = useRef<{ ids: string[]; startX: number; startY: number; origins: Map<string, { x: number; y: number; width: number; height: number }> } | null>(null);
@@ -1034,36 +2587,69 @@ export function PageEditor({ slug, label }: PageEditorProps) {
   const marqueeStartRef = useRef<{ x: number; y: number } | null>(null);
   const canvasRef      = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const logoInputRef = useRef<HTMLInputElement>(null);
+  const faviconInputRef = useRef<HTMLInputElement>(null);
+  // Read inside the global drag mousemove listener (attached once, so it needs
+  // refs rather than closed-over state to stay current — same pattern as canvasWRef).
+  const snapToGridRef  = useRef(false);
+  const gridSizeRef    = useRef(50);
 
   // Always-current refs
-  const updateCompRef   = useRef<(id: string, patch: Partial<PageComponent>) => void>(() => {});
-  const deleteCompRef   = useRef<(ids: string[]) => void>(() => {});
+  const updateCompRef   = useRef<(id: string, patch: Partial<PageComponent>, targetZone?: Zone) => void>(() => {});
+  const deleteCompRef   = useRef<(ids: string[], targetZone?: Zone) => void>(() => {});
   const pasteCompRef    = useRef<(comps: PageComponent[]) => void>(() => {});
   const canvasWRef      = useRef(canvasW);
   const canvasHRef      = useRef(canvasH);
   const setHeightRef    = useRef<(h: number) => void>(() => {});
   const selectedIdsRef  = useRef<string[]>([]);
   const viewRef         = useRef<ViewMode>("desktop");
-  const compsRef        = useRef<{ desktop: PageComponent[]; mobile: PageComponent[] }>({ desktop: [], mobile: [] });
+  const activeZoneRef   = useRef<Zone>("template");
+  const compsRef        = useRef<Record<Zone, Record<ViewMode, PageComponent[]>>>({
+    header: { desktop: [], mobile: [] }, template: { desktop: [], mobile: [] }, footer: { desktop: [], mobile: [] },
+  });
   const clipboardRef    = useRef<PageComponent[] | null>(null);
+  const copiedStyleRef  = useRef<Partial<PageComponent> | null>(null);
   const syncedSignatureRef = useRef("");
   const versionSignatureRef = useRef("");
 
-  updateCompRef.current = (id, patch) => {
-    const setter = view === "desktop" ? setDesktopComponents : setMobileComponents;
+  // ── Undo/redo — per-zone-per-view snapshot stacks (keyed "zone:view"),
+  // separate from Version Control. (Version Control is a manual/timed
+  // restore-point system scoped to Template only; this is a fine-grained
+  // step-undo for every discrete edit in whichever zone is active, and the
+  // two never share state.)
+  const undoStackRef = useRef<Record<string, UndoSnapshot[]>>({});
+  const redoStackRef = useRef<Record<string, UndoSnapshot[]>>({});
+  function zoneViewKey(zone: Zone, v: ViewMode) { return `${zone}:${v}`; }
+  const updateCommitPendingRef = useRef(false);
+  const updateCommitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const undoRef = useRef<() => void>(() => {});
+  const redoRef = useRef<() => void>(() => {});
+
+  updateCompRef.current = (id, patch, targetZone) => {
+    const zone = targetZone ?? activeZone;
+    const setter = zone === activeZone ? setComponents : (view === "desktop" ? zoneSetters[zone].setDesktop : zoneSetters[zone].setMobile);
+    const zh = zoneHeights[zone][view];
     setter((prev) => prev.map((c) => {
       if (c.id !== id) return c;
       const merged = { ...c, ...patch };
-      const bounds = clampToCanvas(merged.x, merged.y, merged.width, merged.height, canvasWRef.current, canvasHRef.current, merged.rotation ?? 0);
+      const bounds = clampToCanvas(merged.x, merged.y, merged.width, merged.height, canvasWRef.current, zh, merged.rotation ?? 0);
       return { ...merged, ...bounds };
     }));
   };
-  deleteCompRef.current = (ids) => {
-    if (view === "desktop") setDesktopComponents((prev) => prev.filter((c) => !ids.includes(c.id)));
-    else setMobileComponents((prev) => prev.filter((c) => !ids.includes(c.id)));
-    setSelectedIds((prev) => prev.filter((id) => !ids.includes(id)));
+  deleteCompRef.current = (ids, targetZone) => {
+    const zone = targetZone ?? activeZone;
+    // Locked components are protected from accidental deletion (Delete key,
+    // "Delete all" in the multi-select toolbar) — explicit unlock is required first.
+    const list = compsRef.current[zone][view];
+    const deletableIds = ids.filter((id) => !list.find((c) => c.id === id)?.locked);
+    if (deletableIds.length === 0) return;
+    commitUndoSnapshot(zone);
+    const setter = zone === activeZone ? setComponents : (view === "desktop" ? zoneSetters[zone].setDesktop : zoneSetters[zone].setMobile);
+    setter((prev) => prev.filter((c) => !deletableIds.includes(c.id)));
+    setSelectedIds((prev) => prev.filter((id) => !deletableIds.includes(id)));
   };
   pasteCompRef.current = (comps) => {
+    commitUndoSnapshot();
     const groupIdMap = new Map<string, string>();
     const newComps = comps.map((c) => {
       let newGroupId: string | undefined;
@@ -1074,16 +2660,22 @@ export function PageEditor({ slug, label }: PageEditorProps) {
       const bounds = clampToCanvas(c.x + 24, c.y + 24, c.width, c.height, canvasWRef.current, canvasHRef.current, c.rotation ?? 0);
       return { ...c, id: uid(), groupId: newGroupId, ...bounds };
     });
-    if (view === "desktop") setDesktopComponents((prev) => [...prev, ...newComps]);
-    else setMobileComponents((prev) => [...prev, ...newComps]);
+    setComponents((prev) => [...prev, ...newComps]);
     setSelectedIds(newComps.map((c) => c.id));
   };
   canvasWRef.current      = canvasW;
   canvasHRef.current      = canvasH;
-  setHeightRef.current    = (h) => { if (view === "desktop") setDesktopHeight(h); else setMobileHeight(h); };
+  setHeightRef.current    = (h) => setCanvasHeight(h);
   selectedIdsRef.current  = selectedIds;
   viewRef.current         = view;
-  compsRef.current        = { desktop: desktopComponents, mobile: mobileComponents };
+  activeZoneRef.current   = activeZone;
+  snapToGridRef.current   = showGrid;
+  gridSizeRef.current     = gridSize;
+  compsRef.current        = {
+    header: { desktop: headerDesktopComponents, mobile: headerMobileComponents },
+    template: { desktop: templateDesktopComponents, mobile: templateMobileComponents },
+    footer: { desktop: footerDesktopComponents, mobile: footerMobileComponents },
+  };
 
   const selectedComps = components.filter((c) => selectedIds.includes(c.id));
   const selectedComp = selectedComps.length === 1 ? selectedComps[0] : null;
@@ -1098,32 +2690,144 @@ export function PageEditor({ slug, label }: PageEditorProps) {
     else if (selectedIds.length === 0) setOpenTool(null);
   }, [selectedComp?.id, selectedComp?.groupId, selectedIds.length]);
 
+  // Aspect-ratio lock is a transient per-selection toggle, not a persisted component
+  // field — reset it whenever the selection changes so it never silently carries over.
+  const [aspectLocked, setAspectLocked] = useState(false);
+  const aspectLockedRef = useRef(false);
+  aspectLockedRef.current = aspectLocked;
+  useEffect(() => { setAspectLocked(false); }, [selectedIds.join(",")]);
+
+  // Auto-fit zoom to the viewport on mount, whenever the Desktop/Mobile view changes
+  // (each has a very different natural width), and whenever either sidebar is
+  // collapsed/expanded — otherwise collapsing a sidebar frees up empty gray space
+  // around the canvas without the canvas itself actually growing into it, which
+  // defeats the point of collapsing. Preserves the pre-zoom-feature default of
+  // "always shrink to fit, never require scrolling just to see the whole canvas,"
+  // while still leaving `zoom` as a real, user-adjustable level via the zoom controls.
+  useEffect(() => {
+    // Collapsing/expanding is an instant layout change (no CSS transition), but a
+    // rAF still ensures we measure clientWidth after the browser has committed it.
+    const raf = requestAnimationFrame(() => {
+      const containerW = scrollContainerRef.current?.clientWidth;
+      if (!containerW) return;
+      const naturalW = showGuides ? canvasW + RULER_SIZE : canvasW;
+      setZoom(Math.max(25, Math.min(100, Math.floor((containerW - 24) / naturalW * 100))));
+    });
+    return () => cancelAnimationFrame(raf);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view, leftSidebarCollapsed, rightSidebarCollapsed]);
+
+  // Keyed by `zone:view` (see zoneViewKey) — missing keys read as false via `?? false`.
+  const [undoAvailable, setUndoAvailable] = useState<Record<string, boolean>>({});
+  const [redoAvailable, setRedoAvailable] = useState<Record<string, boolean>>({});
+  const UNDO_STACK_LIMIT = 50;
+
+  // Called at the start of every discrete, one-shot mutation (add/delete/duplicate/
+  // paste/group/ungroup/toggle/arrange/align/distribute) to capture the state right
+  // before that action, so Ctrl+Z reverts exactly that one action. Drag/resize/rotate
+  // commit once on mouseup instead (see the global mouseup handler) rather than here,
+  // since those stream many intermediate updates per gesture. Stacks are per-zone-per-
+  // view so an undo in Template never touches a Header/Footer edit or vice versa.
+  function commitUndoSnapshot(targetZone?: Zone, targetView?: ViewMode) {
+    const zone = targetZone ?? activeZoneRef.current;
+    const v = targetView ?? viewRef.current;
+    const key = zoneViewKey(zone, v);
+    const snap: UndoSnapshot = { components: compsRef.current[zone][v], height: zoneHeights[zone][v] };
+    const stack = undoStackRef.current[key] ?? [];
+    undoStackRef.current[key] = [...stack.slice(-(UNDO_STACK_LIMIT - 1)), snap];
+    redoStackRef.current[key] = [];
+    setUndoAvailable((prev) => ({ ...prev, [key]: true }));
+    setRedoAvailable((prev) => ({ ...prev, [key]: false }));
+  }
+  function undo() {
+    const zone = activeZoneRef.current;
+    const v = viewRef.current;
+    const key = zoneViewKey(zone, v);
+    const stack = undoStackRef.current[key] ?? [];
+    if (stack.length === 0) return;
+    const prevSnap = stack[stack.length - 1];
+    undoStackRef.current[key] = stack.slice(0, -1);
+    const redoStack = redoStackRef.current[key] ?? [];
+    redoStackRef.current[key] = [...redoStack, { components: compsRef.current[zone][v], height: canvasHRef.current }];
+    if (v === "desktop") { zoneSetters[zone].setDesktop(prevSnap.components); zoneSetters[zone].setDesktopHeight(prevSnap.height); }
+    else { zoneSetters[zone].setMobile(prevSnap.components); zoneSetters[zone].setMobileHeight(prevSnap.height); }
+    setUndoAvailable((prev) => ({ ...prev, [key]: (undoStackRef.current[key] ?? []).length > 0 }));
+    setRedoAvailable((prev) => ({ ...prev, [key]: true }));
+  }
+  function redo() {
+    const zone = activeZoneRef.current;
+    const v = viewRef.current;
+    const key = zoneViewKey(zone, v);
+    const stack = redoStackRef.current[key] ?? [];
+    if (stack.length === 0) return;
+    const nextSnap = stack[stack.length - 1];
+    redoStackRef.current[key] = stack.slice(0, -1);
+    const undoStack = undoStackRef.current[key] ?? [];
+    undoStackRef.current[key] = [...undoStack, { components: compsRef.current[zone][v], height: canvasHRef.current }];
+    if (v === "desktop") { zoneSetters[zone].setDesktop(nextSnap.components); zoneSetters[zone].setDesktopHeight(nextSnap.height); }
+    else { zoneSetters[zone].setMobile(nextSnap.components); zoneSetters[zone].setMobileHeight(nextSnap.height); }
+    setRedoAvailable((prev) => ({ ...prev, [key]: (redoStackRef.current[key] ?? []).length > 0 }));
+    setUndoAvailable((prev) => ({ ...prev, [key]: true }));
+  }
+  undoRef.current = undo;
+  redoRef.current = redo;
+
   // ── Load ────────────────────────────────────────────────────────────────────
+
   useEffect(() => {
     let cancelled = false;
     setLoading(true); setSelectedIds([]);
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 10_000); // 10s timeout
+
+    // One page = one row: {name, template, canvasBgColor}. Header/Footer no
+    // longer have their own top-level fields — they're optional blocks
+    // living inside template.components (see lib/page-template-zones.ts).
+    // Legacy rows saved before that change are either the old flat
+    // {components:[]} shape or the older {header,template,footer} shape;
+    // `d?.template ?? d` covers the flat-shape fallback the same way it
+    // always did, and a legacy `d.header`/`d.footer` (pre-migration rows
+    // this session's data migration should already have converted, but kept
+    // here as a defensive fallback) is treated as "no header/footer block".
     fetch(`/api/pages/${encodeURIComponent(slug)}`, { signal: controller.signal })
-      .then((r) => {
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        return r.json();
-      })
+      .then((r) => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
       .then((d) => {
         if (cancelled) return;
-        if (d?.desktop) {
-          const dH = typeof d.desktop.height === "number" ? d.desktop.height : DEFAULT_DESKTOP_H;
-          const mH = typeof d.mobile?.height === "number" ? d.mobile.height : DEFAULT_MOBILE_H;
-          const dComps: PageComponent[] = Array.isArray(d.desktop.components) ? d.desktop.components : [];
-          const mComps: PageComponent[] = Array.isArray(d.mobile?.components) ? d.mobile.components : [];
-          setDesktopComponents(dComps.map((c) => ({ ...c, ...clampToCanvas(c.x, c.y, c.width, c.height, DESKTOP_W, dH, c.rotation ?? 0) })));
-          setDesktopHeight(dH);
-          setMobileComponents(mComps.map((c) => ({ ...c, ...clampToCanvas(c.x, c.y, c.width, c.height, MOBILE_W, mH, c.rotation ?? 0) })));
-          setMobileHeight(mH);
-        } else if (Array.isArray(d?.components)) {
-          const comps: PageComponent[] = d.components;
-          setDesktopComponents(comps.map((c) => ({ ...c, ...clampToCanvas(c.x, c.y, c.width, c.height, DESKTOP_W, DEFAULT_DESKTOP_H, c.rotation ?? 0) })));
-        }
+        const rawDesktop = d?.template?.desktop ?? (Array.isArray(d?.components) ? { components: d.components, height: DEFAULT_DESKTOP_H } : undefined);
+        const rawMobile = d?.template?.mobile;
+        const desktopZones = extractZonesFromTemplate(rawDesktop, DEFAULT_DESKTOP_H);
+        const mobileZones = extractZonesFromTemplate(rawMobile, DEFAULT_MOBILE_H);
+
+        setTemplateDesktopComponents(desktopZones.template.components.map((c) => ({ ...c, ...clampToCanvas(c.x, c.y, c.width, c.height, DESKTOP_W, desktopZones.template.height, c.rotation ?? 0) })) as PageComponent[]);
+        setTemplateDesktopHeight(desktopZones.template.height);
+        setTemplateMobileComponents(mobileZones.template.components.map((c) => ({ ...c, ...clampToCanvas(c.x, c.y, c.width, c.height, MOBILE_W, mobileZones.template.height, c.rotation ?? 0) })) as PageComponent[]);
+        setTemplateMobileHeight(mobileZones.template.height);
+
+        const headerSource = desktopZones.header.blockId ? desktopZones.header : mobileZones.header;
+        const hasHeader = Boolean(desktopZones.header.blockId || mobileZones.header.blockId);
+        setHasHeaderBlock(hasHeader);
+        headerBlockIdRef.current = { desktop: desktopZones.header.blockId, mobile: mobileZones.header.blockId };
+        setHeaderDesktopComponents(desktopZones.header.components as PageComponent[]);
+        setHeaderDesktopHeight(desktopZones.header.height || DEFAULT_HEADER_DESKTOP_H);
+        setHeaderMobileComponents(mobileZones.header.components as PageComponent[]);
+        setHeaderMobileHeight(mobileZones.header.height || DEFAULT_HEADER_MOBILE_H);
+        setHeaderRotation((hasHeader ? headerSource.rotation : 0) as 0 | 90 | 180 | 270);
+        setHeaderHideOnScrollUpPx(hasHeader ? headerSource.hideOnScrollUpPx : null);
+        setHeaderHideOnScrollDownPx(hasHeader ? headerSource.hideOnScrollDownPx : 1400);
+
+        const footerSource = desktopZones.footer.blockId ? desktopZones.footer : mobileZones.footer;
+        const hasFooter = Boolean(desktopZones.footer.blockId || mobileZones.footer.blockId);
+        setHasFooterBlock(hasFooter);
+        footerBlockIdRef.current = { desktop: desktopZones.footer.blockId, mobile: mobileZones.footer.blockId };
+        setFooterDesktopComponents(desktopZones.footer.components as PageComponent[]);
+        setFooterDesktopHeight(desktopZones.footer.height || DEFAULT_FOOTER_DESKTOP_H);
+        setFooterMobileComponents(mobileZones.footer.components as PageComponent[]);
+        setFooterMobileHeight(mobileZones.footer.height || DEFAULT_FOOTER_MOBILE_H);
+        setFooterRotation((hasFooter ? footerSource.rotation : 0) as 0 | 90 | 180 | 270);
+        setFooterHideOnScrollUpPx(hasFooter ? footerSource.hideOnScrollUpPx : null);
+        setFooterHideOnScrollDownPx(hasFooter ? footerSource.hideOnScrollDownPx : null);
+
+        setCanvasBgColor(typeof d?.canvasBgColor === "string" ? d.canvasBgColor : "#ffffff");
         if (d?.name) setPageLabel(d.name);
       })
       .catch(() => {
@@ -1151,12 +2855,50 @@ export function PageEditor({ slug, label }: PageEditorProps) {
         e.preventDefault(); deleteCompRef.current(selectedIdsRef.current); return;
       }
       if ((e.metaKey || e.ctrlKey) && e.key === "c" && selectedIdsRef.current.length) {
-        const list = compsRef.current[viewRef.current === "desktop" ? "desktop" : "mobile"];
+        const list = compsRef.current[activeZoneRef.current][viewRef.current === "desktop" ? "desktop" : "mobile"];
         clipboardRef.current = list.filter((c) => selectedIdsRef.current.includes(c.id));
         return;
       }
       if ((e.metaKey || e.ctrlKey) && e.key === "v" && clipboardRef.current) {
         pasteCompRef.current(clipboardRef.current);
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "d" && selectedIdsRef.current.length) {
+        e.preventDefault();
+        const list = compsRef.current[activeZoneRef.current][viewRef.current === "desktop" ? "desktop" : "mobile"];
+        const comps = list.filter((c) => selectedIdsRef.current.includes(c.id));
+        if (comps.length) pasteCompRef.current(comps);
+        return;
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "a" && !inInput) {
+        e.preventDefault();
+        const list = compsRef.current[activeZoneRef.current][viewRef.current === "desktop" ? "desktop" : "mobile"];
+        selectedIdsRef.current = list.filter((c) => !c.hidden).map((c) => c.id);
+        setSelectedIds(selectedIdsRef.current);
+        return;
+      }
+      if (e.key.startsWith("Arrow") && !inInput && selectedIdsRef.current.length) {
+        e.preventDefault();
+        const step = e.shiftKey ? 10 : 1;
+        const dx = e.key === "ArrowLeft" ? -step : e.key === "ArrowRight" ? step : 0;
+        const dy = e.key === "ArrowUp" ? -step : e.key === "ArrowDown" ? step : 0;
+        if (dx === 0 && dy === 0) return;
+        const list = compsRef.current[activeZoneRef.current][viewRef.current === "desktop" ? "desktop" : "mobile"];
+        const zone = activeZoneRef.current;
+        selectedIdsRef.current.forEach((id) => {
+          const c = list.find((comp) => comp.id === id);
+          if (!c || c.locked) return;
+          const bounds = clampToCanvas(c.x + dx, c.y + dy, c.width, c.height, canvasWRef.current, canvasHRef.current, c.rotation ?? 0);
+          updateComp(id, { x: bounds.x, y: bounds.y }, zone);
+        });
+        return;
+      }
+      // Deliberately NOT excluded for inInput — browser-native undo inside a focused
+      // text field is expected to keep working independently of this app-level undo.
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key.toLowerCase() === "z") {
+        e.preventDefault(); undoRef.current(); return;
+      }
+      if ((e.metaKey || e.ctrlKey) && ((e.shiftKey && e.key.toLowerCase() === "z") || e.key.toLowerCase() === "y")) {
+        e.preventDefault(); redoRef.current(); return;
       }
     }
     window.addEventListener("keydown", onKeyDown);
@@ -1194,28 +2936,64 @@ export function PageEditor({ slug, label }: PageEditorProps) {
     };
   }
 
-  function addComponent(type: ComponentType, patch?: Partial<PageComponent>) {
-    const base: PageComponent = { id: uid(), type, x: 0, y: 0, ...defaults(type, canvasW), ...(patch ?? {}) } as PageComponent;
-    const center = getVisibleCenter();
-    const comp = { ...base, ...clampToCanvas(center.x - base.width / 2, center.y - base.height / 2, base.width, base.height, canvasW, canvasH, base.rotation ?? 0) };
-    if (view === "desktop") setDesktopComponents((prev) => [...prev, comp]);
-    else setMobileComponents((prev) => [...prev, comp]);
-    setSelectedIds([comp.id]);
+  // Item 2: mirror newly-added component(s) into the OTHER view, same id(s),
+  // same relative position/size — scaled uniformly (aspect-preserving) by the
+  // canvas-width ratio for x/width/height, and by the canvas-height ratio for y
+  // (page lengths aren't width-proportional, so vertical placement needs its
+  // own scale to land in the same relative spot down the page). This runs once,
+  // at add time; from then on each view's array is fully independent, so
+  // editing one (position, size, color, content, anything) never touches the
+  // other. Shared by placeAndAddComponent/addMarketWidget/addTextTemplate below.
+  function mirrorToOtherView(zone: Zone, comps: PageComponent[]) {
+    const otherView: ViewMode = view === "desktop" ? "mobile" : "desktop";
+    commitUndoSnapshot(zone, otherView);
+    const zh = zoneHeights[zone][view];
+    const otherCanvasW = otherView === "desktop" ? DESKTOP_W : MOBILE_W;
+    const otherZh = zoneHeights[zone][otherView];
+    const scale = otherCanvasW / canvasW;
+    const yScale = otherZh / zh;
+    const mirrored = comps.map((c) => {
+      const raw = { ...c, x: c.x * scale, y: c.y * yScale, width: c.width * scale, height: c.height * scale };
+      return { ...raw, ...clampToCanvas(raw.x, raw.y, raw.width, raw.height, otherCanvasW, otherZh, raw.rotation ?? 0) };
+    });
+    const otherSetter = otherView === "desktop" ? zoneSetters[zone].setDesktop : zoneSetters[zone].setMobile;
+    otherSetter((prev) => [...prev, ...mirrored]);
   }
-  function addShape(shapeType: ShapeType) {
+
+  // Shared by every add*() below. Placement uses getVisibleCenter() (DOM-measured,
+  // scroll-aware) only when adding into the currently-visible zone; a zone switched
+  // to via a non-active zone's "+" button hasn't necessarily painted its canvas yet,
+  // so those just center in that zone's own canvas instead. Mutates via zoneSetters
+  // directly (not the activeZone-derived setComponents) so this is correct regardless
+  // of whether `setActiveZone` from this same call has been applied yet — useState
+  // setters are stable references, so zoneSetters[zone] is never stale.
+  function placeAndAddComponent(base: PageComponent, targetZone?: Zone) {
+    const zone = targetZone ?? activeZone;
+    commitUndoSnapshot(zone);
+    const zh = zoneHeights[zone][view];
+    const center = zone === activeZone ? getVisibleCenter() : { x: canvasW / 2, y: zh / 2 };
+    const comp = { ...base, ...clampToCanvas(center.x - base.width / 2, center.y - base.height / 2, base.width, base.height, canvasW, zh, base.rotation ?? 0) };
+    const setter = zone === activeZone ? setComponents : (view === "desktop" ? zoneSetters[zone].setDesktop : zoneSetters[zone].setMobile);
+    setter((prev) => [...prev, comp]);
+    mirrorToOtherView(zone, [comp]);
+    setSelectedIds([comp.id]);
+    if (zone !== activeZone) setActiveZone(zone);
+    return comp;
+  }
+  function addComponent(type: ComponentType, patch?: Partial<PageComponent>, targetZone?: Zone) {
+    const base: PageComponent = { id: uid(), type, x: 0, y: 0, ...defaults(type, canvasW), ...(patch ?? {}) } as PageComponent;
+    placeAndAddComponent(base, targetZone);
+  }
+  function addShape(shapeType: ShapeType, targetZone?: Zone) {
     const size = shapeSize(shapeType, canvasW);
     const base: PageComponent = {
       id: uid(), type: "shape", x: 0, y: 0, ...size,
       bgColor: "#3b82f6", borderRadius: shapeHasRadius(shapeType) ? 8 : 0,
       opacity: 100, rotation: 0, shapeType,
     };
-    const center = getVisibleCenter();
-    const comp = { ...base, ...clampToCanvas(center.x - base.width / 2, center.y - base.height / 2, base.width, base.height, canvasW, canvasH, base.rotation ?? 0) };
-    if (view === "desktop") setDesktopComponents((prev) => [...prev, comp]);
-    else setMobileComponents((prev) => [...prev, comp]);
-    setSelectedIds([comp.id]);
+    placeAndAddComponent(base, targetZone);
   }
-  function addImage(mode: ImageMode) {
+  function addImage(mode: ImageMode, targetZone?: Zone) {
     const preset = IMAGE_SIZES.find((s) => s.id === imageSizePreset) ?? IMAGE_SIZES[2];
     const width = Math.round(canvasW * 0.22);
     const height = Math.max(40, Math.round(width / preset.ratio));
@@ -1224,40 +3002,124 @@ export function PageEditor({ slug, label }: PageEditorProps) {
       bgColor: "#e5e7eb", borderRadius: 8, opacity: 100, rotation: 0,
       imageMode: mode, images: mode === "slideshow" ? [] : undefined,
     };
-    const center = getVisibleCenter();
-    const comp = { ...base, ...clampToCanvas(center.x - base.width / 2, center.y - base.height / 2, base.width, base.height, canvasW, canvasH, base.rotation ?? 0) };
-    if (view === "desktop") setDesktopComponents((prev) => [...prev, comp]);
-    else setMobileComponents((prev) => [...prev, comp]);
-    setSelectedIds([comp.id]);
+    placeAndAddComponent(base, targetZone);
   }
-  function addCarousel() {
+  function addCarousel(targetZone?: Zone) {
     const base: PageComponent = { id: uid(), type: "carousel", x: 0, y: 0, ...defaults("carousel", canvasW) } as PageComponent;
-    const center = getVisibleCenter();
-    const comp = { ...base, ...clampToCanvas(center.x - base.width / 2, center.y - base.height / 2, base.width, base.height, canvasW, canvasH, base.rotation ?? 0) };
-    if (view === "desktop") setDesktopComponents((prev) => [...prev, comp]);
-    else setMobileComponents((prev) => [...prev, comp]);
-    setSelectedIds([comp.id]);
+    placeAndAddComponent(base, targetZone);
   }
-  function addIcon(iconName: string) {
+  function addIcon(iconName: string, targetZone?: Zone) {
     const base: PageComponent = { id: uid(), type: "icon", x: 0, y: 0, ...defaults("icon", canvasW), iconName } as PageComponent;
-    const center = getVisibleCenter();
-    const comp = { ...base, ...clampToCanvas(center.x - base.width / 2, center.y - base.height / 2, base.width, base.height, canvasW, canvasH, base.rotation ?? 0) };
-    if (view === "desktop") setDesktopComponents((prev) => [...prev, comp]);
-    else setMobileComponents((prev) => [...prev, comp]);
-    setSelectedIds([comp.id]);
+    placeAndAddComponent(base, targetZone);
   }
-  function addMarketWidget(id: MarketWidgetId) {
-    const center = getVisibleCenter();
-    const widget = buildMarketWidget(id, center, canvasW, canvasH).map((c) => ({
+  function addLocationInput(targetZone?: Zone) {
+    const base: PageComponent = { id: uid(), type: "location-input", x: 0, y: 0, ...defaults("location-input", canvasW) } as PageComponent;
+    placeAndAddComponent(base, targetZone);
+  }
+  function addMap(targetZone?: Zone) {
+    const base: PageComponent = { id: uid(), type: "map", x: 0, y: 0, ...defaults("map", canvasW) } as PageComponent;
+    placeAndAddComponent(base, targetZone);
+  }
+  function addDateTimePicker(targetZone?: Zone) {
+    const base: PageComponent = { id: uid(), type: "datetime-picker", x: 0, y: 0, ...defaults("datetime-picker", canvasW) } as PageComponent;
+    placeAndAddComponent(base, targetZone);
+  }
+  function addVehicleSelector(targetZone?: Zone) {
+    const base: PageComponent = { id: uid(), type: "vehicle-selector", x: 0, y: 0, ...defaults("vehicle-selector", canvasW) } as PageComponent;
+    placeAndAddComponent(base, targetZone);
+  }
+  function addDriverBadge(targetZone?: Zone) {
+    const base: PageComponent = { id: uid(), type: "driver-badge", x: 0, y: 0, ...defaults("driver-badge", canvasW) } as PageComponent;
+    placeAndAddComponent(base, targetZone);
+  }
+  function addFareDisplay(targetZone?: Zone) {
+    const base: PageComponent = { id: uid(), type: "fare-display", x: 0, y: 0, ...defaults("fare-display", canvasW) } as PageComponent;
+    placeAndAddComponent(base, targetZone);
+  }
+  function addHeroCarousel(targetZone?: Zone) {
+    const base: PageComponent = { id: uid(), type: "hero-carousel", x: 0, y: 0, ...defaults("hero-carousel", canvasW) } as PageComponent;
+    placeAndAddComponent(base, targetZone);
+  }
+  function addCategoryCarousel(targetZone?: Zone) {
+    const base: PageComponent = { id: uid(), type: "category-carousel", x: 0, y: 0, ...defaults("category-carousel", canvasW) } as PageComponent;
+    placeAndAddComponent(base, targetZone);
+  }
+  // Insert an already-uploaded asset (from the Assets tab) as a new single-image component.
+  function addImageFromUrl(url: string, targetZone?: Zone) {
+    const preset = IMAGE_SIZES.find((s) => s.id === imageSizePreset) ?? IMAGE_SIZES[2];
+    const width = Math.round(canvasW * 0.22);
+    const height = Math.max(40, Math.round(width / preset.ratio));
+    const base: PageComponent = { id: uid(), type: "image", x: 0, y: 0, width, height, bgColor: "#e5e7eb", borderRadius: 8, opacity: 100, rotation: 0, imageMode: "single", imageUrl: url };
+    placeAndAddComponent(base, targetZone);
+  }
+  function addMarketWidget(id: MarketWidgetId, targetZone?: Zone) {
+    const zone = targetZone ?? activeZone;
+    commitUndoSnapshot(zone);
+    const zh = zoneHeights[zone][view];
+    const center = zone === activeZone ? getVisibleCenter() : { x: canvasW / 2, y: zh / 2 };
+    const widget = buildMarketWidget(id, center, canvasW, zh).map((c) => ({
       ...c,
-      ...clampToCanvas(c.x, c.y, c.width, c.height, canvasW, canvasH, c.rotation ?? 0),
+      ...clampToCanvas(c.x, c.y, c.width, c.height, canvasW, zh, c.rotation ?? 0),
     }));
-    if (view === "desktop") setDesktopComponents((prev) => [...prev, ...widget]);
-    else setMobileComponents((prev) => [...prev, ...widget]);
+    const setter = zone === activeZone ? setComponents : (view === "desktop" ? zoneSetters[zone].setDesktop : zoneSetters[zone].setMobile);
+    setter((prev) => [...prev, ...widget]);
+    mirrorToOtherView(zone, widget);
     setSelectedIds(widget.map((c) => c.id));
+    if (zone !== activeZone) setActiveZone(zone);
   }
-  function updateComp(id: string, patch: Partial<PageComponent>) { updateCompRef.current(id, patch); }
-  function deleteComp(ids: string[]) { deleteCompRef.current(ids); }
+  function addTextTemplate(id: TextTemplateId, targetZone?: Zone) {
+    const zone = targetZone ?? activeZone;
+    commitUndoSnapshot(zone);
+    const zh = zoneHeights[zone][view];
+    const center = zone === activeZone ? getVisibleCenter() : { x: canvasW / 2, y: zh / 2 };
+    const group = buildTextTemplate(id, center, canvasW).map((c) => ({
+      ...c,
+      ...clampToCanvas(c.x, c.y, c.width, c.height, canvasW, zh, c.rotation ?? 0),
+    }));
+    const setter = zone === activeZone ? setComponents : (view === "desktop" ? zoneSetters[zone].setDesktop : zoneSetters[zone].setMobile);
+    setter((prev) => [...prev, ...group]);
+    mirrorToOtherView(zone, group);
+    setSelectedIds(group.map((c) => c.id));
+    if (zone !== activeZone) setActiveZone(zone);
+  }
+  // Property-panel field edits (text/number/color/etc.) share this one entry point —
+  // unlike the drag/resize/rotate stream (which calls updateCompRef.current directly
+  // and commits once on mouseup), a burst of rapid calls here (e.g. typing a sentence)
+  // should collapse into a single undo step, not one per keystroke. Debounce: commit
+  // once at the start of a burst, then suppress further commits until 800ms of quiet.
+  function updateComp(id: string, patch: Partial<PageComponent>, targetZone?: Zone) {
+    if (!updateCommitPendingRef.current) {
+      commitUndoSnapshot(targetZone);
+      updateCommitPendingRef.current = true;
+    }
+    if (updateCommitTimerRef.current) clearTimeout(updateCommitTimerRef.current);
+    updateCommitTimerRef.current = setTimeout(() => { updateCommitPendingRef.current = false; }, 800);
+    updateCompRef.current(id, patch, targetZone);
+  }
+  function deleteComp(ids: string[], targetZone?: Zone) { deleteCompRef.current(ids, targetZone); }
+  // Editor-only convenience toggles (see PageComponent.hidden/locked) — do not
+  // touch save()/publish, so toggling one never changes what's live.
+  function toggleHidden(ids: string[], targetZone?: Zone) {
+    const zone = targetZone ?? activeZone;
+    commitUndoSnapshot(zone);
+    const setter = zone === activeZone ? setComponents : (view === "desktop" ? zoneSetters[zone].setDesktop : zoneSetters[zone].setMobile);
+    setter((prev) => prev.map((c) => (ids.includes(c.id) ? { ...c, hidden: !c.hidden } : c)));
+  }
+  function toggleLocked(ids: string[], targetZone?: Zone) {
+    const zone = targetZone ?? activeZone;
+    commitUndoSnapshot(zone);
+    const setter = zone === activeZone ? setComponents : (view === "desktop" ? zoneSetters[zone].setDesktop : zoneSetters[zone].setMobile);
+    setter((prev) => prev.map((c) => (ids.includes(c.id) ? { ...c, locked: !c.locked } : c)));
+  }
+  // Uniform set (not per-item toggle) — used by the multi-select "Lock/Unlock all"
+  // button so a mixed-lock selection always ends up fully locked or fully unlocked,
+  // rather than each component flipping its own individual state.
+  function setLockedForAll(ids: string[], locked: boolean, targetZone?: Zone) {
+    const zone = targetZone ?? activeZone;
+    commitUndoSnapshot(zone);
+    const setter = zone === activeZone ? setComponents : (view === "desktop" ? zoneSetters[zone].setDesktop : zoneSetters[zone].setMobile);
+    setter((prev) => prev.map((c) => (ids.includes(c.id) ? { ...c, locked } : c)));
+  }
   function moveSlideshowImage(id: string, images: string[], index: number, dir: -1 | 1) {
     const j = index + dir;
     if (j < 0 || j >= images.length) return;
@@ -1281,6 +3143,101 @@ export function PageEditor({ slug, label }: PageEditorProps) {
   function addCategoryItem(id: string, items: CarouselItem[], cat: CategoryOption) {
     updateComp(id, { carouselItems: [...items, { id: uid(), imageUrl: cat.imageUrl ?? undefined, label: cat.name, link: `/products?category=${cat.slug}` }] });
   }
+  function addMapMarker(id: string, markers: MapMarker[]) {
+    updateComp(id, { mapMarkers: [...markers, { id: uid(), lat: 12.9716, lng: 77.5946, label: "Pickup" }] });
+  }
+  function updateMapMarker(id: string, markers: MapMarker[], markerId: string, patch: Partial<MapMarker>) {
+    updateComp(id, { mapMarkers: markers.map((m) => (m.id === markerId ? { ...m, ...patch } : m)) });
+  }
+  function removeMapMarker(id: string, markers: MapMarker[], markerId: string) {
+    updateComp(id, { mapMarkers: markers.filter((m) => m.id !== markerId) });
+  }
+  function addVehicleOption(id: string, options: VehicleOption[]) {
+    updateComp(id, { vehicleOptions: [...options, { id: uid(), label: "New option", iconId: "car", fareText: "₹99" }] });
+  }
+  function updateVehicleOption(id: string, options: VehicleOption[], optId: string, patch: Partial<VehicleOption>) {
+    updateComp(id, { vehicleOptions: options.map((o) => (o.id === optId ? { ...o, ...patch } : o)) });
+  }
+  function removeVehicleOption(id: string, options: VehicleOption[], optId: string) {
+    updateComp(id, { vehicleOptions: options.filter((o) => o.id !== optId) });
+  }
+  function addHeroSlide(id: string, slides: HeroSlide[]) {
+    updateComp(id, { heroSlides: [...slides, { id: uid(), headline: "New Slide", subtext: "", buttonLabel: "", buttonLink: "" }] });
+  }
+  function updateHeroSlide(id: string, slides: HeroSlide[], slideId: string, patch: Partial<HeroSlide>) {
+    updateComp(id, { heroSlides: slides.map((s) => (s.id === slideId ? { ...s, ...patch } : s)) });
+  }
+  function removeHeroSlide(id: string, slides: HeroSlide[], slideId: string) {
+    updateComp(id, { heroSlides: slides.filter((s) => s.id !== slideId) });
+  }
+  function moveHeroSlide(id: string, slides: HeroSlide[], index: number, dir: -1 | 1) {
+    const j = index + dir;
+    if (j < 0 || j >= slides.length) return;
+    const next = [...slides];
+    [next[index], next[j]] = [next[j], next[index]];
+    updateComp(id, { heroSlides: next });
+  }
+  function addCatCarouselItem(id: string, items: CategoryCarouselItem[]) {
+    updateComp(id, { catCarouselItems: [...items, { id: uid(), name: "New Category" }] });
+  }
+  function updateCatCarouselItem(id: string, items: CategoryCarouselItem[], itemId: string, patch: Partial<CategoryCarouselItem>) {
+    updateComp(id, { catCarouselItems: items.map((c) => (c.id === itemId ? { ...c, ...patch } : c)) });
+  }
+  function removeCatCarouselItem(id: string, items: CategoryCarouselItem[], itemId: string) {
+    updateComp(id, { catCarouselItems: items.filter((c) => c.id !== itemId) });
+  }
+  function moveCatCarouselItem(id: string, items: CategoryCarouselItem[], index: number, dir: -1 | 1) {
+    const j = index + dir;
+    if (j < 0 || j >= items.length) return;
+    const next = [...items];
+    [next[index], next[j]] = [next[j], next[index]];
+    updateComp(id, { catCarouselItems: next });
+  }
+
+  // ── Layers-tree nested child rows (Carousel slides / Vehicle Selector options / Hero Carousel slides) ──
+  function childItemsOf(comp: PageComponent): { id: string; label: string }[] {
+    if (comp.type === "carousel") return (comp.carouselItems ?? []).map((i) => ({ id: i.id, label: i.label?.trim() || "Slide" }));
+    if (comp.type === "vehicle-selector") return (comp.vehicleOptions ?? []).map((o) => ({ id: o.id, label: o.label?.trim() || "Option" }));
+    if (comp.type === "hero-carousel") return (comp.heroSlides ?? []).map((s) => ({ id: s.id, label: s.headline?.trim() || "Slide" }));
+    if (comp.type === "category-carousel") return (comp.catCarouselItems ?? []).map((c) => ({ id: c.id, label: c.name?.trim() || "Category" }));
+    return [];
+  }
+  function addChildItem(comp: PageComponent, targetZone?: Zone) {
+    if (comp.type === "carousel") updateComp(comp.id, { carouselItems: [...(comp.carouselItems ?? []), { id: uid(), label: "New Slide" }] }, targetZone);
+    else if (comp.type === "vehicle-selector") updateComp(comp.id, { vehicleOptions: [...(comp.vehicleOptions ?? []), { id: uid(), label: "New option", iconId: "car", fareText: "₹99" }] }, targetZone);
+    else if (comp.type === "hero-carousel") updateComp(comp.id, { heroSlides: [...(comp.heroSlides ?? []), { id: uid(), headline: "New Slide", subtext: "", buttonLabel: "", buttonLink: "" }] }, targetZone);
+    else if (comp.type === "category-carousel") updateComp(comp.id, { catCarouselItems: [...(comp.catCarouselItems ?? []), { id: uid(), name: "New Category" }] }, targetZone);
+  }
+  function removeChildItem(comp: PageComponent, itemId: string, targetZone?: Zone) {
+    if (comp.type === "carousel") updateComp(comp.id, { carouselItems: (comp.carouselItems ?? []).filter((i) => i.id !== itemId) }, targetZone);
+    else if (comp.type === "vehicle-selector") updateComp(comp.id, { vehicleOptions: (comp.vehicleOptions ?? []).filter((o) => o.id !== itemId) }, targetZone);
+    else if (comp.type === "hero-carousel") updateComp(comp.id, { heroSlides: (comp.heroSlides ?? []).filter((s) => s.id !== itemId) }, targetZone);
+    else if (comp.type === "category-carousel") updateComp(comp.id, { catCarouselItems: (comp.catCarouselItems ?? []).filter((c) => c.id !== itemId) }, targetZone);
+  }
+  function duplicateChildItem(comp: PageComponent, itemId: string, targetZone?: Zone) {
+    if (comp.type === "carousel") {
+      const items = comp.carouselItems ?? [];
+      const item = items.find((i) => i.id === itemId);
+      if (item) updateComp(comp.id, { carouselItems: [...items, { ...item, id: uid() }] }, targetZone);
+    } else if (comp.type === "vehicle-selector") {
+      const options = comp.vehicleOptions ?? [];
+      const opt = options.find((o) => o.id === itemId);
+      if (opt) updateComp(comp.id, { vehicleOptions: [...options, { ...opt, id: uid() }] }, targetZone);
+    } else if (comp.type === "hero-carousel") {
+      const slides = comp.heroSlides ?? [];
+      const slide = slides.find((s) => s.id === itemId);
+      if (slide) updateComp(comp.id, { heroSlides: [...slides, { ...slide, id: uid() }] }, targetZone);
+    } else if (comp.type === "category-carousel") {
+      const items = comp.catCarouselItems ?? [];
+      const item = items.find((c) => c.id === itemId);
+      if (item) updateComp(comp.id, { catCarouselItems: [...items, { ...item, id: uid() }] }, targetZone);
+    }
+  }
+  function childAddLabel(comp: PageComponent): string {
+    if (comp.type === "vehicle-selector") return "Add Option";
+    if (comp.type === "category-carousel") return "Add Category";
+    return "Add Slide";
+  }
   async function loadCategoryOptions() {
     if (categoryOptions) return;
     setLoadingCategories(true);
@@ -1302,13 +3259,28 @@ export function PageEditor({ slug, label }: PageEditorProps) {
       setLoadingCategories(false);
     }
   }
+  async function loadAssets() {
+    if (assetItems) return;
+    setAssetsLoading(true);
+    try {
+      const res = await fetch("/api/page-config/assets");
+      const data = await res.json();
+      setAssetItems(Array.isArray(data) ? data : []);
+    } catch {
+      setAssetItems([]);
+    } finally {
+      setAssetsLoading(false);
+    }
+  }
   function duplicateComp(comp: PageComponent) {
     pasteCompRef.current([comp]);
   }
-  function duplicateInPlace(comp: PageComponent) {
+  function duplicateInPlace(comp: PageComponent, targetZone?: Zone) {
+    const zone = targetZone ?? activeZone;
+    commitUndoSnapshot(zone);
     const copy: PageComponent = { ...comp, id: uid(), groupId: undefined, groupName: undefined, groupLink: undefined };
-    if (view === "desktop") setDesktopComponents((prev) => [...prev, copy]);
-    else setMobileComponents((prev) => [...prev, copy]);
+    const setter = zone === activeZone ? setComponents : (view === "desktop" ? zoneSetters[zone].setDesktop : zoneSetters[zone].setMobile);
+    setter((prev) => [...prev, copy]);
     setSelectedIds([copy.id]);
     setContextMenu(null);
   }
@@ -1316,7 +3288,8 @@ export function PageEditor({ slug, label }: PageEditorProps) {
   // "Forward" nudges a component one slot later in the array (toward the top of the
   // stack); "backward" nudges it one slot earlier — mirrors typical design-tool controls.
   function moveComponentOrder(id: string, direction: "forward" | "backward") {
-    const setter = view === "desktop" ? setDesktopComponents : setMobileComponents;
+    commitUndoSnapshot();
+    const setter = setComponents;
     setter((prev) => {
       const idx = prev.findIndex((c) => c.id === id);
       const swapIdx = direction === "forward" ? idx + 1 : idx - 1;
@@ -1328,8 +3301,10 @@ export function PageEditor({ slug, label }: PageEditorProps) {
   }
   // Drag-reorder in the Layers panel: move `fromId` to sit at whatever array slot
   // `toId` currently occupies (displacing it), regardless of which is dragged over which.
-  function reorderComponents(fromId: string, toId: string) {
-    const setter = view === "desktop" ? setDesktopComponents : setMobileComponents;
+  function reorderComponents(fromId: string, toId: string, targetZone?: Zone) {
+    const zone = targetZone ?? activeZone;
+    commitUndoSnapshot(zone);
+    const setter = zone === activeZone ? setComponents : (view === "desktop" ? zoneSetters[zone].setDesktop : zoneSetters[zone].setMobile);
     setter((prev) => {
       const fromIdx = prev.findIndex((c) => c.id === fromId);
       let toIdx = prev.findIndex((c) => c.id === toId);
@@ -1341,18 +3316,116 @@ export function PageEditor({ slug, label }: PageEditorProps) {
       return next;
     });
   }
+  function bringToFront(id: string) {
+    commitUndoSnapshot();
+    const setter = setComponents;
+    setter((prev) => {
+      const idx = prev.findIndex((c) => c.id === id);
+      if (idx === -1 || idx === prev.length - 1) return prev;
+      const next = [...prev];
+      const [moved] = next.splice(idx, 1);
+      next.push(moved);
+      return next;
+    });
+  }
+  function sendToBack(id: string) {
+    commitUndoSnapshot();
+    const setter = setComponents;
+    setter((prev) => {
+      const idx = prev.findIndex((c) => c.id === id);
+      if (idx <= 0) return prev;
+      const next = [...prev];
+      const [moved] = next.splice(idx, 1);
+      next.unshift(moved);
+      return next;
+    });
+  }
+  // Align/distribute operate on the shared bounding box of 2+ selected components —
+  // a single selection has nothing to align to, so these are only ever called with
+  // selectedComps.length >= 2 (align) / >= 3 (distribute); clampToCanvas re-clamps
+  // each result automatically via the existing updateComp path.
+  function alignSelected(edge: "left" | "right" | "centerH" | "top" | "bottom" | "centerV") {
+    if (selectedComps.length < 2) return;
+    const minX = Math.min(...selectedComps.map((c) => c.x));
+    const minY = Math.min(...selectedComps.map((c) => c.y));
+    const maxX = Math.max(...selectedComps.map((c) => c.x + c.width));
+    const maxY = Math.max(...selectedComps.map((c) => c.y + c.height));
+    selectedComps.forEach((c) => {
+      if (edge === "left") updateComp(c.id, { x: minX });
+      else if (edge === "right") updateComp(c.id, { x: maxX - c.width });
+      else if (edge === "centerH") updateComp(c.id, { x: (minX + maxX) / 2 - c.width / 2 });
+      else if (edge === "top") updateComp(c.id, { y: minY });
+      else if (edge === "bottom") updateComp(c.id, { y: maxY - c.height });
+      else updateComp(c.id, { y: (minY + maxY) / 2 - c.height / 2 });
+    });
+  }
+  function distributeSelected(axis: "horizontal" | "vertical") {
+    if (selectedComps.length < 3) return;
+    if (axis === "horizontal") {
+      const sorted = [...selectedComps].sort((a, b) => a.x - b.x);
+      const first = sorted[0], last = sorted[sorted.length - 1];
+      const span = (last.x + last.width) - first.x;
+      const totalWidth = sorted.reduce((sum, c) => sum + c.width, 0);
+      const gap = (span - totalWidth) / (sorted.length - 1);
+      let cursor = first.x + first.width;
+      for (let i = 1; i < sorted.length - 1; i++) {
+        cursor += gap;
+        updateComp(sorted[i].id, { x: cursor });
+        cursor += sorted[i].width;
+      }
+    } else {
+      const sorted = [...selectedComps].sort((a, b) => a.y - b.y);
+      const first = sorted[0], last = sorted[sorted.length - 1];
+      const span = (last.y + last.height) - first.y;
+      const totalHeight = sorted.reduce((sum, c) => sum + c.height, 0);
+      const gap = (span - totalHeight) / (sorted.length - 1);
+      let cursor = first.y + first.height;
+      for (let i = 1; i < sorted.length - 1; i++) {
+        cursor += gap;
+        updateComp(sorted[i].id, { y: cursor });
+        cursor += sorted[i].height;
+      }
+    }
+  }
   function updateGroup(groupId: string, patch: { groupName?: string; groupLink?: string }) {
-    const setter = view === "desktop" ? setDesktopComponents : setMobileComponents;
+    const setter = setComponents;
     setter((prev) => prev.map((c) => (c.groupId === groupId ? { ...c, ...patch } : c)));
   }
+  // Batch property edit — only ever called when 2+ selected components share the
+  // same type (gated in the UI below). Loops updateComp() per id rather than one
+  // shared setter call: updateComp's existing debounce logic already collapses a
+  // same-tick burst of calls into a single undo step, so this stays consistent
+  // with every other edit path without needing new undo/clamping logic here.
+  function updateSelectedBatch(patch: Partial<PageComponent>) {
+    if (selectedComps.length < 2) return;
+    const targetType = selectedComps[0].type;
+    if (!selectedComps.every((c) => c.type === targetType)) return;
+    selectedComps.forEach((c) => updateComp(c.id, patch));
+  }
+  function copyStyle(comp: PageComponent) {
+    const style: Partial<PageComponent> = {};
+    STYLE_KEYS.forEach((k) => {
+      const v = comp[k];
+      if (v !== undefined) (style as Record<string, unknown>)[k] = v;
+    });
+    copiedStyleRef.current = style;
+    setContextMenu(null);
+  }
+  function pasteStyle(comp: PageComponent) {
+    if (!copiedStyleRef.current) return;
+    updateComp(comp.id, copiedStyleRef.current);
+    setContextMenu(null);
+  }
   function groupSelected() {
+    commitUndoSnapshot();
     const gid = uid();
-    const setter = view === "desktop" ? setDesktopComponents : setMobileComponents;
+    const setter = setComponents;
     setter((prev) => prev.map((c) => (selectedIds.includes(c.id) ? { ...c, groupId: gid } : c)));
     setContextMenu(null);
   }
   function ungroupSelected() {
-    const setter = view === "desktop" ? setDesktopComponents : setMobileComponents;
+    commitUndoSnapshot();
+    const setter = setComponents;
     setter((prev) => prev.map((c) => (selectedIds.includes(c.id) ? { ...c, groupId: undefined, groupName: undefined, groupLink: undefined } : c)));
     setContextMenu(null);
   }
@@ -1360,7 +3433,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
     e.preventDefault(); e.stopPropagation();
     setSelectedIds((prev) => {
       if (prev.includes(comp.id)) return prev;
-      const list = compsRef.current[viewRef.current === "desktop" ? "desktop" : "mobile"];
+      const list = compsRef.current[activeZoneRef.current][viewRef.current === "desktop" ? "desktop" : "mobile"];
       return comp.groupId ? list.filter((c) => c.groupId === comp.groupId).map((c) => c.id) : [comp.id];
     });
     setContextMenu({ x: e.clientX, y: e.clientY });
@@ -1369,7 +3442,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
   // ── Drag / resize / rotate start ───────────────────────────────────────────
   const onDragStart = useCallback((e: React.MouseEvent, id: string) => {
     e.preventDefault(); e.stopPropagation();
-    const list = compsRef.current[viewRef.current === "desktop" ? "desktop" : "mobile"];
+    const list = compsRef.current[activeZoneRef.current][viewRef.current === "desktop" ? "desktop" : "mobile"];
     const comp = list.find((c) => c.id === id);
     if (!comp) return;
     const groupIds = comp.groupId ? list.filter((c) => c.groupId === comp.groupId).map((c) => c.id) : [id];
@@ -1385,6 +3458,13 @@ export function PageEditor({ slug, label }: PageEditorProps) {
     const keepMulti = selectedIdsRef.current.includes(id) && selectedIdsRef.current.length > 1;
     const idsToMove = keepMulti ? selectedIdsRef.current : groupIds;
     if (!keepMulti) setSelectedIds(groupIds);
+    // Selection still updates above even for a locked component (so it can be
+    // unlocked from the toolbar) — only starting an actual drag is blocked.
+    if (comp.locked) return;
+    // Captured here (drag start, pre-mutation) rather than on mouseup — by mouseup
+    // compsRef would already reflect the *new* dragged-to position, which would make
+    // "undo" a no-op.
+    commitUndoSnapshot();
     // Spacing guides only make sense against a single moving box, not a multi/group drag.
     setDraggingId(idsToMove.length === 1 ? idsToMove[0] : null);
 
@@ -1397,9 +3477,10 @@ export function PageEditor({ slug, label }: PageEditorProps) {
 
   const onResizeStart = useCallback((e: React.MouseEvent, ids: string[], corner: ResizeCorner = "br") => {
     e.preventDefault(); e.stopPropagation();
-    const list = compsRef.current[viewRef.current === "desktop" ? "desktop" : "mobile"];
+    const list = compsRef.current[activeZoneRef.current][viewRef.current === "desktop" ? "desktop" : "mobile"];
     const comps = ids.map((id) => list.find((c) => c.id === id)).filter((c): c is PageComponent => !!c);
-    if (comps.length === 0) return;
+    if (comps.length === 0 || comps.some((c) => c.locked)) return;
+    commitUndoSnapshot();
     const minX = Math.min(...comps.map((c) => c.x));
     const minY = Math.min(...comps.map((c) => c.y));
     const maxX = Math.max(...comps.map((c) => c.x + c.width));
@@ -1413,8 +3494,9 @@ export function PageEditor({ slug, label }: PageEditorProps) {
     e.preventDefault(); e.stopPropagation();
     const canvas = canvasRef.current; if (!canvas) return;
     const rect = canvas.getBoundingClientRect();
-    const comp = compsRef.current[viewRef.current === "desktop" ? "desktop" : "mobile"].find((c) => c.id === id);
-    if (!comp) return;
+    const comp = compsRef.current[activeZoneRef.current][viewRef.current === "desktop" ? "desktop" : "mobile"].find((c) => c.id === id);
+    if (!comp || comp.locked) return;
+    commitUndoSnapshot();
     const scale = rect.width / canvasWRef.current;
     const centerX = rect.left + (comp.x + comp.width / 2) * scale;
     const centerY = rect.top + (comp.y + comp.height / 2) * scale;
@@ -1428,9 +3510,9 @@ export function PageEditor({ slug, label }: PageEditorProps) {
 
   const onHeightDragStart = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
-    heightDragRef.current = { startY: e.clientY, origH: viewRef.current === "desktop" ? desktopHeight : mobileHeight };
+    heightDragRef.current = { startY: e.clientY, origH: canvasH };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [desktopHeight, mobileHeight]);
+  }, [canvasH]);
 
   const onCanvasMouseDown = useCallback((e: React.MouseEvent) => {
     const rect = canvasRef.current?.getBoundingClientRect();
@@ -1452,24 +3534,55 @@ export function PageEditor({ slug, label }: PageEditorProps) {
         const { ids, startX, startY, origins } = dragRef.current;
         const dx = (e.clientX - startX) / scale;
         const dy = (e.clientY - startY) / scale;
-        ids.forEach((id) => {
+        // Grid snap (when enabled) is a coarse pre-snap — rounding the raw
+        // position/delta to the grid first — with alignment-guide snapping
+        // (below) still free to fine-tune against nearby components afterward.
+        const gs = gridSizeRef.current;
+        const gridRound = (v: number) => (snapToGridRef.current ? Math.round(v / gs) * gs : v);
+        if (ids.length === 1) {
+          // Snap-to-guide only applies to a single moving box — a rigid multi-select
+          // group keeps its raw delta (bounding-box-level snapping is a fast-follow).
+          const id = ids[0];
           const o = origins.get(id);
-          if (!o) return;
-          updateCompRef.current(id, { x: o.x + dx, y: o.y + dy });
-        });
+          if (o) {
+            const rawX = gridRound(o.x + dx), rawY = gridRound(o.y + dy);
+            const others = compsRef.current[activeZoneRef.current][viewRef.current === "desktop" ? "desktop" : "mobile"].filter((c) => c.id !== id && !c.hidden);
+            const { x, y, guides } = snapPosition(rawX, rawY, o.width, o.height, others, canvasWRef.current, canvasHRef.current);
+            updateCompRef.current(id, { x, y });
+            setAlignmentGuides(guides);
+          }
+        } else {
+          const gdx = gridRound(dx), gdy = gridRound(dy);
+          ids.forEach((id) => {
+            const o = origins.get(id);
+            if (!o) return;
+            updateCompRef.current(id, { x: o.x + gdx, y: o.y + gdy });
+          });
+        }
       }
       if (resizeRef.current) {
         const { ids, corner, startX, startY, bbox, origins } = resizeRef.current;
         const dx = (e.clientX - startX) / scale;
         const dy = (e.clientY - startY) / scale;
         const { x: bx, y: by, width: bw, height: bh } = bbox;
-        let newBW = bw, newBH = bh, newBX = bx, newBY = by;
+        let newBW = bw, newBH = bh;
         if (corner === "br") { newBW = bw + dx; newBH = bh + dy; }
-        else if (corner === "bl") { newBW = bw - dx; newBH = bh + dy; newBX = bx + dx; }
-        else if (corner === "tr") { newBW = bw + dx; newBH = bh - dy; newBY = by + dy; }
-        else { newBW = bw - dx; newBH = bh - dy; newBX = bx + dx; newBY = by + dy; }
+        else if (corner === "bl") { newBW = bw - dx; newBH = bh + dy; }
+        else if (corner === "tr") { newBW = bw + dx; newBH = bh - dy; }
+        else { newBW = bw - dx; newBH = bh - dy; }
+        if (aspectLockedRef.current && ids.length === 1) {
+          const ratio = bw / bh;
+          if (Math.abs(dx) > Math.abs(dy)) newBH = newBW / ratio;
+          else newBW = newBH * ratio;
+        }
         newBW = Math.max(20, newBW);
         newBH = Math.max(20, newBH);
+        // Re-derive the box origin from whichever corner is anchored (opposite the one being
+        // dragged), so an aspect-lock override (which can change width/height independent of
+        // the raw dx/dy) still keeps the correct corner pinned instead of drifting.
+        let newBX = bx, newBY = by;
+        if (corner === "bl" || corner === "tl") newBX = bx + bw - newBW;
+        if (corner === "tr" || corner === "tl") newBY = by + bh - newBH;
         const sx = newBW / bw;
         const sy = newBH / bh;
         ids.forEach((id) => {
@@ -1508,12 +3621,13 @@ export function PageEditor({ slug, label }: PageEditorProps) {
     const onUp = () => {
       dragRef.current = null; resizeRef.current = null; rotateRef.current = null; heightDragRef.current = null;
       setDraggingId(null);
+      setAlignmentGuides([]);
       if (marqueeStartRef.current) {
         setMarquee((box) => {
           if (box && (box.w > 3 || box.h > 3)) {
-            const list = compsRef.current[viewRef.current === "desktop" ? "desktop" : "mobile"];
+            const list = compsRef.current[activeZoneRef.current][viewRef.current === "desktop" ? "desktop" : "mobile"];
             const hits = list.filter((c) =>
-              c.x < box.x + box.w && c.x + c.width > box.x && c.y < box.y + box.h && c.y + c.height > box.y
+              !c.hidden && c.x < box.x + box.w && c.x + c.width > box.x && c.y < box.y + box.h && c.y + c.height > box.y
             );
             const ids = new Set<string>();
             hits.forEach((c) => {
@@ -1535,13 +3649,81 @@ export function PageEditor({ slug, label }: PageEditorProps) {
   }, []);
 
   // ── Upload ──────────────────────────────────────────────────────────────────
+  // Every uploaded image gets squeezed down to ~10-20KB — small enough that
+  // upload time is dominated by request overhead, not payload, regardless of
+  // network conditions or original file size (a phone photo straight off a
+  // camera can be 3-8MB). Iteratively drops JPEG quality first, then physical
+  // dimensions, until under the cap or a legibility floor is hit. Files that
+  // aren't images (or fail to decode) upload as-is.
+  async function compressImageForUpload(file: File): Promise<File> {
+    const TARGET_MAX_BYTES = 20_000;
+    const MIN_DIMENSION = 120;
+    const MIN_QUALITY = 0.2;
+    if (!file.type.startsWith("image/") || file.type === "image/svg+xml") return file;
+    try {
+      const bitmap = await createImageBitmap(file);
+      let dimension = Math.max(bitmap.width, bitmap.height);
+      let quality = 0.8;
+      let blob: Blob | null = null;
+      for (let attempt = 0; attempt < 16; attempt++) {
+        const scale = Math.min(1, dimension / Math.max(bitmap.width, bitmap.height));
+        const w = Math.max(1, Math.round(bitmap.width * scale));
+        const h = Math.max(1, Math.round(bitmap.height * scale));
+        const canvas = document.createElement("canvas");
+        canvas.width = w; canvas.height = h;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return file;
+        ctx.drawImage(bitmap, 0, 0, w, h);
+        blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", quality));
+        if (!blob) return file;
+        if (blob.size <= TARGET_MAX_BYTES) break;
+        // Cheapen quality first (cheaper visually than shrinking), then fall
+        // back to shrinking dimensions once quality is already near the floor.
+        if (quality > MIN_QUALITY) quality = Math.max(MIN_QUALITY, quality - 0.15);
+        else dimension = Math.max(MIN_DIMENSION, Math.round(dimension * 0.75));
+      }
+      if (!blob || blob.size >= file.size) return file; // compression didn't actually help — keep original
+      return new File([blob], file.name.replace(/\.\w+$/, ".jpg"), { type: "image/jpeg" });
+    } catch {
+      return file; // decode failed (corrupt file, unsupported format, etc.) — fall back to the original
+    }
+  }
+
+  // XHR (not fetch) specifically because fetch has no upload-progress event —
+  // needed for the visible progress bar in ImagePickerButton below.
+  function uploadImageWithProgress(file: File, onProgress: (pct: number) => void): Promise<string | null> {
+    return new Promise((resolve) => {
+      compressImageForUpload(file).then((toSend) => {
+        const fd = new FormData(); fd.append("file", toSend);
+        const xhr = new XMLHttpRequest();
+        xhr.open("POST", "/api/page-config/upload");
+        xhr.upload.onprogress = (e) => { if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100)); };
+        xhr.onload = () => {
+          if (xhr.status < 200 || xhr.status >= 300) { resolve(null); return; }
+          try { resolve(JSON.parse(xhr.responseText).url ?? null); } catch { resolve(null); }
+        };
+        xhr.onerror = () => resolve(null);
+        xhr.send(fd);
+      }).catch(() => resolve(null));
+    });
+  }
+
   async function uploadImage(file: File): Promise<string | null> {
     setUploading(true);
+    setUploadProgress(0);
     try {
-      const fd = new FormData(); fd.append("file", file);
-      const res = await fetch("/api/page-config/upload", { method: "POST", body: fd });
-      return (await res.json()).url ?? null;
-    } catch { return null; } finally { setUploading(false); }
+      const url = await uploadImageWithProgress(file, setUploadProgress);
+      return url;
+    } finally { setUploading(false); setUploadProgress(0); }
+  }
+
+  // Shared by every ImagePickerButton's onUpload prop: uploads and immediately
+  // prepends the result to the local asset list (so it shows up in the "Select
+  // from Asset" grid right away, no extra round-trip to re-list from MinIO).
+  async function uploadToAssets(file: File): Promise<string | null> {
+    const url = await uploadImage(file);
+    if (url) setAssetItems((prev) => [{ key: url, url, name: null, size: file.size, lastModified: new Date().toISOString() }, ...(prev ?? [])]);
+    return url;
   }
 
   // ── Rename ──────────────────────────────────────────────────────────────────
@@ -1552,11 +3734,36 @@ export function PageEditor({ slug, label }: PageEditorProps) {
     const name = nameInput.trim();
     if (!name || name === pageLabel) return;
     setPageLabel(name);
-    await fetch(`/api/pages/${encodeURIComponent(slug)}`, {
+    // Pinned pages are a folder's root page — rename via renameFolder instead
+    // of the plain page PUT below, so the Pages panel's folder label (which
+    // is what's actually displayed for the root page row) stays in sync
+    // rather than drifting from this page's own config.name. See
+    // renameFolder in page-config.service.ts, which updates both together.
+    if (isPinnedPage) {
+      const folder = projectsTree.projects.flatMap((p) => p.folders).find((f) => f.rootPage?.page === slug);
+      if (folder) {
+        await fetch(`/api/page-config/folders/${encodeURIComponent(folder.id)}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name }),
+        });
+        syncedSignatureRef.current = JSON.stringify({ ...pageConfigPayload, name });
+        projectsTree.fetchProjects();
+        return;
+      }
+    }
+    // Bug fix: this used to PUT a bare {name, desktop, mobile} payload — the old
+    // pre-item-4 flat shape — which silently wiped out header/footer (and their
+    // sticky/hideAfterPx settings) on every rename, since save() overwrites the
+    // whole config rather than merging. Spread the current (correct, combined)
+    // payload and only override name, exactly like the normal save() path.
+    const renamedPayload = { ...pageConfigPayload, name };
+    const res = await fetch(`/api/pages/${encodeURIComponent(slug)}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ config: { name, desktop: { components: desktopComponents, height: desktopHeight }, mobile: { components: mobileComponents, height: mobileHeight } } }),
+      body: JSON.stringify({ config: renamedPayload }),
     });
+    if (res.ok) syncedSignatureRef.current = JSON.stringify(renamedPayload);
   }
 
   // ── Delete ──────────────────────────────────────────────────────────────────
@@ -1571,30 +3778,90 @@ export function PageEditor({ slug, label }: PageEditorProps) {
     }
   }
 
-  const configPayload = {
-    name: pageLabel || label || slug,
-    desktop: { components: desktopComponents, height: desktopHeight },
-    mobile: { components: mobileComponents, height: mobileHeight },
-  };
-  const configSignature = JSON.stringify(configPayload);
+  async function logout() {
+    setLoggingOut(true);
+    try {
+      await fetch("/api/logout", { method: "POST" });
+    } catch {}
+    window.location.href = "/admin-gate";
+  }
 
+  // Item 4: Header/Template/Footer are all embedded in this one page's own row —
+  // no more shared reserved-slug routes, so editing Header on "Home" can never
+  // touch Header on any other page. A single signature/PUT covers all three.
+  const templateConfigPayload = {
+    desktop: { components: templateDesktopComponents, height: templateDesktopHeight },
+    mobile: { components: templateMobileComponents, height: templateMobileHeight },
+  };
+  // Kept separate from pageConfigSignature purely for version history, which is
+  // scoped to Template only (see captureVersion below) — editing just the header
+  // shouldn't create a new Template restore point.
+  const templateConfigSignature = JSON.stringify(templateConfigPayload);
+  // Reconstructs the single template.components array for saving — inverse
+  // of the extractZonesFromTemplate call in the load effect above. Desktop
+  // and mobile blocks get their OWN stable ids (headerBlockIdRef/
+  // footerBlockIdRef, captured on load) so re-saving doesn't spuriously
+  // regenerate the block's own component id every time, even though its
+  // settings (rotation, hideOnScroll) are shared editor state applied
+  // identically to both viewports.
+  //
+  // hasHeaderBlock/hasFooterBlock is a single flag shared across both
+  // viewports (the "+ Add Header" button turns it on for both at once), but
+  // a page migrated from the old separate-fields shape can genuinely have a
+  // block on ONE viewport only (e.g. the grandfathered home page has header
+  // content on mobile but never had any on desktop). Gating each viewport's
+  // hasHeader/hasFooter on that viewport's own stable blockId (not just the
+  // shared flag) keeps desktop header-less in that case, instead of
+  // synthesizing an empty desktop header-block with a fresh random id on
+  // every single render (which it would otherwise do, since there'd be no
+  // stable id to reuse) — that was a real bug caught in testing: it made
+  // pageConfigSignature change every render, permanently "dirty".
+  const builtDesktopTemplate = buildTemplateZone({
+    hasHeader: hasHeaderBlock && headerBlockIdRef.current.desktop !== null,
+    header: { components: headerDesktopComponents, height: headerDesktopHeight, rotation: headerRotation, hideOnScrollUpPx: headerHideOnScrollUpPx, hideOnScrollDownPx: headerHideOnScrollDownPx, blockId: headerBlockIdRef.current.desktop },
+    hasFooter: hasFooterBlock && footerBlockIdRef.current.desktop !== null,
+    footer: { components: footerDesktopComponents, height: footerDesktopHeight, rotation: footerRotation, hideOnScrollUpPx: footerHideOnScrollUpPx, hideOnScrollDownPx: footerHideOnScrollDownPx, blockId: footerBlockIdRef.current.desktop },
+    templateComponents: templateDesktopComponents,
+    templateHeight: templateDesktopHeight,
+    canvasWidth: DESKTOP_W,
+    newId: uid,
+  });
+  const builtMobileTemplate = buildTemplateZone({
+    hasHeader: hasHeaderBlock && headerBlockIdRef.current.mobile !== null,
+    header: { components: headerMobileComponents, height: headerMobileHeight, rotation: headerRotation, hideOnScrollUpPx: headerHideOnScrollUpPx, hideOnScrollDownPx: headerHideOnScrollDownPx, blockId: headerBlockIdRef.current.mobile },
+    hasFooter: hasFooterBlock && footerBlockIdRef.current.mobile !== null,
+    footer: { components: footerMobileComponents, height: footerMobileHeight, rotation: footerRotation, hideOnScrollUpPx: footerHideOnScrollUpPx, hideOnScrollDownPx: footerHideOnScrollDownPx, blockId: footerBlockIdRef.current.mobile },
+    templateComponents: templateMobileComponents,
+    templateHeight: templateMobileHeight,
+    canvasWidth: MOBILE_W,
+    newId: uid,
+  });
+  const pageConfigPayload = {
+    name: pageLabel || label || slug,
+    template: { desktop: builtDesktopTemplate, mobile: builtMobileTemplate },
+    canvasBgColor,
+  };
+  const pageConfigSignature = JSON.stringify(pageConfigPayload);
+
+  // Version Control (manual/timed restore points) is scoped to Template only —
+  // Header/Footer don't have their own version history.
   function captureVersion(reason = "Manual checkpoint") {
-    if (versionSignatureRef.current === configSignature) return;
-    versionSignatureRef.current = configSignature;
+    if (versionSignatureRef.current === templateConfigSignature) return;
+    versionSignatureRef.current = templateConfigSignature;
     setVersions((prev) => [{
       id: uid(),
       label: reason,
       createdAt: new Date().toISOString(),
-      desktop: { components: desktopComponents.map((c) => ({ ...c })), height: desktopHeight },
-      mobile: { components: mobileComponents.map((c) => ({ ...c })), height: mobileHeight },
+      desktop: { components: templateDesktopComponents.map((c) => ({ ...c })), height: templateDesktopHeight },
+      mobile: { components: templateMobileComponents.map((c) => ({ ...c })), height: templateMobileHeight },
     }, ...prev].slice(0, 6));
   }
 
   function restoreVersion(version: VersionSnapshot) {
-    setDesktopComponents(version.desktop.components.map((c) => ({ ...c })));
-    setDesktopHeight(version.desktop.height);
-    setMobileComponents(version.mobile.components.map((c) => ({ ...c })));
-    setMobileHeight(version.mobile.height);
+    setTemplateDesktopComponents(version.desktop.components.map((c) => ({ ...c })));
+    setTemplateDesktopHeight(version.desktop.height);
+    setTemplateMobileComponents(version.mobile.components.map((c) => ({ ...c })));
+    setTemplateMobileHeight(version.mobile.height);
     setSelectedIds([]);
     setSyncStatus("dirty");
     setChangeCount((n) => n + 1);
@@ -1603,25 +3870,36 @@ export function PageEditor({ slug, label }: PageEditorProps) {
   // ── Save ────────────────────────────────────────────────────────────────────
   // Ref-guarded (not just `disabled={saving}`) so a publish in flight can never be
   // re-triggered by a second click landing in the brief window before React re-renders.
-  async function save() {
-    if (savingRef.current) return;
+  // One PUT for the whole page (header+template+footer together — item 4), and
+  // critically: the response is actually checked. Fetch resolves on ANY HTTP
+  // status, so without checking `res.ok` a 401 (e.g. the 15-minute access token
+  // expiring mid-session — see authedFetch) would silently look like success and
+  // the UI would report "Saved"/"Published" while nothing was written. That was
+  // the root cause of item 1.
+  async function save(): Promise<boolean> {
+    if (savingRef.current) return false;
     savingRef.current = true;
     setSaving(true);
     setSyncStatus("syncing");
     try {
-      await fetch(`/api/pages/${encodeURIComponent(slug)}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ config: configPayload }),
-      });
-      syncedSignatureRef.current = configSignature;
+      if (syncedSignatureRef.current !== pageConfigSignature) {
+        const res = await fetch(`/api/pages/${encodeURIComponent(slug)}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ config: pageConfigPayload }),
+        });
+        if (!res.ok) throw new Error(`Save failed: HTTP ${res.status}`);
+        syncedSignatureRef.current = pageConfigSignature;
+      }
       setSyncStatus("synced");
       setLastSyncedAt(new Date());
       setChangeCount(0);
       captureVersion("Published version");
       setSaved(true); setTimeout(() => setSaved(false), 2500);
+      return true;
     } catch {
       setSyncStatus("error");
+      return false;
     } finally {
       setSaving(false);
       savingRef.current = false;
@@ -1631,11 +3909,11 @@ export function PageEditor({ slug, label }: PageEditorProps) {
   useEffect(() => {
     if (loading) return;
     if (!syncedSignatureRef.current) {
-      syncedSignatureRef.current = configSignature;
-      versionSignatureRef.current = configSignature;
+      syncedSignatureRef.current = pageConfigSignature;
+      versionSignatureRef.current = templateConfigSignature;
       return;
     }
-    if (syncedSignatureRef.current === configSignature) return;
+    if (syncedSignatureRef.current === pageConfigSignature) return;
     setSyncStatus("dirty");
     setChangeCount((n) => n + 1);
     const versionTimer = window.setTimeout(() => captureVersion("Auto checkpoint"), 1200);
@@ -1645,16 +3923,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
       window.clearTimeout(syncTimer);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [configSignature, loading]);
-
-  // Publish from the preview overlay: save, then hold the overlay open just long
-  // enough to show the "Published!" confirmation before dismissing it, so the
-  // user has clear proof it went through exactly once instead of the overlay
-  // just vanishing right when the request resolves.
-  async function publishAndClose() {
-    await save();
-    setTimeout(() => setShowPreview(false), 700);
-  }
+  }, [pageConfigSignature, loading]);
 
   const sLabel = "text-[10px] text-muted-foreground block mb-0.5 uppercase tracking-wide";
   const displayLabel = pageLabel || label || slug;
@@ -1665,19 +3934,251 @@ export function PageEditor({ slug, label }: PageEditorProps) {
     syncStatus === "synced" ? "Server synced" :
     "Ready";
 
+  const pageNameBySlug = new Map(pagesList.pages.map((p) => [p.slug, p.name]));
+
+  // A single draggable page row inside a folder or the Unassigned bucket (the
+  // Pages panel tree). Dropping onto a row within the SAME bucket reorders
+  // (reuses the flat list's old filter-then-reindex pattern, generalized to
+  // whatever bucket this row belongs to); dropping a row dragged from a
+  // DIFFERENT bucket instead reassigns its folder via movePageToFolder — the
+  // bucket-level onDrop handlers (see the Pages tab JSX below) cover dropping
+  // into empty space, this one covers dropping directly onto a sibling row.
+  function renderPageRow(pageSlug: string, bucketSlugs: string[], folderId: string | null) {
+    const name = pageNameBySlug.get(pageSlug) ?? pageSlug;
+    if (pagesList.editingSlug === pageSlug) {
+      return (
+        <input key={pageSlug} value={pagesList.editInput} onChange={(e) => pagesList.setEditInput(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") pagesList.commitEdit(pageSlug); if (e.key === "Escape") pagesList.setEditingSlug(null); }}
+          onBlur={() => pagesList.commitEdit(pageSlug)} autoFocus
+          className="text-xs border rounded px-1.5 py-1 mx-1 bg-background" />
+      );
+    }
+    if (pagesList.confirmDeleteSlug === pageSlug) {
+      return (
+        <div key={pageSlug} className="flex items-center gap-1 px-2 py-1 text-xs">
+          <span className="flex-1 truncate text-destructive">Delete "{name}"?</span>
+          <button type="button" onClick={() => pagesList.deletePage(pageSlug)} className="text-[10px] px-1.5 py-0.5 rounded bg-red-600 text-white shrink-0">Yes</button>
+          <button type="button" onClick={() => pagesList.setConfirmDeleteSlug(null)} className="text-[10px] px-1.5 py-0.5 rounded border shrink-0">No</button>
+        </div>
+      );
+    }
+    const isActive = slug === pageSlug;
+    return (
+      <div key={pageSlug} className="flex flex-col">
+        <div
+          draggable
+          onDragStart={() => setDragPageSlug(pageSlug)}
+          onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); if (dragOverPageSlug !== pageSlug) setDragOverPageSlug(pageSlug); }}
+          onDragLeave={() => setDragOverPageSlug((s) => (s === pageSlug ? null : s))}
+          onDrop={(e) => {
+            e.preventDefault(); e.stopPropagation();
+            if (dragPageSlug && dragPageSlug !== pageSlug) {
+              if (bucketSlugs.includes(dragPageSlug)) {
+                const from = bucketSlugs.indexOf(dragPageSlug);
+                const to = bucketSlugs.indexOf(pageSlug);
+                const reordered = [...bucketSlugs];
+                const [moved] = reordered.splice(from, 1);
+                reordered.splice(to, 0, moved);
+                reorderBucket(reordered);
+              } else {
+                projectsTree.movePageToFolder(dragPageSlug, folderId);
+              }
+            }
+            setDragPageSlug(null); setDragOverPageSlug(null); setDragOverBucketId(null);
+          }}
+          onDragEnd={() => { setDragPageSlug(null); setDragOverPageSlug(null); setDragOverBucketId(null); }}
+          className={`group flex items-center rounded hover:bg-muted cursor-grab active:cursor-grabbing ${dragOverPageSlug === pageSlug && dragPageSlug !== pageSlug ? "border-t-2 border-blue-500" : ""}`}
+        >
+          <GripVertical className="h-3 w-3 text-muted-foreground/50 shrink-0 ml-1" />
+          <button type="button" onClick={() => router.push(`/admin/pages/${encodeURIComponent(pageSlug)}`)}
+            onDoubleClick={() => pagesList.startEdit(pageSlug, name)}
+            className={`flex-1 min-w-0 flex items-center gap-2 text-xs px-2 py-1.5 text-left ${isActive ? "font-medium" : "text-muted-foreground"}`}>
+            <FileText className="h-3.5 w-3.5 shrink-0" /> <span className="truncate">{name}</span>
+          </button>
+          <button type="button" title="Rename" onClick={() => pagesList.startEdit(pageSlug, name)} className="opacity-0 group-hover:opacity-100 p-1 shrink-0 hover:text-foreground text-muted-foreground">
+            <Pencil className="h-3 w-3" />
+          </button>
+          <button type="button" title="Duplicate" onClick={() => projectsTree.duplicatePage(pageSlug)} className="opacity-0 group-hover:opacity-100 p-1 shrink-0 hover:text-foreground text-muted-foreground">
+            <Copy className="h-3 w-3" />
+          </button>
+          <button type="button" title="Delete" onClick={() => pagesList.setConfirmDeleteSlug(pageSlug)} className="opacity-0 group-hover:opacity-100 p-1 pr-2 shrink-0 text-muted-foreground hover:text-destructive">
+            <Trash2 className="h-3 w-3" />
+          </button>
+        </div>
+        {/* Layers nested under this page's row — only ever the currently-open
+            page (see renderLayersPanel's comment: other pages' components
+            aren't loaded into local state, so they can't expand). */}
+        {isActive && <div className="ml-4 border-l pl-2">{renderLayersPanel()}</div>}
+      </div>
+    );
+  }
+
   // Shared header (type label + Delete) + Name/Link + W/H/Rotation fields, reused inside
   // each Add Component accordion so a selected component's settings live right there.
+  // Always-visible header (type label + Delete) shown above the 5 collapsible
+  // property sections — not itself part of "Layout," just card chrome.
+  function renderTypeHeader(comp: PageComponent) {
+    return (
+      <div className="flex items-center gap-2">
+        <span className="text-xs font-semibold capitalize flex-1">
+          {componentTypeLabel(comp.type)}
+        </span>
+        <Button variant="destructive" size="sm" className="h-6 px-2 gap-1 text-xs" onClick={() => deleteComp([comp.id])}>
+          <Trash2 className="h-3 w-3" /> Delete
+        </Button>
+      </div>
+    );
+  }
+
+  // Shared by the header and footer gear-icon settings panels — two
+  // independent hide-on-scroll thresholds (either, both, or neither can be
+  // enabled) plus rotation presets. Rotation only ever spins the block's own
+  // outer bar; see the rotation-without-rotating-children handling in
+  // PreviewCanvas/PreviewOverlay and the live PageRenderer.
+  function renderBlockSettings(kind: "header" | "footer") {
+    const rotation = kind === "header" ? headerRotation : footerRotation;
+    const setRotation = kind === "header" ? setHeaderRotation : setFooterRotation;
+    const hideUpPx = kind === "header" ? headerHideOnScrollUpPx : footerHideOnScrollUpPx;
+    const setHideUpPx = kind === "header" ? setHeaderHideOnScrollUpPx : setFooterHideOnScrollUpPx;
+    const hideDownPx = kind === "header" ? headerHideOnScrollDownPx : footerHideOnScrollDownPx;
+    const setHideDownPx = kind === "header" ? setHeaderHideOnScrollDownPx : setFooterHideOnScrollDownPx;
+    const hideUpDraft = kind === "header" ? headerHideUpPxDraft : footerHideUpPxDraft;
+    const setHideUpDraft = kind === "header" ? setHeaderHideUpPxDraft : setFooterHideUpPxDraft;
+    const hideDownDraft = kind === "header" ? headerHideDownPxDraft : footerHideDownPxDraft;
+    const setHideDownDraft = kind === "header" ? setHeaderHideDownPxDraft : setFooterHideDownPxDraft;
+
+    function renderPxField(label: string, value: number | null, draft: string | null, setDraft: (v: string | null) => void, setValue: (v: number | null) => void) {
+      const enabled = value !== null;
+      return (
+        <div>
+          <label className="flex items-center gap-1.5 text-[11px] mb-1">
+            <input type="checkbox" checked={enabled} onChange={(e) => setValue(e.target.checked ? 400 : null)} className="h-3 w-3" />
+            {label}
+          </label>
+          {enabled && (
+            <Input type="number" min={0} step={50}
+              value={draft ?? String(value)}
+              onChange={(e) => setDraft(e.target.value)}
+              onBlur={() => {
+                if (draft !== null) {
+                  const parsed = parseInt(draft, 10);
+                  setValue(Number.isFinite(parsed) ? Math.max(0, parsed) : value);
+                }
+                setDraft(null);
+              }}
+              onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+              className="h-6 text-xs px-1.5 ml-4 w-24" />
+          )}
+        </div>
+      );
+    }
+
+    return (
+      <div className="mx-1 mb-1 p-2 rounded-md border bg-muted/30 flex flex-col gap-2">
+        {renderPxField("Hide on scroll down (px)", hideDownPx, hideDownDraft, setHideDownDraft, setHideDownPx)}
+        {renderPxField("Hide on scroll up (px)", hideUpPx, hideUpDraft, setHideUpDraft, setHideUpPx)}
+        <div>
+          <label className="text-[10px] text-muted-foreground block mb-1 uppercase tracking-wide">Rotation</label>
+          <div className="flex items-center gap-1">
+            {([0, 90, 180, 270] as const).map((deg) => (
+              <button key={deg} type="button" onClick={() => setRotation(deg)}
+                className={`flex-1 h-6 text-[10px] rounded border ${rotation === deg ? "bg-black text-white border-black" : "border-gray-200 hover:bg-muted"}`}>
+                {deg}°
+              </button>
+            ))}
+          </div>
+          <p className="text-[9px] text-muted-foreground mt-1">Only the bar rotates — its contents stay upright.</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Read-only strip for a zone that ISN'T the currently-active one (item 3:
+  // "all three zones must be visible simultaneously while editing any one").
+  // Reuses the existing PreviewCanvas renderer rather than a second copy of
+  // the fully-interactive canvas — clicking the strip switches activeZone so
+  // it becomes the live, editable canvas in its place. Header/Footer also get
+  // a height input right in the strip's label bar so they're adjustable
+  // without needing to activate them first.
+  function renderZoneStrip(zone: Zone, label: string) {
+    const comps = zoneComponents[zone][view];
+    const h = zoneHeights[zone][view];
+    const setHeight = view === "desktop" ? zoneSetters[zone].setDesktopHeight : zoneSetters[zone].setMobileHeight;
+    return (
+      <div key={zone} className="mx-auto mb-2" style={{ width: "100%", maxWidth: canvasW }}>
+        <div
+          className="border rounded-md overflow-hidden bg-white shadow-sm cursor-pointer hover:ring-2 hover:ring-blue-300 transition-shadow"
+          onClick={() => setActiveZone(zone)}
+        >
+          <div className="flex items-center justify-between px-2 py-1 bg-muted/60 border-b text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+            <span>{label} · click to edit</span>
+            {zone !== "template" && (
+              <label className="flex items-center gap-1 normal-case font-normal" onClick={(e) => e.stopPropagation()}>
+                Height
+                <input
+                  type="number" min={40} max={2000}
+                  value={zoneHeightDrafts[zone] ?? String(Math.round(h))}
+                  onChange={(e) => setZoneHeightDrafts((prev) => ({ ...prev, [zone]: e.target.value }))}
+                  onBlur={() => {
+                    const draft = zoneHeightDrafts[zone];
+                    if (draft !== undefined) {
+                      const parsed = parseInt(draft, 10);
+                      // Clamp to a sane range — an accidental extra digit (e.g. "5000050"
+                      // instead of "500") used to silently blow up the whole page's layout.
+                      setHeight(Number.isFinite(parsed) ? Math.min(2000, Math.max(40, parsed)) : Math.round(h));
+                    }
+                    setZoneHeightDrafts((prev) => { const next = { ...prev }; delete next[zone]; return next; });
+                  }}
+                  onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+                  className="w-14 h-5 text-[10px] border rounded px-1 bg-background"
+                />
+              </label>
+            )}
+          </div>
+          <div className="pointer-events-none opacity-90">
+            <PreviewCanvas components={comps} canvasW={canvasW} canvasH={h} />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Collapsible wrapper shared by all 5 property sections (Layout/Appearance/
+  // Typography/Responsive/Effects) — open/closed state is shared across every
+  // selected component via `openPropertySections` (all default open).
+  function renderPropertySection(id: PropertySection, label: string, content: React.ReactNode) {
+    const isOpen = openPropertySections[id];
+    return (
+      <div className="border-t pt-1.5 mt-1.5 first:border-t-0 first:pt-0 first:mt-0">
+        <button type="button" onClick={() => setOpenPropertySections((p) => ({ ...p, [id]: !p[id] }))}
+          className="w-full flex items-center justify-between text-left mb-1.5">
+          <span className={sLabel}>{label}</span>
+          <ChevronDown className={`h-3 w-3 text-muted-foreground transition-transform ${isOpen ? "rotate-180" : ""}`} />
+        </button>
+        {isOpen && <div className="flex flex-col gap-2">{content}</div>}
+      </div>
+    );
+  }
+
+  // Responsive section content — desktop/mobile are fully separate component
+  // arrays already (no per-component override system), so this is a simple
+  // cross-link rather than a new responsive-override UI.
+  function renderResponsiveHint() {
+    const other = view === "desktop" ? "mobile" : "desktop";
+    return (
+      <div className="flex items-center justify-between gap-2 text-xs">
+        <span className="text-muted-foreground">Editing: <strong className="text-foreground capitalize">{view}</strong></span>
+        <button type="button" onClick={() => { setSelectedIds([]); setView(other); }}
+          className="flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded border border-gray-200 hover:bg-muted">
+          {other === "mobile" ? <Smartphone className="h-3 w-3" /> : <Monitor className="h-3 w-3" />} Check {other}
+        </button>
+      </div>
+    );
+  }
+
   function renderCommonFields(comp: PageComponent) {
     return (
       <>
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-semibold capitalize flex-1">
-            {componentTypeLabel(comp.type)}
-          </span>
-          <Button variant="destructive" size="sm" className="h-6 px-2 gap-1 text-xs" onClick={() => deleteComp([comp.id])}>
-            <Trash2 className="h-3 w-3" /> Delete
-          </Button>
-        </div>
         <div className="grid grid-cols-2 gap-1.5">
           <div>
             <label className={sLabel}>Name</label>
@@ -1702,12 +4203,120 @@ export function PageEditor({ slug, label }: PageEditorProps) {
             <Input type="number" min="-360" max="360" step="1" value={Math.round(comp.rotation ?? 0)} onChange={(e) => updateComp(comp.id, { rotation: +e.target.value })} className="h-6 text-xs px-1.5" />
           </div>
         </div>
+        <div className="flex items-center gap-1">
+          {[0, 90, 180, 270].map((deg) => (
+            <button key={deg} type="button" onClick={() => updateComp(comp.id, { rotation: deg })}
+              className={`flex-1 h-6 text-[10px] rounded border ${Math.round(comp.rotation ?? 0) === deg ? "bg-black text-white border-black" : "border-gray-200 hover:bg-muted"}`}>
+              {deg}°
+            </button>
+          ))}
+        </div>
+        <button type="button" onClick={() => setAspectLocked((v) => !v)}
+          className={`flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border w-fit ${aspectLocked ? "border-black bg-muted" : "border-gray-200 text-muted-foreground hover:bg-muted"}`}
+        >
+          {aspectLocked ? <Lock className="h-2.5 w-2.5" /> : <Unlock className="h-2.5 w-2.5" />} Lock aspect ratio while resizing
+        </button>
       </>
+    );
+  }
+
+  // Shadow/blur builder — shared across the shape/image/button/carousel/icon
+  // accordions (not text, which keeps its own textEffect system). Ships solid-color
+  // only per the "gradient support for future" deferral — reuses the existing
+  // ColorPicker as-is rather than a new gradient editor.
+  function renderShadowBlurFields(comp: PageComponent) {
+    return (
+      <div className="flex flex-col gap-2 pt-1.5 border-t">
+        <p className={sLabel}>Shadow &amp; Blur</p>
+        <div className="grid grid-cols-2 gap-1.5">
+          <div>
+            <label className={sLabel}>Shadow X</label>
+            <div className="flex items-center gap-1">
+              <input type="range" min="-40" max="40" value={comp.shadowX ?? 0} onChange={(e) => updateComp(comp.id, { shadowX: +e.target.value })} className="w-full" />
+              <Input type="number" value={comp.shadowX ?? 0} onChange={(e) => updateComp(comp.id, { shadowX: +e.target.value })} className="h-6 w-12 text-xs px-1.5 shrink-0" />
+            </div>
+          </div>
+          <div>
+            <label className={sLabel}>Shadow Y</label>
+            <div className="flex items-center gap-1">
+              <input type="range" min="-40" max="40" value={comp.shadowY ?? 0} onChange={(e) => updateComp(comp.id, { shadowY: +e.target.value })} className="w-full" />
+              <Input type="number" value={comp.shadowY ?? 0} onChange={(e) => updateComp(comp.id, { shadowY: +e.target.value })} className="h-6 w-12 text-xs px-1.5 shrink-0" />
+            </div>
+          </div>
+          <div>
+            <label className={sLabel}>Blur</label>
+            <div className="flex items-center gap-1">
+              <input type="range" min="0" max="80" value={comp.shadowBlur ?? 0} onChange={(e) => updateComp(comp.id, { shadowBlur: +e.target.value })} className="w-full" />
+              <Input type="number" min="0" value={comp.shadowBlur ?? 0} onChange={(e) => updateComp(comp.id, { shadowBlur: +e.target.value })} className="h-6 w-12 text-xs px-1.5 shrink-0" />
+            </div>
+          </div>
+          <div>
+            <label className={sLabel}>Spread</label>
+            <div className="flex items-center gap-1">
+              <input type="range" min="-20" max="40" value={comp.shadowSpread ?? 0} onChange={(e) => updateComp(comp.id, { shadowSpread: +e.target.value })} className="w-full" />
+              <Input type="number" value={comp.shadowSpread ?? 0} onChange={(e) => updateComp(comp.id, { shadowSpread: +e.target.value })} className="h-6 w-12 text-xs px-1.5 shrink-0" />
+            </div>
+          </div>
+        </div>
+        <ColorPicker label="Shadow color" value={comp.shadowColor ?? "#000000"} onChange={(v) => updateComp(comp.id, { shadowColor: v })} />
+        <div>
+          <label className={sLabel}>Blur amount (component itself)</label>
+          <div className="flex items-center gap-1">
+            <input type="range" min="0" max="20" value={comp.blurAmount ?? 0} onChange={(e) => updateComp(comp.id, { blurAmount: +e.target.value })} className="w-full" />
+            <Input type="number" min="0" value={comp.blurAmount ?? 0} onChange={(e) => updateComp(comp.id, { blurAmount: +e.target.value })} className="h-6 w-12 text-xs px-1.5 shrink-0" />
+          </div>
+        </div>
+      </div>
     );
   }
 
   // Categorized icon grid, reused for both "add a new icon" and "change the
   // selected icon" — clicking an entry calls onPick with its registry id.
+  // Small representative preview for each Text Template's row in the picker —
+  // mimics the real hierarchy (size/weight/italic) at thumbnail scale; not the
+  // actual inserted content, just a visual hint of what each template looks like.
+  function renderTextTemplatePreview(id: TextTemplateId) {
+    switch (id) {
+      case "hero-title":
+        return (
+          <>
+            <span className="text-[11px] font-extrabold leading-none text-gray-900">Headline</span>
+            <span className="text-[7px] text-gray-500 leading-none">Subtitle text</span>
+          </>
+        );
+      case "section-header":
+        return (
+          <div className="w-full flex flex-col items-start">
+            <span className="text-[9px] font-bold leading-none text-gray-900">Section title</span>
+            <span className="text-[6px] text-gray-500 leading-none mt-0.5">Short description</span>
+          </div>
+        );
+      case "card-title-desc":
+        return (
+          <div className="w-full flex flex-col items-start">
+            <span className="text-[8px] font-bold leading-none text-gray-900">Card title</span>
+            <span className="text-[6px] text-gray-500 leading-none mt-0.5">Description text here</span>
+          </div>
+        );
+      case "testimonial":
+        return (
+          <>
+            <span className="text-[7px] italic leading-none text-gray-700 text-center">"Great product"</span>
+            <span className="text-[6px] font-bold leading-none text-gray-900 mt-0.5">Jordan Lee</span>
+            <span className="text-[5px] text-gray-400 leading-none">Head of Ops</span>
+          </>
+        );
+      case "pricing-block":
+        return (
+          <>
+            <span className="text-[7px] font-bold leading-none text-gray-900">Pro Plan</span>
+            <span className="text-[11px] font-extrabold leading-none text-gray-900">$29/mo</span>
+            <span className="text-[5px] text-gray-500 leading-none">• Feature one</span>
+          </>
+        );
+    }
+  }
+
   function renderIconPicker(onPick: (iconId: string) => void, activeId?: string) {
     return (
       <div className="max-h-56 overflow-y-auto flex flex-col gap-2 pr-0.5">
@@ -1728,41 +4337,339 @@ export function PageEditor({ slug, label }: PageEditorProps) {
     );
   }
 
+  // Layers tree for whichever page is currently open in the editor —
+  // nested under that page's row in the Project tab (see the tree JSX
+  // below), not a standalone tab anymore. Only the active page's
+  // components are loaded into local state at all (zoneComponents etc.),
+  // so other pages' rows can't expand their own layers without fetching
+  // that page's config too — they stay click-to-navigate instead.
+  function renderLayersPanel() {
+    return (
+                  <div className="flex flex-col gap-2.5">
+                    <div className="relative px-1">
+                      <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground pointer-events-none" />
+                      <input
+                        value={layerSearch}
+                        onChange={(e) => setLayerSearch(e.target.value)}
+                        placeholder="Search components…"
+                        className="w-full h-7 text-xs border rounded-md pl-7 pr-2 bg-background"
+                      />
+                    </div>
+                    {ZONE_META.map(({ zone, label: zoneLabel }) => {
+                      const query = layerSearch.trim().toLowerCase();
+                      const allZoneComps = zoneComponents[zone][view];
+                      const zoneComps = query
+                        ? allZoneComps.filter((c) => (c.name?.trim() || componentTypeLabel(c.type)).toLowerCase().includes(query))
+                        : allZoneComps;
+                      const zoneIsExpanded = query ? true : expandedZones[zone];
+                      // Header/Footer are optional now — no strip at all until "+ Add
+                      // Header"/"+ Add Footer" is clicked (Template always exists; it's
+                      // the one mandatory zone every page has).
+                      if ((zone === "header" && !hasHeaderBlock) || (zone === "footer" && !hasFooterBlock)) {
+                        return (
+                          <div key={zone} className="flex flex-col gap-0.5">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                // Assign the block's own id right away (not deferred to
+                                // buildTemplateZone) — generating it lazily there would mint a
+                                // fresh id on every render since pageConfigPayload is a plain
+                                // computed value, which would make pageConfigSignature change
+                                // every render even with no real edits and spam the dirty/
+                                // autosave state.
+                                if (zone === "header") { headerBlockIdRef.current = { desktop: uid(), mobile: uid() }; setHasHeaderBlock(true); }
+                                else { footerBlockIdRef.current = { desktop: uid(), mobile: uid() }; setHasFooterBlock(true); }
+                              }}
+                              className="flex items-center gap-1.5 px-1 py-1.5 text-xs text-blue-600 hover:bg-blue-50 rounded-md"
+                            >
+                              <Plus className="h-3.5 w-3.5" /> Add {zoneLabel}
+                            </button>
+                          </div>
+                        );
+                      }
+                      return (
+                        <div key={zone} className="flex flex-col gap-0.5">
+                          {/* Zone row (Header/Template/Footer) */}
+                          <div className="flex items-center gap-1 px-1">
+                            <button type="button" onClick={() => setExpandedZones((p) => ({ ...p, [zone]: !p[zone] }))}
+                              className="p-0.5 rounded hover:bg-muted shrink-0">
+                              <ChevronDown className={`h-3 w-3 text-muted-foreground transition-transform ${zoneIsExpanded ? "" : "-rotate-90"}`} />
+                            </button>
+                            <span className="text-[10px] uppercase tracking-wide font-semibold text-muted-foreground flex-1 truncate">
+                              {zoneLabel} {zoneComps.length > 0 && `(${zoneComps.length})`}
+                            </span>
+                            {zone === "header" && (
+                              <>
+                                <button type="button" title="Header scroll + rotation settings" onClick={() => setHeaderSettingsOpen((v) => !v)}
+                                  className={`p-1 rounded hover:bg-muted shrink-0 ${headerSettingsOpen ? "bg-muted text-foreground" : "text-muted-foreground"}`}>
+                                  <Settings className="h-3.5 w-3.5" />
+                                </button>
+                                <button type="button" title="Remove header" onClick={() => setHasHeaderBlock(false)}
+                                  className="p-1 rounded hover:bg-muted shrink-0 text-muted-foreground hover:text-destructive">
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </button>
+                              </>
+                            )}
+                            {zone === "footer" && (
+                              <>
+                                <button type="button" title="Footer scroll + rotation settings" onClick={() => setFooterSettingsOpen((v) => !v)}
+                                  className={`p-1 rounded hover:bg-muted shrink-0 ${footerSettingsOpen ? "bg-muted text-foreground" : "text-muted-foreground"}`}>
+                                  <Settings className="h-3.5 w-3.5" />
+                                </button>
+                                <button type="button" title="Remove footer" onClick={() => setHasFooterBlock(false)}
+                                  className="p-1 rounded hover:bg-muted shrink-0 text-muted-foreground hover:text-destructive">
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </button>
+                              </>
+                            )}
+                            <div className="relative shrink-0">
+                              <button type="button" title={`Add to ${zoneLabel}`} onClick={() => setZoneAddMenuOpen((z) => (z === zone ? null : zone))} className="p-1 rounded hover:bg-muted">
+                                <Plus className="h-3.5 w-3.5" />
+                              </button>
+                              {zoneAddMenuOpen === zone && (
+                                <>
+                                  <div className="fixed inset-0 z-40" onClick={() => setZoneAddMenuOpen(null)} />
+                                  <div className="absolute right-0 top-full mt-1 z-50 w-48 max-h-80 overflow-y-auto rounded-md border bg-white shadow-lg p-1.5 flex flex-col gap-0.5">
+                                    <button type="button" onClick={() => { addComponent("text", undefined, zone); setZoneAddMenuOpen(null); }} className="flex items-center gap-1.5 text-xs px-2 py-1 rounded hover:bg-muted text-left"><Type className="h-3 w-3" /> Text</button>
+                                    <button type="button" onClick={() => { addShape("rectangle", zone); setZoneAddMenuOpen(null); }} className="flex items-center gap-1.5 text-xs px-2 py-1 rounded hover:bg-muted text-left"><Square className="h-3 w-3" /> Shape</button>
+                                    <button type="button" onClick={() => { addImage("single", zone); setZoneAddMenuOpen(null); }} className="flex items-center gap-1.5 text-xs px-2 py-1 rounded hover:bg-muted text-left"><ImageIcon className="h-3 w-3" /> Image</button>
+                                    <button type="button" onClick={() => { addComponent("button", BUTTON_PRESETS[0].patch, zone); setZoneAddMenuOpen(null); }} className="flex items-center gap-1.5 text-xs px-2 py-1 rounded hover:bg-muted text-left"><ComponentIcon className="h-3 w-3" /> Button</button>
+                                    <button type="button" onClick={() => { addCarousel(zone); setZoneAddMenuOpen(null); }} className="flex items-center gap-1.5 text-xs px-2 py-1 rounded hover:bg-muted text-left"><GalleryHorizontal className="h-3 w-3" /> Carousel</button>
+                                    <button type="button" onClick={() => { addHeroCarousel(zone); setZoneAddMenuOpen(null); }} className="flex items-center gap-1.5 text-xs px-2 py-1 rounded hover:bg-muted text-left"><GalleryHorizontalEnd className="h-3 w-3" /> Hero Carousel</button>
+                                    <button type="button" onClick={() => { addCategoryCarousel(zone); setZoneAddMenuOpen(null); }} className="flex items-center gap-1.5 text-xs px-2 py-1 rounded hover:bg-muted text-left"><LayoutGrid className="h-3 w-3" /> Category Carousel</button>
+                                    <button type="button" onClick={() => { addIcon("cart", zone); setZoneAddMenuOpen(null); }} className="flex items-center gap-1.5 text-xs px-2 py-1 rounded hover:bg-muted text-left"><Square className="h-3 w-3" /> Icon</button>
+                                    <div className="h-px bg-border my-0.5" />
+                                    <p className="text-[9px] uppercase tracking-wide text-muted-foreground px-2">Widgets</p>
+                                    {MARKET_WIDGETS.map((w) => (
+                                      <button key={w.id} type="button" onClick={() => { addMarketWidget(w.id, zone); setZoneAddMenuOpen(null); }} className="flex items-center gap-1.5 text-xs px-2 py-1 rounded hover:bg-muted text-left">
+                                        <w.icon className="h-3 w-3" /> {w.label}
+                                      </button>
+                                    ))}
+                                    <div className="h-px bg-border my-0.5" />
+                                    <p className="text-[9px] uppercase tracking-wide text-muted-foreground px-2">Ride-hailing</p>
+                                    <button type="button" onClick={() => { addLocationInput(zone); setZoneAddMenuOpen(null); }} className="flex items-center gap-1.5 text-xs px-2 py-1 rounded hover:bg-muted text-left"><MapPin className="h-3 w-3" /> Location Input</button>
+                                    <button type="button" onClick={() => { addMap(zone); setZoneAddMenuOpen(null); }} className="flex items-center gap-1.5 text-xs px-2 py-1 rounded hover:bg-muted text-left"><MapIcon className="h-3 w-3" /> Map</button>
+                                    <button type="button" onClick={() => { addDateTimePicker(zone); setZoneAddMenuOpen(null); }} className="flex items-center gap-1.5 text-xs px-2 py-1 rounded hover:bg-muted text-left"><CalendarClock className="h-3 w-3" /> Date & Time Picker</button>
+                                    <button type="button" onClick={() => { addVehicleSelector(zone); setZoneAddMenuOpen(null); }} className="flex items-center gap-1.5 text-xs px-2 py-1 rounded hover:bg-muted text-left"><CarFront className="h-3 w-3" /> Vehicle Selector</button>
+                                    <button type="button" onClick={() => { addDriverBadge(zone); setZoneAddMenuOpen(null); }} className="flex items-center gap-1.5 text-xs px-2 py-1 rounded hover:bg-muted text-left"><BadgeCheck className="h-3 w-3" /> Driver Badge</button>
+                                    <button type="button" onClick={() => { addFareDisplay(zone); setZoneAddMenuOpen(null); }} className="flex items-center gap-1.5 text-xs px-2 py-1 rounded hover:bg-muted text-left"><Receipt className="h-3 w-3" /> Fare Display</button>
+                                    <button type="button" onClick={() => { addComponent("button", BUTTON_PRESETS.find((p) => p.label === "Book Now")?.patch ?? BUTTON_PRESETS[0].patch, zone); setZoneAddMenuOpen(null); }} className="flex items-center gap-1.5 text-xs px-2 py-1 rounded hover:bg-muted text-left"><ComponentIcon className="h-3 w-3" /> Book Now Button</button>
+                                  </div>
+                                </>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Header/Footer scroll + rotation settings — both live on the live
+                              site and in Preview. Sticky positioning is implicit whenever a
+                              header/footer block exists; the two px thresholds are independent
+                              (either, both, or neither can be enabled). */}
+                          {zone === "header" && headerSettingsOpen && renderBlockSettings("header")}
+                          {zone === "footer" && footerSettingsOpen && renderBlockSettings("footer")}
+
+                          {/* Section rows within this zone, with tree connector lines */}
+                          {zoneIsExpanded && (
+                            zoneComps.length === 0 ? (
+                              <p className="text-[11px] text-muted-foreground text-center py-2 pl-5">{query ? "No matches" : "No sections yet"}</p>
+                            ) : (
+                              [...zoneComps].reverse().map((comp) => {
+                                const isSelected = activeZone === zone && selectedIds.includes(comp.id);
+                                const isContainer = comp.type === "carousel" || comp.type === "vehicle-selector" || comp.type === "hero-carousel" || comp.type === "category-carousel";
+                                const children = isContainer ? childItemsOf(comp) : [];
+                                const containerExpanded = expandedContainers[comp.id] ?? false;
+                                const isRenaming = renamingId === comp.id;
+                                return (
+                                  <div key={comp.id} className="flex flex-col">
+                                    <div className="flex items-stretch">
+                                      <div className="w-3 shrink-0 flex justify-center"><div className="w-px bg-muted-foreground/20 my-1" /></div>
+                                      <div
+                                        draggable={!isRenaming}
+                                        onDragStart={(e) => { setDragLayerId(comp.id); e.dataTransfer.effectAllowed = "move"; }}
+                                        onDragOver={(e) => { e.preventDefault(); if (dragOverLayerId !== comp.id) setDragOverLayerId(comp.id); }}
+                                        onDragLeave={() => setDragOverLayerId((id) => (id === comp.id ? null : id))}
+                                        onDrop={(e) => {
+                                          e.preventDefault();
+                                          if (dragLayerId && dragLayerId !== comp.id) { setActiveZone(zone); reorderComponents(dragLayerId, comp.id, zone); }
+                                          setDragLayerId(null); setDragOverLayerId(null);
+                                        }}
+                                        onDragEnd={() => { setDragLayerId(null); setDragOverLayerId(null); }}
+                                        onClick={(e) => {
+                                          // Shift-click toggles membership (add/remove), matching the canvas's
+                                          // shift-click behavior — but only within the same zone, since selectedIds
+                                          // only ever refers to one zone's array at a time (the canvas only ever
+                                          // shows one zone). Shift-clicking a row from a different zone just
+                                          // switches to it as a fresh single selection.
+                                          if (e.shiftKey && zone === activeZone) {
+                                            setSelectedIds((prev) => (prev.includes(comp.id) ? prev.filter((id) => id !== comp.id) : [...prev, comp.id]));
+                                            return;
+                                          }
+                                          setActiveZone(zone);
+                                          setSelectedIds([comp.id]);
+                                        }}
+                                        className={`group flex-1 min-w-0 flex items-center gap-1 rounded-md border px-1.5 py-1 text-xs cursor-pointer transition-colors bg-background ${
+                                          isSelected ? "bg-blue-50 border-blue-400" : "border-transparent hover:bg-muted"
+                                        } ${dragOverLayerId === comp.id && dragLayerId !== comp.id ? "border-dashed border-blue-500" : ""}`}
+                                      >
+                                        <GripVertical className="h-3 w-3 text-muted-foreground shrink-0 cursor-grab" />
+                                        {isContainer && (
+                                          <button type="button" title={containerExpanded ? "Collapse" : "Expand"}
+                                            onClick={(e) => { e.stopPropagation(); setExpandedContainers((p) => ({ ...p, [comp.id]: !containerExpanded })); }}
+                                            className="p-0.5 rounded hover:bg-background shrink-0">
+                                            <ChevronRight className={`h-3 w-3 transition-transform ${containerExpanded ? "rotate-90" : ""}`} />
+                                          </button>
+                                        )}
+                                        {layerIcon(comp)}
+                                        {isRenaming ? (
+                                          <input
+                                            autoFocus
+                                            value={renameInput}
+                                            onChange={(e) => setRenameInput(e.target.value)}
+                                            onClick={(e) => e.stopPropagation()}
+                                            onKeyDown={(e) => {
+                                              if (e.key === "Enter") { updateComp(comp.id, { name: renameInput.trim() }, zone); setRenamingId(null); }
+                                              if (e.key === "Escape") setRenamingId(null);
+                                            }}
+                                            onBlur={() => { updateComp(comp.id, { name: renameInput.trim() }, zone); setRenamingId(null); }}
+                                            className="flex-1 min-w-0 text-xs border rounded px-1 py-0 bg-white"
+                                          />
+                                        ) : (
+                                          <span className="truncate flex-1 min-w-0">{comp.name?.trim() || componentTypeLabel(comp.type)}</span>
+                                        )}
+                                        <div className="relative shrink-0">
+                                          <button type="button" title="More options"
+                                            onClick={(e) => { e.stopPropagation(); setOpenRowMenu((id) => (id === comp.id ? null : comp.id)); }}
+                                            className={`flex h-5 w-5 items-center justify-center rounded hover:bg-background ${openRowMenu === comp.id ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}>
+                                            <MoreVertical className="h-3 w-3" />
+                                          </button>
+                                          {openRowMenu === comp.id && (
+                                            <>
+                                              <div className="fixed inset-0 z-40" onClick={(e) => { e.stopPropagation(); setOpenRowMenu(null); }} />
+                                              <div className="absolute right-0 top-full mt-1 z-50 min-w-[150px] rounded-md border bg-white shadow-lg py-1 text-xs" onClick={(e) => e.stopPropagation()}>
+                                                <button type="button" onClick={() => { setActiveZone(zone); duplicateInPlace(comp, zone); setOpenRowMenu(null); }} className="w-full flex items-center gap-2 text-left px-3 py-1.5 hover:bg-muted"><Copy className="h-3 w-3" /> Duplicate</button>
+                                                <button type="button" onClick={() => { setActiveZone(zone); toggleHidden([comp.id], zone); setOpenRowMenu(null); }} className="w-full flex items-center gap-2 text-left px-3 py-1.5 hover:bg-muted">
+                                                  {comp.hidden ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />} {comp.hidden ? "Show" : "Hide"}
+                                                </button>
+                                                <button type="button" onClick={() => { setActiveZone(zone); toggleLocked([comp.id], zone); setOpenRowMenu(null); }} className="w-full flex items-center gap-2 text-left px-3 py-1.5 hover:bg-muted">
+                                                  {comp.locked ? <Unlock className="h-3 w-3" /> : <Lock className="h-3 w-3" />} {comp.locked ? "Unlock" : "Lock"}
+                                                </button>
+                                                <button type="button" onClick={() => { setActiveZone(zone); setRenameInput(comp.name?.trim() || componentTypeLabel(comp.type)); setRenamingId(comp.id); setOpenRowMenu(null); }} className="w-full flex items-center gap-2 text-left px-3 py-1.5 hover:bg-muted"><Pencil className="h-3 w-3" /> Rename</button>
+                                                <button type="button" disabled={comp.locked} onClick={() => { setActiveZone(zone); deleteComp([comp.id], zone); setOpenRowMenu(null); }} className="w-full flex items-center gap-2 text-left px-3 py-1.5 hover:bg-muted text-destructive disabled:opacity-40 disabled:cursor-not-allowed"><Trash2 className="h-3 w-3" /> Delete</button>
+                                              </div>
+                                            </>
+                                          )}
+                                        </div>
+                                      </div>
+                                    </div>
+
+                                    {/* Nested child rows: Carousel slides / Vehicle Selector options */}
+                                    {isContainer && containerExpanded && (
+                                      <div className="flex flex-col">
+                                        {children.map((item) => {
+                                          const childKey = `child:${item.id}`;
+                                          return (
+                                            <div key={item.id} className="flex items-stretch">
+                                              <div className="w-3 shrink-0" />
+                                              <div className="w-3 shrink-0 flex justify-center"><div className="w-px bg-muted-foreground/20 my-1" /></div>
+                                              <div className="flex-1 min-w-0 flex items-center gap-1 rounded-md px-1.5 py-1 text-xs hover:bg-muted group">
+                                                <span className="truncate flex-1 min-w-0 text-muted-foreground">{item.label}</span>
+                                                <div className="relative shrink-0">
+                                                  <button type="button" title="More options" onClick={() => setOpenRowMenu((id) => (id === childKey ? null : childKey))}
+                                                    className={`flex h-5 w-5 items-center justify-center rounded hover:bg-background ${openRowMenu === childKey ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}>
+                                                    <MoreVertical className="h-3 w-3" />
+                                                  </button>
+                                                  {openRowMenu === childKey && (
+                                                    <>
+                                                      <div className="fixed inset-0 z-40" onClick={() => setOpenRowMenu(null)} />
+                                                      <div className="absolute right-0 top-full mt-1 z-50 min-w-[130px] rounded-md border bg-white shadow-lg py-1 text-xs">
+                                                        <button type="button" onClick={() => { setActiveZone(zone); duplicateChildItem(comp, item.id, zone); setOpenRowMenu(null); }} className="w-full flex items-center gap-2 text-left px-3 py-1.5 hover:bg-muted"><Copy className="h-3 w-3" /> Duplicate</button>
+                                                        <button type="button" onClick={() => { setActiveZone(zone); removeChildItem(comp, item.id, zone); setOpenRowMenu(null); }} className="w-full flex items-center gap-2 text-left px-3 py-1.5 hover:bg-muted text-destructive"><Trash2 className="h-3 w-3" /> Delete</button>
+                                                      </div>
+                                                    </>
+                                                  )}
+                                                </div>
+                                              </div>
+                                            </div>
+                                          );
+                                        })}
+                                        <div className="flex items-stretch">
+                                          <div className="w-3 shrink-0" />
+                                          <div className="w-3 shrink-0 flex justify-center"><div className="w-px bg-muted-foreground/20 h-1/2" /></div>
+                                          <button type="button" onClick={() => { setActiveZone(zone); addChildItem(comp, zone); }}
+                                            className="flex-1 min-w-0 flex items-center gap-1.5 px-1.5 py-1 text-xs text-blue-600 hover:bg-blue-50 rounded-md">
+                                            <Plus className="h-3 w-3" /> {childAddLabel(comp)}
+                                          </button>
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })
+                            )
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+    );
+  }
+
   // ── JSX ─────────────────────────────────────────────────────────────────────
+  // Full-viewport takeover (same fixed-inset-0 precedent as the Preview overlay
+  // below, just one z-layer under it) — covers the shared AdminTopNav rather than
+  // modifying it, so other admin routes (which still render through the normal
+  // layout) are completely unaffected by this editor's own chrome.
   return (
-    <div className="flex flex-col h-full">
-      {/* Preview overlay */}
-      {showPreview && (
-        <div className="fixed inset-0 z-50 flex flex-col bg-background">
-          <div className="flex items-center gap-3 px-5 py-3 border-b bg-background shrink-0">
-            <div className="flex items-center gap-2">
-              {view === "desktop" ? <Monitor className="h-4 w-4 text-muted-foreground" /> : <Smartphone className="h-4 w-4 text-muted-foreground" />}
-              <span className="font-semibold text-sm">Live Preview — {displayLabel} · {view === "desktop" ? "Desktop" : "Mobile"}</span>
-              <span className="text-xs text-muted-foreground">({canvasW} × {Math.round(canvasH)} px)</span>
-            </div>
-            <div className="ml-auto flex items-center gap-2">
-              <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setShowPreview(false)}>
-                <Pencil className="h-3.5 w-3.5" /> Back to Edit
-              </Button>
-              <Button size="sm" className="gap-1.5" disabled={saving || saved} onClick={publishAndClose}>
-                {saving ? "Publishing…" : saved ? <><Check className="h-3.5 w-3.5" /> Published!</> : <><Check className="h-3.5 w-3.5" /> Publish</>}
-              </Button>
-            </div>
-          </div>
-          <div className="flex-1 overflow-auto bg-gray-100 p-4">
-            <div style={view === "mobile" ? { maxWidth: 375, margin: "0 auto" } : undefined}>
-              <PreviewCanvas components={components} canvasW={canvasW} canvasH={canvasH} />
-            </div>
-            <p className="text-center text-xs text-muted-foreground mt-3 select-none">Exact preview — click "Publish" to make it live.</p>
-          </div>
+    <div className="fixed inset-0 z-30 flex flex-col bg-white p-4">
+      {/* Folder-level Preview overlay — opened from the Pages panel's [Preview]
+          button (see openFolderPreview above), not from anything in this
+          editor's own top bar. Publishing here promotes the WHOLE folder. */}
+      {previewFolder && previewPageData && (
+        <PreviewOverlay
+          title={`Live Preview — ${previewFolder.name}`}
+          pageData={previewPageData}
+          siteSettings={siteSettings}
+          onClose={() => { setPreviewFolder(null); setPreviewPageData(null); }}
+          footerNote="Preview only — click “Publish Folder” to make every page in this folder live."
+          actions={
+            <Button
+              size="sm"
+              className="gap-1.5 text-white hover:opacity-90"
+              style={{ backgroundColor: "#6366f1" }}
+              disabled={publishingFromPreview}
+              onClick={async () => {
+                if (!previewFolder) return;
+                setPublishingFromPreview(true);
+                const ok = await handlePublishFolder(previewFolder);
+                setPublishingFromPreview(false);
+                if (ok) setTimeout(() => { setPreviewFolder(null); setPreviewPageData(null); }, 700);
+              }}
+            >
+              {publishingFromPreview ? "Publishing…" : <><Rocket className="h-3.5 w-3.5" /> Publish Folder</>}
+            </Button>
+          }
+        />
+      )}
+      {previewFolder && previewLoading && !previewPageData && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background">
+          <span className="text-sm text-muted-foreground">Loading preview…</span>
         </div>
       )}
 
       {/* Main editor */}
       <div className="flex flex-col h-full min-h-0">
 
-        {/* Top bar */}
-        <div className="flex flex-wrap items-center gap-2 shrink-0 pb-3">
+        {/* Top bar — dark chrome, matches the redesign's "Figma/Webflow quality" brief.
+            Canvas + panels intentionally stay light for form-field legibility (see the
+            plan note on scoping the dark theme to just this bar + the left sidebar's
+            tab strip, rather than re-theming every existing input across the app). */}
+        <div className="flex flex-wrap items-center gap-2 shrink-0 mb-3 rounded-lg px-3 py-2.5"
+          style={{ backgroundColor: "#1a1a2e" }}>
+
+          {/* Brand */}
+          <div className="flex items-center gap-1.5 text-indigo-300 pr-2 mr-1 border-r border-white/10">
+            <ComponentIcon className="h-4 w-4" />
+            <span className="text-xs font-bold uppercase tracking-wider hidden sm:inline">iiinbox</span>
+          </div>
 
           {/* Inline-editable page name */}
           {editingName ? (
@@ -1772,113 +4679,568 @@ export function PageEditor({ slug, label }: PageEditorProps) {
               onChange={(e) => setNameInput(e.target.value)}
               onBlur={commitRename}
               onKeyDown={(e) => { if (e.key === "Enter") commitRename(); if (e.key === "Escape") setEditingName(false); }}
-              className="text-xl font-semibold bg-transparent border-b border-black outline-none w-48"
+              className="text-xl font-semibold bg-transparent border-b border-white/40 outline-none w-48 text-white"
             />
           ) : (
             <button onClick={startRename} className="flex items-center gap-1.5 group">
-              <h1 className="text-lg sm:text-xl font-semibold">{displayLabel}</h1>
-              <Pencil className="h-3.5 w-3.5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+              <h1 className="text-lg sm:text-xl font-semibold text-white">{displayLabel}</h1>
+              <Pencil className="h-3.5 w-3.5 text-white/50 opacity-0 group-hover:opacity-100 transition-opacity" />
             </button>
           )}
 
-          {/* Desktop/Mobile toggle */}
-          <div className="flex items-center rounded-lg border overflow-hidden ml-0 sm:ml-1">
-            <button onClick={() => { setSelectedIds([]); setView("desktop"); }}
-              className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 text-sm transition-colors ${view === "desktop" ? "bg-black text-white" : "hover:bg-muted"}`}>
-              <Monitor className="h-3.5 w-3.5" /><span className="hidden sm:inline">Desktop</span>
-            </button>
-            <button onClick={() => { setSelectedIds([]); setView("mobile"); }}
-              className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 text-sm transition-colors ${view === "mobile" ? "bg-black text-white" : "hover:bg-muted"}`}>
-              <Smartphone className="h-3.5 w-3.5" /><span className="hidden sm:inline">Mobile</span>
-            </button>
-          </div>
-
-          {/* Margin guides / ruler toggle */}
-          <button
-            type="button"
-            onClick={() => setShowGuides((v) => !v)}
-            title="Show/hide margin guides and spacing rulers"
-            className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg border text-sm transition-colors ${showGuides ? "bg-black text-white border-black" : "hover:bg-muted"}`}
-          >
-            <Ruler className="h-3.5 w-3.5" /><span className="hidden sm:inline">Guides</span>
-          </button>
-
-          {/* Grid overlay toggle — editor-only alignment aid, never published */}
-          <div className="flex items-center gap-1.5">
-            <button
-              type="button"
-              onClick={() => setShowGrid((v) => !v)}
-              title="Show/hide alignment grid (editor only — never appears on the published page)"
-              className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg border text-sm transition-colors ${showGrid ? "bg-black text-white border-black" : "hover:bg-muted"}`}
-            >
-              <Grid3x3 className="h-3.5 w-3.5" /><span className="hidden sm:inline">Grid</span>
-            </button>
-            {showGrid && (
-              <div className="flex items-center gap-1 rounded-lg border px-2 py-1.5">
-                <label className="text-[10px] text-muted-foreground uppercase tracking-wide">Size</label>
-                <input
-                  type="number" min="5" max="500" step="5" value={gridSize}
-                  onChange={(e) => setGridSize(Math.max(5, +e.target.value || 5))}
-                  className="w-12 h-5 text-xs border rounded px-1 bg-background"
-                />
-              </div>
-            )}
-          </div>
+          {/* Autosave runs invisibly in the background (see the debounced save()
+              effect above) — no Save/Preview/Publish buttons here. Publish
+              lives on the folder (Pages panel) and on the project (next to
+              the project name) — never here, so there's exactly one publish
+              action per scope instead of a third page-scoped one that could
+              disagree with either. */}
+          <span className={`text-xs ml-1 flex items-center gap-1 ${syncStatus === "error" ? "text-red-400" : syncStatus === "dirty" || syncStatus === "syncing" ? "text-white/50" : "text-green-400"}`}>
+            <Cloud className={`h-3.5 w-3.5 ${syncStatus === "syncing" ? "animate-pulse" : ""}`} /> {syncLabel}
+          </span>
 
           <div className="ml-auto flex flex-wrap items-center gap-2">
-            {saved && <span className="text-xs text-green-600 font-medium flex items-center gap-1"><Check className="h-3.5 w-3.5" /> Published</span>}
+            {/* Desktop/Mobile toggle */}
+            <div className="flex items-center rounded-lg border border-white/15 overflow-hidden">
+              <button onClick={() => { setSelectedIds([]); setView("desktop"); }}
+                className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 text-sm transition-colors ${view === "desktop" ? "text-white" : "text-white/60 hover:bg-white/10"}`}
+                style={view === "desktop" ? { backgroundColor: "#6366f1" } : undefined}>
+                <Monitor className="h-3.5 w-3.5" /><span className="hidden sm:inline">Desktop</span>
+              </button>
+              <button onClick={() => { setSelectedIds([]); setView("mobile"); }}
+                className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 text-sm transition-colors ${view === "mobile" ? "text-white" : "text-white/60 hover:bg-white/10"}`}
+                style={view === "mobile" ? { backgroundColor: "#6366f1" } : undefined}>
+                <Smartphone className="h-3.5 w-3.5" /><span className="hidden sm:inline">Mobile</span>
+              </button>
+            </div>
 
-            {/* Delete page — not shown for home page */}
-            {!isHomePage && !confirmDelete && (
-              <Button variant="outline" size="sm" className="gap-1.5 text-destructive hover:bg-destructive/10 border-destructive/30"
+            {/* Undo/redo — per-zone-per-view snapshot stacks, independent of Version Control */}
+            <div className="flex items-center rounded-lg border border-white/15 overflow-hidden">
+              <button type="button" title="Undo (⌘Z)" disabled={!undoAvailable[zoneViewKey(activeZone, view)]} onClick={undo}
+                className="flex items-center justify-center h-8 w-8 disabled:opacity-30 disabled:cursor-not-allowed hover:bg-white/10 text-white/80">
+                <Undo2 className="h-3.5 w-3.5" />
+              </button>
+              <button type="button" title="Redo (⌘⇧Z)" disabled={!redoAvailable[zoneViewKey(activeZone, view)]} onClick={redo}
+                className="flex items-center justify-center h-8 w-8 disabled:opacity-30 disabled:cursor-not-allowed hover:bg-white/10 text-white/80 border-l border-white/15">
+                <Redo2 className="h-3.5 w-3.5" />
+              </button>
+            </div>
+
+            {/* Margin guides / ruler toggle */}
+            <button
+              type="button"
+              onClick={() => setShowGuides((v) => !v)}
+              title="Show/hide margin guides and spacing rulers"
+              className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg border text-sm transition-colors ${showGuides ? "text-white border-transparent" : "text-white/70 border-white/15 hover:bg-white/10"}`}
+              style={showGuides ? { backgroundColor: "#6366f1" } : undefined}
+            >
+              <Ruler className="h-3.5 w-3.5" /><span className="hidden sm:inline">Guides</span>
+            </button>
+
+            {/* Grid overlay + snap toggle — editor-only alignment aid, never published.
+                While on, components snap to this grid size while dragging (see
+                gridRound() in the drag mousemove handler). */}
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => setShowGrid((v) => !v)}
+                title="Show grid + snap components to it while dragging (editor only — never appears on the published page)"
+                className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg border text-sm transition-colors ${showGrid ? "text-white border-transparent" : "text-white/70 border-white/15 hover:bg-white/10"}`}
+                style={showGrid ? { backgroundColor: "#6366f1" } : undefined}
+              >
+                <Grid3x3 className="h-3.5 w-3.5" /><span className="hidden sm:inline">Snap to Grid</span>
+              </button>
+              {showGrid && (
+                <div className="flex items-center gap-1 rounded-lg border border-white/15 px-2 py-1.5">
+                  <label className="text-[10px] text-white/60 uppercase tracking-wide">Size</label>
+                  <button type="button" onClick={() => setGridSize(8)}
+                    className={`h-5 px-1.5 text-[10px] rounded border ${gridSize === 8 ? "bg-white text-black border-white" : "border-white/20 text-white/70 hover:bg-white/10"}`}>8px</button>
+                  <button type="button" onClick={() => setGridSize(16)}
+                    className={`h-5 px-1.5 text-[10px] rounded border ${gridSize === 16 ? "bg-white text-black border-white" : "border-white/20 text-white/70 hover:bg-white/10"}`}>16px</button>
+                  <input
+                    type="number" min="5" max="500" step="5" value={gridSize}
+                    onChange={(e) => setGridSize(Math.max(5, +e.target.value || 5))}
+                    className="w-12 h-5 text-xs border rounded px-1 bg-white/10 text-white"
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* Delete page — not shown for pinned pages (Home/Seller/Rider Dashboard) */}
+            {!isPinnedPage && !confirmDelete && (
+              <Button variant="outline" size="sm" className="gap-1.5 bg-transparent text-red-300 hover:bg-red-500/10 border-red-400/30"
                 onClick={() => setConfirmDelete(true)}>
                 <Trash2 className="h-3.5 w-3.5" /> Delete Page
               </Button>
             )}
-            {!isHomePage && confirmDelete && (
-              <div className="flex items-center gap-2 rounded-lg border border-destructive/40 bg-destructive/5 px-3 py-1.5">
-                <span className="text-xs text-destructive font-medium">Delete "{displayLabel}"?</span>
+            {!isPinnedPage && confirmDelete && (
+              <div className="flex items-center gap-2 rounded-lg border border-red-400/40 bg-red-500/10 px-3 py-1.5">
+                <span className="text-xs text-red-300 font-medium">Delete "{displayLabel}"?</span>
                 <button onClick={deletePage} disabled={deleting}
                   className="text-xs px-2 py-0.5 rounded bg-destructive text-white disabled:opacity-50">
                   {deleting ? "Deleting…" : "Yes, delete"}
                 </button>
-                <button onClick={() => setConfirmDelete(false)} className="text-xs px-2 py-0.5 rounded border hover:bg-muted">
+                <button onClick={() => setConfirmDelete(false)} className="text-xs px-2 py-0.5 rounded border border-white/20 text-white/80 hover:bg-white/10">
                   Cancel
                 </button>
               </div>
             )}
 
-            <Button variant="outline" className="gap-2" onClick={() => setShowPreview(true)}>
-              <Eye className="h-4 w-4" /> Preview &amp; Publish
-            </Button>
-          </div>
-        </div>
+            <div className="w-px h-6 bg-white/15" />
 
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 pb-3 shrink-0">
-          <div className="rounded-lg border bg-background px-3 py-2">
-            <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wide text-muted-foreground"><Cloud className="h-3 w-3" /> Sync</div>
-            <p className={`mt-1 text-sm font-semibold ${syncStatus === "error" ? "text-destructive" : syncStatus === "dirty" ? "text-amber-700" : "text-foreground"}`}>{syncLabel}</p>
-          </div>
-          <div className="rounded-lg border bg-background px-3 py-2">
-            <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wide text-muted-foreground"><History className="h-3 w-3" /> Versions</div>
-            <p className="mt-1 text-sm font-semibold">{versions.length} checkpoint{versions.length === 1 ? "" : "s"}</p>
-          </div>
-          <div className="rounded-lg border bg-background px-3 py-2">
-            <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wide text-muted-foreground"><Activity className="h-3 w-3" /> Changes</div>
-            <p className="mt-1 text-sm font-semibold">{changeCount === 0 ? "Clean" : `${changeCount} tracked`}</p>
-          </div>
-          <div className="rounded-lg border bg-background px-3 py-2">
-            <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wide text-muted-foreground"><ShieldCheck className="h-3 w-3" /> A11y</div>
-            <p className="mt-1 text-sm font-semibold">Brand-safe contrast</p>
+            {/* Logout */}
+            <button
+              onClick={logout}
+              disabled={loggingOut}
+              className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm text-white/70 hover:bg-white/10 hover:text-white transition-colors disabled:opacity-50"
+            >
+              <LogOut className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">{loggingOut ? "Logging out…" : "Logout"}</span>
+            </button>
           </div>
         </div>
 
         {/* Canvas + right panel */}
         <div className="flex flex-col lg:flex-row flex-1 min-h-0 border rounded-lg overflow-hidden">
 
-          {/* Canvas (scrollable) */}
-          <div ref={scrollContainerRef} className="flex-1 overflow-auto bg-gray-100 p-3 min-w-0 min-h-[44vh]">
-            <div className="mx-auto" style={{ width: "100%", maxWidth: showGuides ? canvasW + RULER_SIZE : canvasW }}>
+          {/* Left sidebar — Project / Upload / History tabs. Tab strip is dark
+              (matches the top bar); tab body content stays light for form legibility.
+              Project merges the old separate Pages and Layers tabs into one tree
+              (Project → Folders → Pages → Layers of whichever page is open) —
+              see renderLayersPanel above. Upload is the old Assets tab, renamed. */}
+          <div className={`shrink-0 border-r bg-background flex flex-col overflow-hidden ${leftSidebarCollapsed ? "w-10" : "w-full lg:w-60"}`}>
+            <div className="flex items-center shrink-0" style={{ backgroundColor: "#1a1a2e" }}>
+              {!leftSidebarCollapsed && (
+                <div className="flex-1 flex items-center">
+                  {([
+                    { id: "project" as const, label: "Project", icon: FileText },
+                    { id: "assets" as const, label: "Upload", icon: ImageIcon },
+                    { id: "history" as const, label: "History", icon: History },
+                  ]).map((tab) => (
+                    <button key={tab.id} type="button" title={tab.label}
+                      onClick={() => { setActiveLeftTab(tab.id); if (tab.id === "assets") loadAssets(); }}
+                      className={`flex-1 flex flex-col items-center gap-0.5 py-1.5 text-[10px] border-b-2 transition-colors ${activeLeftTab === tab.id ? "text-white font-medium" : "border-transparent text-white/50 hover:bg-white/10"}`}
+                      style={activeLeftTab === tab.id ? { borderBottomColor: "#6366f1" } : undefined}>
+                      <tab.icon className="h-3.5 w-3.5" />
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+              <button type="button" title={leftSidebarCollapsed ? "Expand" : "Collapse"} onClick={() => setLeftSidebarCollapsed((v) => !v)}
+                className="shrink-0 p-2 hover:bg-white/10 text-white/60">
+                {leftSidebarCollapsed ? <PanelLeftOpen className="h-3.5 w-3.5" /> : <PanelLeftClose className="h-3.5 w-3.5" />}
+              </button>
+            </div>
+
+            {!leftSidebarCollapsed && (
+              <div className="flex-1 overflow-y-auto p-2">
+                {/* Pages */}
+                {activeLeftTab === "project" && (() => {
+                  const assignedSlugs = new Set(
+                    projectsTree.projects.flatMap((proj) => proj.folders.flatMap((f) => f.pages.map((p) => p.page))),
+                  );
+                  const unassigned = pagesList.pages.filter((p) => !assignedSlugs.has(p.slug));
+                  const unassignedSlugs = unassigned.map((p) => p.slug);
+                  const projectIds = projectsTree.projects.map((p) => p.id);
+                  return (
+                    <div className="flex flex-col gap-0.5">
+                      <div className="flex items-center justify-between px-1 mb-1">
+                        <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Projects</p>
+                        <button
+                          type="button"
+                          title="New project"
+                          disabled={projectsTree.creatingProject}
+                          onClick={async () => {
+                            const id = await projectsTree.createProject(`Project ${projectsTree.projects.length + 1}`);
+                            if (id) projectsTree.startEditProject(id, `Project ${projectsTree.projects.length + 1}`);
+                          }}
+                          className="p-1 rounded hover:bg-muted disabled:opacity-50"
+                        >
+                          <FolderPlus className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+
+                      {projectsTree.loading && <p className="text-[11px] text-muted-foreground px-2 py-1">Loading…</p>}
+
+                      {projectsTree.projects.map((project) => {
+                        const isCollapsed = projectsTree.collapsedProjectIds.has(project.id);
+                        return (
+                        <div
+                          key={project.id}
+                          draggable
+                          onDragStart={() => setDragProjectId(project.id)}
+                          onDragOver={(e) => { e.preventDefault(); if (dragOverProjectId !== project.id) setDragOverProjectId(project.id); }}
+                          onDragLeave={() => setDragOverProjectId((id) => (id === project.id ? null : id))}
+                          onDrop={(e) => {
+                            e.preventDefault();
+                            if (dragProjectId && dragProjectId !== project.id) {
+                              const from = projectIds.indexOf(dragProjectId);
+                              const to = projectIds.indexOf(project.id);
+                              const reordered = [...projectIds];
+                              const [moved] = reordered.splice(from, 1);
+                              reordered.splice(to, 0, moved);
+                              projectsTree.reorderProjects(reordered);
+                            }
+                            setDragProjectId(null); setDragOverProjectId(null);
+                          }}
+                          onDragEnd={() => { setDragProjectId(null); setDragOverProjectId(null); }}
+                          className={`mb-2.5 ${dragOverProjectId === project.id && dragProjectId !== project.id ? "border-t-2 border-blue-500" : ""}`}
+                        >
+                          <div className="flex items-center gap-1 px-1 py-1 group cursor-grab active:cursor-grabbing">
+                            <GripVertical className="h-3 w-3 text-muted-foreground/40 shrink-0" />
+                            {projectsTree.editingProjectId === project.id ? (
+                              <input
+                                value={projectsTree.projectEditInput}
+                                onChange={(e) => projectsTree.setProjectEditInput(e.target.value)}
+                                onKeyDown={(e) => { if (e.key === "Enter") projectsTree.commitEditProject(project.id); if (e.key === "Escape") projectsTree.setEditingProjectId(null); }}
+                                onBlur={() => projectsTree.commitEditProject(project.id)}
+                                autoFocus
+                                className="text-xs font-semibold border rounded px-1.5 py-0.5 flex-1 min-w-0 bg-background"
+                              />
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => projectsTree.toggleProjectCollapsed(project.id)}
+                                onDoubleClick={() => projectsTree.startEditProject(project.id, project.name)}
+                                className="flex items-center gap-1 flex-1 min-w-0 text-left"
+                              >
+                                <ChevronDown className={`h-3 w-3 text-muted-foreground shrink-0 transition-transform ${isCollapsed ? "-rotate-90" : ""}`} />
+                                <span className="text-xs font-semibold uppercase tracking-wide truncate">{project.name}</span>
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              title="Publish everything in this project — every folder, live instantly"
+                              disabled={projectsTree.publishingProjectId === project.id}
+                              onClick={() => handlePublishProject(project.id)}
+                              className="p-1 rounded hover:bg-background text-muted-foreground shrink-0 disabled:opacity-50"
+                            >
+                              <Rocket className="h-3 w-3" />
+                            </button>
+                            <button
+                              type="button"
+                              title="New folder in this project"
+                              onClick={() => { setNewFolderProjectId(project.id); setNewFolderNameInput("New Folder"); }}
+                              className="p-1 rounded hover:bg-background text-muted-foreground shrink-0"
+                            >
+                              <Plus className="h-3 w-3" />
+                            </button>
+                            <div className="relative shrink-0">
+                              <button type="button" title="More options" onClick={() => setOpenTreeMenu((id) => (id === project.id ? null : project.id))}
+                                className={`p-1 rounded hover:bg-background text-muted-foreground ${openTreeMenu === project.id ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}>
+                                <MoreVertical className="h-3 w-3" />
+                              </button>
+                              {openTreeMenu === project.id && (
+                                <>
+                                  <div className="fixed inset-0 z-40" onClick={() => setOpenTreeMenu(null)} />
+                                  <div className="absolute right-0 top-full mt-1 z-50 min-w-[150px] rounded-md border bg-white shadow-lg py-1 text-xs">
+                                    <button type="button" onClick={() => { projectsTree.startEditProject(project.id, project.name); setOpenTreeMenu(null); }} className="w-full flex items-center gap-2 text-left px-3 py-1.5 hover:bg-muted"><Pencil className="h-3 w-3" /> Edit name</button>
+                                    <button type="button" onClick={() => { projectsTree.toggleProjectCollapsed(project.id); setOpenTreeMenu(null); }} className="w-full flex items-center gap-2 text-left px-3 py-1.5 hover:bg-muted"><ChevronDown className="h-3 w-3" /> {isCollapsed ? "Expand" : "Minimize"}</button>
+                                    <button type="button" onClick={() => { projectsTree.duplicateProject(project.id); setOpenTreeMenu(null); }} className="w-full flex items-center gap-2 text-left px-3 py-1.5 hover:bg-muted"><Copy className="h-3 w-3" /> Duplicate project</button>
+                                    <button type="button" onClick={() => { setConfirmDeleteProjectId(project.id); setOpenTreeMenu(null); }} className="w-full flex items-center gap-2 text-left px-3 py-1.5 hover:bg-muted text-destructive"><Trash2 className="h-3 w-3" /> Delete</button>
+                                  </div>
+                                </>
+                              )}
+                            </div>
+                          </div>
+
+                          {confirmDeleteProjectId === project.id && (
+                            <div className="flex items-center gap-1 px-2 py-1 ml-4 text-xs">
+                              <span className="flex-1 truncate text-destructive">Delete "{project.name}"?</span>
+                              <button type="button" onClick={async () => { await projectsTree.deleteProject(project.id); setConfirmDeleteProjectId(null); }} className="text-[10px] px-1.5 py-0.5 rounded bg-red-600 text-white shrink-0">Yes</button>
+                              <button type="button" onClick={() => setConfirmDeleteProjectId(null)} className="text-[10px] px-1.5 py-0.5 rounded border shrink-0">No</button>
+                            </div>
+                          )}
+
+                          {newFolderProjectId === project.id && (
+                            <div className="ml-4 px-1 py-1">
+                              <input
+                                autoFocus
+                                value={newFolderNameInput}
+                                onChange={(e) => setNewFolderNameInput(e.target.value)}
+                                onKeyDown={async (e) => {
+                                  if (e.key === "Enter") { const n = newFolderNameInput.trim(); setNewFolderProjectId(null); if (n) await projectsTree.createFolder(project.id, n); }
+                                  if (e.key === "Escape") setNewFolderProjectId(null);
+                                }}
+                                onBlur={async () => { const n = newFolderNameInput.trim(); setNewFolderProjectId(null); if (n) await projectsTree.createFolder(project.id, n); }}
+                                className="text-xs border rounded px-1.5 py-1 bg-background w-full"
+                              />
+                            </div>
+                          )}
+
+                          {!isCollapsed && project.folders.map((folder) => {
+                            const otherSlugs = folder.pages.filter((p) => p.id !== folder.rootPageId).map((p) => p.page);
+                            const isDropTarget = dragOverBucketId === folder.id;
+                            const folderCollapsed = projectsTree.collapsedFolderIds.has(folder.id);
+                            return (
+                              <div
+                                key={folder.id}
+                                onDragOver={(e) => { e.preventDefault(); if (dragOverBucketId !== folder.id) setDragOverBucketId(folder.id); }}
+                                onDragLeave={() => setDragOverBucketId((id) => (id === folder.id ? null : id))}
+                                onDrop={(e) => {
+                                  e.preventDefault();
+                                  if (dragPageSlug && !otherSlugs.includes(dragPageSlug)) projectsTree.movePageToFolder(dragPageSlug, folder.id);
+                                  setDragPageSlug(null); setDragOverBucketId(null); setDragOverPageSlug(null);
+                                }}
+                                className={`mb-1.5 ml-1 rounded ${isDropTarget ? "ring-2 ring-blue-400" : ""}`}
+                              >
+                                <div className="flex items-center gap-1 px-1 py-1 rounded hover:bg-muted group">
+                                  <FolderIcon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                                  {projectsTree.editingFolderId === folder.id ? (
+                                    <input
+                                      value={projectsTree.folderEditInput}
+                                      onChange={(e) => projectsTree.setFolderEditInput(e.target.value)}
+                                      onKeyDown={(e) => { if (e.key === "Enter") projectsTree.commitEditFolder(folder.id); if (e.key === "Escape") projectsTree.setEditingFolderId(null); }}
+                                      onBlur={() => projectsTree.commitEditFolder(folder.id)}
+                                      autoFocus
+                                      className="text-xs border rounded px-1.5 py-0.5 flex-1 min-w-0 bg-background"
+                                    />
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={() => projectsTree.toggleFolderCollapsed(folder.id)}
+                                      onDoubleClick={() => projectsTree.startEditFolder(folder.id, folder.name)}
+                                      className="flex-1 min-w-0 flex items-center gap-1 text-left"
+                                    >
+                                      <ChevronDown className={`h-3 w-3 text-muted-foreground shrink-0 transition-transform ${folderCollapsed ? "-rotate-90" : ""}`} />
+                                      <span className="text-xs font-medium truncate">{folder.name}</span>
+                                      {folder.subdomain && <span className="text-[9px] text-muted-foreground shrink-0">{folder.subdomain}</span>}
+                                    </button>
+                                  )}
+                                  <button type="button" title="Preview this folder's live root page" onClick={() => openFolderPreview(folder)} className="p-1 rounded hover:bg-background text-muted-foreground shrink-0">
+                                    <Eye className="h-3 w-3" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    title="Publish every page in this folder — live instantly"
+                                    disabled={projectsTree.publishingFolderId === folder.id}
+                                    onClick={() => handlePublishFolder(folder)}
+                                    className="p-1 rounded hover:bg-background text-muted-foreground shrink-0 disabled:opacity-50"
+                                  >
+                                    <Rocket className="h-3 w-3" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    title="New page in this folder"
+                                    onClick={() => { setNewPageFolderId(folder.id); setNewPageOpen(true); }}
+                                    className="p-1 rounded hover:bg-background text-muted-foreground shrink-0"
+                                  >
+                                    <Plus className="h-3 w-3" />
+                                  </button>
+                                  <div className="relative shrink-0">
+                                    <button type="button" title="More options" onClick={() => setOpenTreeMenu((id) => (id === folder.id ? null : folder.id))}
+                                      className={`p-1 rounded hover:bg-background text-muted-foreground ${openTreeMenu === folder.id ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}>
+                                      <MoreVertical className="h-3 w-3" />
+                                    </button>
+                                    {openTreeMenu === folder.id && (
+                                      <>
+                                        <div className="fixed inset-0 z-40" onClick={() => setOpenTreeMenu(null)} />
+                                        <div className="absolute right-0 top-full mt-1 z-50 min-w-[150px] rounded-md border bg-white shadow-lg py-1 text-xs">
+                                          <button type="button" onClick={() => { projectsTree.startEditFolder(folder.id, folder.name); setOpenTreeMenu(null); }} className="w-full flex items-center gap-2 text-left px-3 py-1.5 hover:bg-muted"><Pencil className="h-3 w-3" /> Edit name</button>
+                                          <button type="button" onClick={() => { projectsTree.toggleFolderCollapsed(folder.id); setOpenTreeMenu(null); }} className="w-full flex items-center gap-2 text-left px-3 py-1.5 hover:bg-muted"><ChevronDown className="h-3 w-3" /> {folderCollapsed ? "Expand" : "Minimize"}</button>
+                                          {!folder.rootPageId && (
+                                            <button type="button" onClick={() => { setConfirmDeleteFolderId(folder.id); setOpenTreeMenu(null); }} className="w-full flex items-center gap-2 text-left px-3 py-1.5 hover:bg-muted text-destructive"><Trash2 className="h-3 w-3" /> Delete</button>
+                                          )}
+                                        </div>
+                                      </>
+                                    )}
+                                  </div>
+                                </div>
+
+                                {confirmDeleteFolderId === folder.id && (
+                                  <div className="flex items-center gap-1 px-2 py-1 ml-4 text-xs">
+                                    <span className="flex-1 truncate text-destructive">Delete "{folder.name}"{otherSlugs.length > 0 || folder.rootPage ? ` — ${otherSlugs.length + (folder.rootPage ? 1 : 0)} page(s) inside will move to Unassigned` : ""}?</span>
+                                    <button type="button" onClick={async () => { await projectsTree.deleteFolder(folder.id); setConfirmDeleteFolderId(null); }} className="text-[10px] px-1.5 py-0.5 rounded bg-red-600 text-white shrink-0">Yes</button>
+                                    <button type="button" onClick={() => setConfirmDeleteFolderId(null)} className="text-[10px] px-1.5 py-0.5 rounded border shrink-0">No</button>
+                                  </div>
+                                )}
+
+                                {!folderCollapsed && (
+                                  <div className="ml-4 flex flex-col gap-0.5">
+                                    {folder.rootPage && (
+                                      <>
+                                        <button
+                                          type="button"
+                                          onClick={() => router.push(`/admin/pages/${encodeURIComponent(folder.rootPage!.page)}`)}
+                                          onDoubleClick={() => projectsTree.startEditFolder(folder.id, folder.name)}
+                                          className={`flex items-center gap-2 text-xs px-2 py-1.5 rounded text-left ${slug === folder.rootPage!.page ? "bg-muted font-medium" : "hover:bg-muted text-muted-foreground"}`}
+                                        >
+                                          <FileText className="h-3.5 w-3.5 shrink-0" /> <span className="truncate">{folder.name}</span>
+                                        </button>
+                                        {slug === folder.rootPage.page && <div className="ml-4 border-l pl-2">{renderLayersPanel()}</div>}
+                                      </>
+                                    )}
+                                    {otherSlugs.map((s) => renderPageRow(s, otherSlugs, folder.id))}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                        );
+                      })}
+
+                      {/* Unassigned — draft-only. Never live no matter how many times
+                          saved, until dragged into a folder and that folder is
+                          published (see movePageToFolder / publishFolder). */}
+                      <div
+                        onDragOver={(e) => { e.preventDefault(); if (dragOverBucketId !== "unassigned") setDragOverBucketId("unassigned"); }}
+                        onDragLeave={() => setDragOverBucketId((id) => (id === "unassigned" ? null : id))}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          if (dragPageSlug && !unassignedSlugs.includes(dragPageSlug)) projectsTree.movePageToFolder(dragPageSlug, null);
+                          setDragPageSlug(null); setDragOverBucketId(null); setDragOverPageSlug(null);
+                        }}
+                        className={`mt-1 ml-1 rounded ${dragOverBucketId === "unassigned" ? "ring-2 ring-blue-400" : ""}`}
+                      >
+                        <div className="flex items-center justify-between px-1 py-1 mb-0.5">
+                          <p className="text-[10px] uppercase tracking-wide text-muted-foreground" title="Draft-only — drag into a folder, then publish that folder, to go live">
+                            Unassigned
+                          </p>
+                          <button type="button" title="New page" onClick={() => { setNewPageFolderId(null); setNewPageOpen(true); }} className="p-1 rounded hover:bg-muted">
+                            <Plus className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                        <div className="flex flex-col gap-0.5">
+                          {unassignedSlugs.map((s) => renderPageRow(s, unassignedSlugs, null))}
+                          {unassigned.length === 0 && (
+                            <p className="text-[10px] text-muted-foreground px-2 py-1.5">
+                              Drag a page here to pull it out of a folder, or create a new one — it stays draft-only until moved into a folder and published.
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                <NewPageDialog open={newPageOpen} onOpenChange={setNewPageOpen} pages={pagesList.pages} createPage={createPageAndSync} folderId={newPageFolderId} />
+
+
+                {/* Assets */}
+                {activeLeftTab === "assets" && (
+                  <div className="flex flex-col gap-2">
+                    <div className="flex items-center justify-between px-1">
+                      <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Assets {assetItems && assetItems.length > 0 ? `(${assetItems.length})` : ""}</p>
+                      {/* Uploads always land in the library first — never auto-placed on
+                          canvas. Click a thumbnail below to place it (already worked). */}
+                      <label className="p-1 rounded hover:bg-muted cursor-pointer flex items-center gap-1" title="Upload new">
+                        {uploading ? <span className="text-[10px] text-muted-foreground">{uploadProgress}%</span> : <Plus className="h-3.5 w-3.5" />}
+                        <input type="file" accept="image/*" className="hidden" onChange={async (e) => {
+                          const file = e.target.files?.[0]; if (!file) return;
+                          await uploadToAssets(file);
+                        }} />
+                      </label>
+                    </div>
+                    {uploading && (
+                      <div className="h-1 w-full rounded-full bg-muted overflow-hidden">
+                        <div className="h-full bg-blue-500 transition-all" style={{ width: `${uploadProgress}%` }} />
+                      </div>
+                    )}
+                    {assetsLoading ? (
+                      <p className="text-[11px] text-muted-foreground text-center py-4">Loading…</p>
+                    ) : (assetItems ?? []).length === 0 ? (
+                      <p className="text-[11px] text-muted-foreground text-center py-4">No uploads yet</p>
+                    ) : (
+                      <div className="grid grid-cols-2 gap-1.5">
+                        {(assetItems ?? []).map((a) => (
+                          <div key={a.key} className="group relative aspect-square rounded border overflow-hidden hover:border-black transition-colors">
+                            <button type="button" title="Insert as image" onClick={() => addImageFromUrl(a.url)} className="absolute inset-0">
+                              <img src={a.url} alt="" className="w-full h-full object-cover" />
+                            </button>
+                            <button
+                              type="button"
+                              title="Rename"
+                              onClick={(e) => { e.stopPropagation(); setRenamingAssetKey(a.key); setRenameAssetInput(a.name ?? ""); }}
+                              className="absolute top-1 right-1 p-1 rounded bg-black/60 text-white opacity-0 group-hover:opacity-100 transition-opacity"
+                            >
+                              <Pencil className="h-3 w-3" />
+                            </button>
+                            {renamingAssetKey === a.key ? (
+                              <input
+                                autoFocus
+                                value={renameAssetInput}
+                                onChange={(e) => setRenameAssetInput(e.target.value)}
+                                onClick={(e) => e.stopPropagation()}
+                                onKeyDown={(e) => { if (e.key === "Enter") commitAssetRename(a.key); if (e.key === "Escape") setRenamingAssetKey(null); }}
+                                onBlur={() => commitAssetRename(a.key)}
+                                className="absolute bottom-0 inset-x-0 text-[10px] px-1 py-0.5 bg-white border-t"
+                              />
+                            ) : a.name ? (
+                              <p className="absolute bottom-0 inset-x-0 text-[10px] px-1 py-0.5 bg-black/60 text-white truncate pointer-events-none">{a.name}</p>
+                            ) : null}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* History — Live Workflow (sync status) + Version Control (checkpoint/restore) */}
+                {activeLeftTab === "history" && (
+                  <div className="flex flex-col gap-3">
+                    <div>
+                      <div className="flex items-center gap-2 mb-2">
+                        <Cloud className="h-3.5 w-3.5 text-muted-foreground" />
+                        <p className="text-xs font-semibold flex-1">Live Workflow</p>
+                        <span className={`text-[10px] font-semibold ${syncStatus === "error" ? "text-destructive" : syncStatus === "dirty" ? "text-amber-700" : "text-green-700"}`}>
+                          {syncStatus === "syncing" ? "Syncing" : syncStatus === "dirty" ? "Draft" : syncStatus === "error" ? "Error" : "Live"}
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-3 gap-1.5">
+                        {["Draft", "Preview", "Publish"].map((step, i) => (
+                          <div key={step} className={`rounded-md border px-1.5 py-1 text-center ${i === 0 && syncStatus === "dirty" ? "bg-amber-50 border-amber-200" : i === 2 && syncStatus === "synced" ? "bg-green-50 border-green-200" : "bg-background"}`}>
+                            <p className="text-[10px] font-semibold">{step}</p>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="mt-2 flex items-center gap-1.5">
+                        <Button variant="outline" size="sm" className="h-7 flex-1 gap-1 text-xs" onClick={() => captureVersion("Manual checkpoint")}>
+                          <History className="h-3 w-3" /> Checkpoint
+                        </Button>
+                        <Button size="sm" className="h-7 flex-1 gap-1 text-xs" disabled={saving} onClick={save}>
+                          <Rocket className="h-3 w-3" /> Deploy
+                        </Button>
+                      </div>
+                      <p className="mt-1.5 text-[10px] text-muted-foreground">
+                        {lastSyncedAt ? `Last sync ${lastSyncedAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : "Waiting for first sync"}
+                      </p>
+                    </div>
+                    {versions.length > 0 && (
+                      <div>
+                        <div className="flex items-center gap-2 mb-2">
+                          <RotateCw className="h-3.5 w-3.5 text-muted-foreground" />
+                          <p className="text-xs font-semibold">Version Control</p>
+                        </div>
+                        <div className="flex flex-col gap-1.5 max-h-56 overflow-y-auto pr-0.5">
+                          {versions.map((version) => (
+                            <button
+                              key={version.id}
+                              type="button"
+                              onClick={() => restoreVersion(version)}
+                              className="flex items-center gap-2 rounded-md border bg-background px-2 py-1.5 text-left hover:bg-muted"
+                            >
+                              <History className="h-3 w-3 text-muted-foreground shrink-0" />
+                              <span className="min-w-0 flex-1">
+                                <span className="block truncate text-[11px] font-semibold">{version.label}</span>
+                                <span className="block text-[10px] text-muted-foreground">{new Date(version.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Canvas (scrollable) — wrapped in a positioning parent so ZoomControls can float
+              fixed at its bottom-right corner regardless of internal scroll position. */}
+          <div className="relative flex-1 min-w-0 min-h-[44vh]">
+          <div ref={scrollContainerRef} className="absolute inset-0 overflow-auto bg-gray-100 p-3">
+            <div className="mx-auto" style={{ width: (showGuides ? canvasW + RULER_SIZE : canvasW) * (zoom / 100) }}>
 
               {/* Top ruler — outside the canvas border */}
               {showGuides && (
@@ -1890,6 +5252,11 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                 </div>
               )}
 
+              {/* Zones above the active one — read-only strips (item 3: Header/
+                  Template/Footer must all stay visible while editing any one). */}
+              {activeZone !== "header" && renderZoneStrip("header", "Header")}
+              {activeZone === "footer" && renderZoneStrip("template", "Body")}
+
               <div className="flex">
                 {/* Left ruler — outside the canvas border */}
                 {showGuides && (
@@ -1900,9 +5267,39 @@ export function PageEditor({ slug, label }: PageEditorProps) {
 
                 <div
                   ref={canvasRef}
-                  className="relative bg-white shadow-sm select-none flex-1 min-w-0"
-                  style={{ aspectRatio: `${canvasW} / ${canvasH}` }}
+                  className="relative shadow-sm select-none flex-1 min-w-0"
+                  style={{ aspectRatio: `${canvasW} / ${canvasH}`, backgroundColor: canvasBgColor }}
                   onMouseDown={onCanvasMouseDown}
+                  onDragOver={(e) => {
+                    if (e.dataTransfer.types.includes("application/x-reusable-component")) e.preventDefault();
+                  }}
+                  onDrop={(e) => {
+                    const raw = e.dataTransfer.getData("application/x-reusable-component");
+                    if (!raw) return;
+                    e.preventDefault();
+                    const entry: ReusableComponentEntry = JSON.parse(raw);
+                    const rect = canvasRef.current!.getBoundingClientRect();
+                    const scale = rect.width / canvasW;
+                    const dropX = (e.clientX - rect.left) / scale;
+                    const dropY = (e.clientY - rect.top) / scale;
+                    // Independent copy, not a live-synced instance — same pattern as
+                    // duplicateInPlace() (new id, group fields stripped so it doesn't
+                    // silently join a group it has nothing to do with on this page).
+                    // reusable/reusableName also stripped: only the original library
+                    // entry should be a "source" — a dropped copy staying flagged would
+                    // duplicate it in the sidebar with a second sourcePage.
+                    const copy: PageComponent = {
+                      ...(entry.component as PageComponent),
+                      id: uid(),
+                      x: dropX - entry.component.width / 2,
+                      y: dropY - entry.component.height / 2,
+                      groupId: undefined, groupName: undefined, groupLink: undefined,
+                      reusable: undefined, reusableName: undefined,
+                    };
+                    commitUndoSnapshot(activeZone);
+                    setComponents((prev) => [...prev, copy]);
+                    setSelectedIds([copy.id]);
+                  }}
                 >
               {loading && <div className="absolute inset-0 flex items-center justify-center text-sm text-muted-foreground">Loading…</div>}
               {showGrid && <GridOverlay canvasW={canvasW} canvasH={canvasH} gridSize={gridSize} />}
@@ -1912,6 +5309,9 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                 const guides = computeSpacingGuides(dragged, components.filter((c) => c.id !== draggingId));
                 return guides.length > 0 ? <SpacingGuides guides={guides} canvasW={canvasW} canvasH={canvasH} /> : null;
               })()}
+              {draggingId && alignmentGuides.length > 0 && (
+                <AlignmentGuides guides={alignmentGuides} canvasW={canvasW} canvasH={canvasH} />
+              )}
               {components.map((comp) => {
                 const pct = (v: number, total: number) => `${(v / total) * 100}%`;
                 const isSelected = selectedIds.includes(comp.id);
@@ -1921,22 +5321,33 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                 const isShape = comp.type === "shape";
                 const isCarousel = comp.type === "carousel";
                 const isIcon = comp.type === "icon";
+                const isTaxi = comp.type === "location-input" || comp.type === "map" || comp.type === "datetime-picker" || comp.type === "vehicle-selector" || comp.type === "driver-badge" || comp.type === "fare-display";
+                const isHero = comp.type === "hero-carousel";
+                const isCatCarousel = comp.type === "category-carousel";
                 const btn = isBtn ? resolveButtonStyles(comp, isHovered) : null;
                 const rotation = comp.rotation ?? 0;
 
                 return (
                   <div key={comp.id}
                     className={`absolute group ${isSoleSelected ? "ring-2 ring-blue-500" : isSelected ? "ring-1 ring-blue-400" : "hover:ring-1 hover:ring-blue-300"}`}
-                    style={{ left: pct(comp.x, canvasW), top: pct(comp.y, canvasH), width: pct(comp.width, canvasW), height: pct(comp.height, canvasH), borderRadius: isBtn || isShape || isCarousel || isIcon ? 0 : (comp.borderRadius ?? 0), backgroundColor: isBtn || isShape || isCarousel || isIcon ? "transparent" : (comp.bgColor === "transparent" ? "transparent" : (comp.bgColor ?? "transparent")), transform: `rotate(${rotation}deg)`, transformOrigin: "center", cursor: "move" }}
+                    style={{ left: pct(comp.x, canvasW), top: pct(comp.y, canvasH), width: pct(comp.width, canvasW), height: pct(comp.height, canvasH), borderRadius: isBtn || isShape || isCarousel || isIcon || isTaxi || isHero || isCatCarousel ? 0 : (comp.borderRadius ?? 0), backgroundColor: isBtn || isShape || isCarousel || isIcon || isTaxi || isHero || isCatCarousel ? "transparent" : (comp.bgColor === "transparent" ? "transparent" : (comp.bgColor ?? "transparent")), transform: `rotate(${rotation}deg)`, transformOrigin: "center", cursor: comp.locked ? "not-allowed" : "move",
+                      boxShadow: buildBoxShadow(comp), filter: buildBlurFilter(comp),
+                      // Editor-only convenience dimming — never affects the published page (see PageComponent.hidden).
+                      ...(comp.hidden ? { opacity: 0.35, pointerEvents: "none" } : {}) }}
                     onMouseDown={(e) => onDragStart(e, comp.id)}
                     onContextMenu={(e) => handleContextMenu(e, comp)}
                     onMouseEnter={() => isBtn && setHoveredId(comp.id)}
                     onMouseLeave={() => isBtn && setHoveredId(null)}
                   >
+                    {comp.locked && (
+                      <div className="absolute -top-1.5 -left-1.5 z-10 h-4 w-4 rounded-full bg-amber-500 text-white flex items-center justify-center shadow pointer-events-none">
+                        <Lock className="h-2.5 w-2.5" />
+                      </div>
+                    )}
                     {(comp.type === "text" || comp.type === "header") && (
                       <div className="w-full h-full flex items-center overflow-hidden px-1"
-                        style={{ fontSize: `calc(${comp.fontSize ?? 16}px * (${canvasRef.current?.clientWidth ?? canvasW} / ${canvasW}))`, fontFamily: comp.fontFamily ?? "system-ui, -apple-system, sans-serif", fontWeight: comp.fontWeight ?? (comp.bold ? 700 : 400), fontStyle: comp.italic ? "italic" : "normal", lineHeight: comp.lineHeight ?? 1.4, letterSpacing: `${comp.letterSpacing ?? 0}px`, color: comp.fontColor ?? "#111", opacity: (comp.opacity ?? 100) / 100, textAlign: comp.textAlign ?? "left", justifyContent: comp.textAlign === "center" ? "center" : comp.textAlign === "right" ? "flex-end" : "flex-start" }}>
-                        <span style={{ whiteSpace: "pre-wrap", wordBreak: "break-word", ...textEffectStyle(comp) }}>{comp.content}</span>
+                        style={{ fontSize: `calc(${comp.fontSize ?? 16}px * (${canvasRef.current?.clientWidth ?? canvasW} / ${canvasW}))`, fontFamily: comp.fontFamily ?? "system-ui, -apple-system, sans-serif", fontWeight: comp.fontWeight ?? (comp.bold ? 700 : 400), fontStyle: comp.italic ? "italic" : "normal", lineHeight: comp.lineHeight ?? 1.4, letterSpacing: `${comp.letterSpacing ?? 0}px`, color: comp.fontColor ?? "#111", opacity: (comp.opacity ?? 100) / 100, textAlign: comp.textAlign ?? "left", textTransform: comp.textTransform ?? "none", textDecoration: textDecorationLine(comp), justifyContent: comp.textAlign === "center" ? "center" : comp.textAlign === "right" ? "flex-end" : "flex-start" }}>
+                        {renderTextBody(comp)}
                       </div>
                     )}
                     {isShape && (
@@ -1948,6 +5359,14 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                       </div>
                     )}
                     {isIcon && <IconGlyph comp={comp} />}
+                    {comp.type === "location-input" && <LocationInputBody comp={comp} />}
+                    {comp.type === "map" && <MapBody comp={comp} />}
+                    {comp.type === "datetime-picker" && <DateTimePickerBody comp={comp} />}
+                    {comp.type === "vehicle-selector" && <VehicleSelectorBody comp={comp} />}
+                    {comp.type === "driver-badge" && <DriverBadgeBody comp={comp} />}
+                    {comp.type === "fare-display" && <FareDisplayBody comp={comp} />}
+                    {isHero && <HeroCarouselBody comp={comp} />}
+                    {isCatCarousel && <CategoryCarouselBody comp={comp} canvasW={canvasW} />}
                     {comp.type === "image" && <ImageBody comp={comp} placeholderClass="text-gray-400" />}
                     {isBtn && btn && (
                       <div className="w-full h-full flex items-center justify-center overflow-hidden"
@@ -1957,30 +5376,21 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                     )}
                     {isSoleSelected && (
                       <>
+                        <FloatingToolbar
+                          mode="single"
+                          locked={comp.locked}
+                          hidden={comp.hidden}
+                          onDuplicate={() => duplicateComp(comp)}
+                          onDelete={() => deleteComp([comp.id])}
+                          onToggleLock={() => toggleLocked([comp.id])}
+                          onToggleHide={() => toggleHidden([comp.id])}
+                          onBringForward={() => moveComponentOrder(comp.id, "forward")}
+                          onSendBackward={() => moveComponentOrder(comp.id, "backward")}
+                          onBringToFront={() => bringToFront(comp.id)}
+                          onSendToBack={() => sendToBack(comp.id)}
+                        />
                         {(comp.type === "text" || comp.type === "header") && (
                           <>
-                            <div
-                              className="absolute z-30 flex items-center gap-1 rounded-md border bg-white px-1 py-1 shadow-sm"
-                              style={{ top: -38, left: "50%", transform: "translateX(-50%)" }}
-                              onMouseDown={(e) => e.stopPropagation()}
-                            >
-                              <button
-                                type="button"
-                                title="Duplicate"
-                                className="flex h-6 w-6 items-center justify-center rounded hover:bg-muted"
-                                onClick={(e) => { e.stopPropagation(); duplicateComp(comp); }}
-                              >
-                                <Copy className="h-3.5 w-3.5" />
-                              </button>
-                              <button
-                                type="button"
-                                title="Delete"
-                                className="flex h-6 w-6 items-center justify-center rounded text-destructive hover:bg-destructive/10"
-                                onClick={(e) => { e.stopPropagation(); deleteComp([comp.id]); }}
-                              >
-                                <Trash2 className="h-3.5 w-3.5" />
-                              </button>
-                            </div>
                             <div
                               className="absolute z-30 flex items-center gap-1 rounded-md border bg-white px-1 py-1 shadow-sm"
                               style={{ bottom: -38, left: "50%", transform: "translateX(-50%)" }}
@@ -2045,6 +5455,21 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                     <div className="absolute -top-6 left-0 text-[10px] bg-blue-500 text-white px-1.5 py-0.5 rounded whitespace-nowrap">
                       {selectionGroupId ? (selectedComps[0].groupName || "Group") : `${ids.length} selected`}
                     </div>
+                    <div className="pointer-events-auto">
+                      <FloatingToolbar
+                        mode="multi"
+                        canGroup={!selectionGroupId}
+                        canUngroup={!!selectionGroupId}
+                        canDistribute={selectedComps.length >= 3}
+                        locked={selectedComps.every((c) => c.locked)}
+                        onDelete={() => deleteComp(ids)}
+                        onGroup={groupSelected}
+                        onUngroup={ungroupSelected}
+                        onAlign={alignSelected}
+                        onDistribute={distributeSelected}
+                        onToggleLock={() => setLockedForAll(ids, !selectedComps.every((c) => c.locked))}
+                      />
+                    </div>
                     <div className="absolute -top-1.5 -left-1.5 w-3 h-3 bg-blue-500 rounded-full border-2 border-white shadow cursor-nwse-resize pointer-events-auto" onMouseDown={(e) => onResizeStart(e, ids, "tl")} />
                     <div className="absolute -top-1.5 -right-1.5 w-3 h-3 bg-blue-500 rounded-full border-2 border-white shadow cursor-nesw-resize pointer-events-auto" onMouseDown={(e) => onResizeStart(e, ids, "tr")} />
                     <div className="absolute -bottom-1.5 -left-1.5 w-3 h-3 bg-blue-500 rounded-full border-2 border-white shadow cursor-nesw-resize pointer-events-auto" onMouseDown={(e) => onResizeStart(e, ids, "bl")} />
@@ -2068,155 +5493,59 @@ export function PageEditor({ slug, label }: PageEditorProps) {
               <p className="text-center text-xs text-muted-foreground mt-1 select-none">
                 {canvasW} × {Math.round(canvasH)} px · drag to move · corner to resize · purple to rotate · Del · ⌘C/⌘V
               </p>
+
+              {/* Zones below the active one — read-only strips, same reasoning as above. */}
+              <div className="mt-2">
+                {activeZone === "header" && renderZoneStrip("template", "Body")}
+                {activeZone !== "footer" && renderZoneStrip("footer", "Footer")}
+              </div>
             </div>
           </div>
 
+          {/* Zoom controls — floats fixed at the canvas viewport's bottom-right corner,
+              independent of scroll position (see the relative/absolute wrapper above). */}
+          <div className="absolute bottom-3 right-3 flex items-center gap-0.5 rounded-lg border bg-background shadow-sm px-1 py-1 z-10">
+            <button type="button" title="Zoom out" onClick={() => setZoom((z) => Math.max(25, z - 10))}
+              className="flex h-6 w-6 items-center justify-center rounded hover:bg-muted">
+              <Minus className="h-3 w-3" />
+            </button>
+            <button type="button" title="Reset to 100%" onClick={() => setZoom(100)}
+              className="h-6 px-1.5 text-[11px] rounded hover:bg-muted tabular-nums">
+              {zoom}%
+            </button>
+            <button type="button" title="Zoom in" onClick={() => setZoom((z) => Math.min(300, z + 10))}
+              className="flex h-6 w-6 items-center justify-center rounded hover:bg-muted">
+              <Plus className="h-3 w-3" />
+            </button>
+            <div className="w-px h-4 bg-border mx-0.5" />
+            <button type="button" title="Fit to screen"
+              onClick={() => {
+                const containerW = scrollContainerRef.current?.clientWidth ?? canvasW;
+                const naturalW = (showGuides ? canvasW + RULER_SIZE : canvasW);
+                setZoom(Math.max(25, Math.min(300, Math.floor((containerW - 24) / naturalW * 100))));
+              }}
+              className="flex items-center gap-1 h-6 px-1.5 text-[11px] rounded hover:bg-muted"
+            >
+              <Maximize className="h-3 w-3" /> Fit
+            </button>
+          </div>
+          </div>
+
           {/* ── Right panel (fixed, locked alongside canvas) ── */}
-          <div className="w-full lg:w-72 lg:max-w-72 shrink-0 border-t lg:border-t-0 lg:border-l bg-background flex flex-col overflow-hidden max-h-[48vh] lg:max-h-none">
-
-            {/* Layers — collapsed by default; expands to list every component in
-                stacking order (top = frontmost). Click to select, drag to reorder,
-                chevrons nudge forward/backward. Click the header again to collapse. */}
-            <div className="shrink-0 border-b px-3 py-2">
-              <button
-                type="button"
-                onClick={() => setLayersOpen((o) => !o)}
-                className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md border text-xs transition-colors text-left ${layersOpen ? "border-black bg-muted" : "border-gray-200 hover:bg-muted"}`}
-              >
-                <Layers className="h-3.5 w-3.5 text-muted-foreground shrink-0" /> Layers
-                {components.length > 0 && <span className="text-muted-foreground">({components.length})</span>}
-                <ChevronDown className={`h-3 w-3 ml-auto text-muted-foreground transition-transform ${layersOpen ? "rotate-180" : ""}`} />
-              </button>
-              {layersOpen && (
-                <div className="mt-1.5 border rounded-md bg-muted/30 flex flex-col" style={{ maxHeight: 220 }}>
-                  <div className="flex-1 min-h-0 overflow-y-auto p-1.5 flex flex-col gap-0.5">
-                    {components.length === 0 && (
-                      <p className="text-[11px] text-muted-foreground text-center py-3">No components yet</p>
-                    )}
-                    {[...components].reverse().map((comp) => {
-                      const idx = components.findIndex((c) => c.id === comp.id);
-                      const isFront = idx === components.length - 1;
-                      const isBack = idx === 0;
-                      const isSelected = selectedIds.includes(comp.id);
-                      return (
-                        <div
-                          key={comp.id}
-                          draggable
-                          onDragStart={(e) => { setDragLayerId(comp.id); e.dataTransfer.effectAllowed = "move"; }}
-                          onDragOver={(e) => { e.preventDefault(); if (dragOverLayerId !== comp.id) setDragOverLayerId(comp.id); }}
-                          onDragLeave={() => setDragOverLayerId((id) => (id === comp.id ? null : id))}
-                          onDrop={(e) => {
-                            e.preventDefault();
-                            if (dragLayerId && dragLayerId !== comp.id) reorderComponents(dragLayerId, comp.id);
-                            setDragLayerId(null); setDragOverLayerId(null);
-                          }}
-                          onDragEnd={() => { setDragLayerId(null); setDragOverLayerId(null); }}
-                          onClick={() => setSelectedIds([comp.id])}
-                          className={`group flex items-center gap-1.5 rounded-md border px-1.5 py-1 text-xs cursor-pointer transition-colors bg-background ${
-                            isSelected ? "bg-blue-50 border-blue-400" : "border-transparent hover:bg-muted"
-                          } ${dragOverLayerId === comp.id && dragLayerId !== comp.id ? "border-dashed border-blue-500" : ""}`}
-                        >
-                          <GripVertical className="h-3 w-3 text-muted-foreground shrink-0 cursor-grab" />
-                          {layerIcon(comp)}
-                          <span className="truncate flex-1">{comp.name?.trim() || componentTypeLabel(comp.type)}</span>
-                          <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 shrink-0">
-                            <button type="button" title="Bring forward" disabled={isFront}
-                              onClick={(e) => { e.stopPropagation(); moveComponentOrder(comp.id, "forward"); }}
-                              className="flex h-5 w-5 items-center justify-center rounded hover:bg-background disabled:opacity-30 disabled:cursor-not-allowed">
-                              <ChevronUp className="h-3 w-3" />
-                            </button>
-                            <button type="button" title="Send backward" disabled={isBack}
-                              onClick={(e) => { e.stopPropagation(); moveComponentOrder(comp.id, "backward"); }}
-                              className="flex h-5 w-5 items-center justify-center rounded hover:bg-background disabled:opacity-30 disabled:cursor-not-allowed">
-                              <ChevronDown className="h-3 w-3" />
-                            </button>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
+          <div className={`shrink-0 border-t lg:border-t-0 lg:border-l bg-background flex flex-col overflow-hidden ${rightSidebarCollapsed ? "w-10" : "w-full lg:w-72 lg:max-w-72 max-h-[48vh] lg:max-h-none"}`}>
+            <div className="flex items-center shrink-0" style={{ backgroundColor: "#1a1a2e" }}>
+              {!rightSidebarCollapsed && (
+                <p className="flex-1 px-3 py-1.5 text-[10px] uppercase tracking-wide text-white/60">Properties</p>
               )}
+              <button type="button" title={rightSidebarCollapsed ? "Expand" : "Collapse"} onClick={() => setRightSidebarCollapsed((v) => !v)}
+                className="shrink-0 p-2 hover:bg-white/10 text-white/60">
+                {rightSidebarCollapsed ? <PanelRightOpen className="h-3.5 w-3.5" /> : <PanelRightClose className="h-3.5 w-3.5" />}
+              </button>
             </div>
-
-            <div className="shrink-0 border-b px-3 py-2">
-              <div className="flex items-center gap-2 mb-2">
-                <Cloud className="h-3.5 w-3.5 text-muted-foreground" />
-                <p className="text-xs font-semibold flex-1">Live Workflow</p>
-                <span className={`text-[10px] font-semibold ${syncStatus === "error" ? "text-destructive" : syncStatus === "dirty" ? "text-amber-700" : "text-green-700"}`}>
-                  {syncStatus === "syncing" ? "Syncing" : syncStatus === "dirty" ? "Draft" : syncStatus === "error" ? "Error" : "Live"}
-                </span>
-              </div>
-              <div className="grid grid-cols-3 gap-1.5">
-                {["Draft", "Preview", "Publish"].map((step, i) => (
-                  <div key={step} className={`rounded-md border px-1.5 py-1 text-center ${i === 0 && syncStatus === "dirty" ? "bg-amber-50 border-amber-200" : i === 2 && syncStatus === "synced" ? "bg-green-50 border-green-200" : "bg-background"}`}>
-                    <p className="text-[10px] font-semibold">{step}</p>
-                  </div>
-                ))}
-              </div>
-              <div className="mt-2 flex items-center gap-1.5">
-                <Button variant="outline" size="sm" className="h-7 flex-1 gap-1 text-xs" onClick={() => captureVersion("Manual checkpoint")}>
-                  <History className="h-3 w-3" /> Checkpoint
-                </Button>
-                <Button size="sm" className="h-7 flex-1 gap-1 text-xs" disabled={saving} onClick={save}>
-                  <Rocket className="h-3 w-3" /> Deploy
-                </Button>
-              </div>
-              <p className="mt-1.5 text-[10px] text-muted-foreground">
-                {lastSyncedAt ? `Last sync ${lastSyncedAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : "Waiting for first sync"}
-              </p>
-            </div>
-
-            <div className="shrink-0 border-b px-3 py-2">
-              <div className="flex items-center gap-2 mb-2">
-                <ComponentIcon className="h-3.5 w-3.5 text-muted-foreground" />
-                <p className="text-xs font-semibold">Market Widgets</p>
-              </div>
-              <div className="grid grid-cols-2 gap-1.5">
-                {MARKET_WIDGETS.map((widget) => (
-                  <button
-                    key={widget.id}
-                    type="button"
-                    onClick={() => addMarketWidget(widget.id)}
-                    className="rounded-md border bg-background px-2 py-2 text-left hover:border-black hover:bg-muted transition-colors"
-                  >
-                    <div className="flex items-center gap-1.5">
-                      <widget.icon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                      <span className="text-[11px] font-semibold truncate">{widget.label}</span>
-                    </div>
-                    <p className="mt-1 text-[10px] text-muted-foreground truncate">{widget.hint}</p>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {versions.length > 0 && (
-              <div className="shrink-0 border-b px-3 py-2">
-                <div className="flex items-center gap-2 mb-2">
-                  <RotateCw className="h-3.5 w-3.5 text-muted-foreground" />
-                  <p className="text-xs font-semibold">Version Control</p>
-                </div>
-                <div className="flex flex-col gap-1.5 max-h-28 overflow-y-auto pr-0.5">
-                  {versions.map((version) => (
-                    <button
-                      key={version.id}
-                      type="button"
-                      onClick={() => restoreVersion(version)}
-                      className="flex items-center gap-2 rounded-md border bg-background px-2 py-1.5 text-left hover:bg-muted"
-                    >
-                      <History className="h-3 w-3 text-muted-foreground shrink-0" />
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-[11px] font-semibold">{version.label}</span>
-                        <span className="block text-[10px] text-muted-foreground">{new Date(version.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
 
             {/* Add Component — a selected component's editing settings appear inline,
                 right inside its own type's section, instead of in a separate panel. */}
+            {!rightSidebarCollapsed && (
             <div className="flex-1 overflow-y-auto p-3">
               <p className={sLabel + " mb-2"}>Add Component</p>
               <div className="flex flex-col gap-1.5">
@@ -2231,103 +5560,238 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                   {openTool === "text" && (
                     <div className="mt-1 p-1.5 border rounded-md bg-muted/30">
                       {selectedComp && (selectedComp.type === "text" || selectedComp.type === "header") ? (
-                        <div className="flex flex-col gap-2.5">
-                          {renderCommonFields(selectedComp)}
-                          <div>
-                            <label className={sLabel}>Edit text</label>
-                            <textarea value={selectedComp.content ?? ""} onChange={(e) => updateComp(selectedComp.id, { content: e.target.value })} className="w-full text-xs border rounded px-2 py-1 resize-none bg-background" rows={2} />
-                          </div>
-                          <div>
-                            <label className={sLabel}>Font style</label>
-                            <FontSelect value={selectedComp.fontFamily ?? "system-ui, -apple-system, sans-serif"} onChange={(v) => updateComp(selectedComp.id, { fontFamily: v })} />
-                          </div>
-                          <div>
-                            <label className={sLabel}>Text style</label>
-                            <div className="grid grid-cols-3 gap-1">
-                              {(["heading", "subheading", "body"] as const).map((style) => (
-                                <button
-                                  key={style}
-                                  type="button"
-                                  onClick={() => updateComp(selectedComp.id, textStylePatch(style))}
-                                  className={`text-[11px] py-0.5 rounded border capitalize ${(selectedComp.textStyle ?? "body") === style ? "bg-black text-white" : "hover:bg-muted"}`}
-                                >
-                                  {style === "subheading" ? "Sub" : style}
+                        <div className="flex flex-col">
+                          {renderTypeHeader(selectedComp)}
+                          {renderPropertySection("layout", "Layout", renderCommonFields(selectedComp))}
+                          {renderPropertySection("typography", "Typography", <>
+                            <div>
+                              <label className={sLabel}>Edit text</label>
+                              <textarea value={selectedComp.content ?? ""} onChange={(e) => updateComp(selectedComp.id, { content: e.target.value })} className="w-full text-xs border rounded px-2 py-1 resize-none bg-background" rows={2} />
+                            </div>
+                            {selectedComp.lockedTypography ? (
+                              <>
+                                <div className="flex items-start gap-1.5 p-1.5 rounded border border-amber-200 bg-amber-50">
+                                  <Lock className="h-3 w-3 text-amber-600 shrink-0 mt-0.5" />
+                                  <p className="text-[10px] text-amber-800 leading-tight">
+                                    Typography locked to <span className="font-semibold">{selectedComp.textToken ? TEXT_TOKEN_LABELS[selectedComp.textToken] : "template"}</span> so this always matches its Text Template. Content, color, and alignment still editable.
+                                  </p>
+                                </div>
+                                <div>
+                                  <label className={sLabel}>Alignment</label>
+                                  <div className="grid grid-cols-3 gap-1">
+                                    {(["left", "center", "right"] as const).map((a) => (
+                                      <button key={a} type="button" onClick={() => updateComp(selectedComp.id, { textAlign: a })} className={`text-[11px] py-0.5 rounded border ${selectedComp.textAlign === a ? "bg-black text-white" : "hover:bg-muted"}`}>{a[0].toUpperCase() + a.slice(1)}</button>
+                                    ))}
+                                  </div>
+                                </div>
+                                <button type="button" onClick={() => updateComp(selectedComp.id, { lockedTypography: false })}
+                                  className="flex items-center justify-center gap-1.5 text-[11px] py-1 rounded border border-gray-200 hover:bg-muted">
+                                  <Unlock className="h-3 w-3" /> Detach from template (unlock typography)
                                 </button>
-                              ))}
+                              </>
+                            ) : (
+                              <>
+                                <div>
+                                  <label className={sLabel}>Style</label>
+                                  <select
+                                    value={effectiveTextToken(selectedComp)}
+                                    onChange={(e) => updateComp(selectedComp.id, textTokenPatch(e.target.value as TextToken, canvasW))}
+                                    className="w-full text-xs border rounded px-1.5 py-1 bg-background h-6"
+                                  >
+                                    {TEXT_TOKEN_ORDER.map((t) => <option key={t} value={t}>{TEXT_TOKEN_LABELS[t]}</option>)}
+                                  </select>
+                                </div>
+                                <div>
+                                  <label className={sLabel}>Font family</label>
+                                  <FontSelect value={selectedComp.fontFamily ?? TOKEN_FONT_FAMILY} onChange={(v) => updateComp(selectedComp.id, { fontFamily: v })} options={APPROVED_FONT_FAMILIES} />
+                                </div>
+                                <div>
+                                  <label className={sLabel}>Size</label>
+                                  <div className="grid grid-cols-4 gap-1">
+                                    {SIZE_PRESETS.map((p) => {
+                                      const size = applySizePreset(selectedComp, p.mult, canvasW);
+                                      const isActive = (selectedComp.fontSize ?? 0) === size;
+                                      return (
+                                        <button key={p.id} type="button"
+                                          onClick={() => updateComp(selectedComp.id, { fontSize: size })}
+                                          className={`text-[11px] py-0.5 rounded border ${isActive ? "bg-black text-white" : "hover:bg-muted"}`}>
+                                          {p.label}
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                                <div>
+                                  <label className={sLabel}>Format</label>
+                                  <div className="grid grid-cols-4 gap-1">
+                                    <button type="button" onClick={() => updateComp(selectedComp.id, { bold: !selectedComp.bold, fontWeight: selectedComp.bold ? 400 : 700 })} className={`text-xs py-0.5 rounded border font-bold ${selectedComp.bold || (selectedComp.fontWeight ?? 400) >= 700 ? "bg-black text-white" : "hover:bg-muted"}`}>B</button>
+                                    <button type="button" onClick={() => updateComp(selectedComp.id, { italic: !selectedComp.italic })} className={`text-xs py-0.5 rounded border italic ${selectedComp.italic ? "bg-black text-white" : "hover:bg-muted"}`}>I</button>
+                                    <button type="button" onClick={() => updateComp(selectedComp.id, { underline: !selectedComp.underline })} className={`text-xs py-0.5 rounded border underline ${selectedComp.underline ? "bg-black text-white" : "hover:bg-muted"}`}>U</button>
+                                    <button type="button" onClick={() => updateComp(selectedComp.id, { strikethrough: !selectedComp.strikethrough })} className={`text-xs py-0.5 rounded border line-through ${selectedComp.strikethrough ? "bg-black text-white" : "hover:bg-muted"}`}>S</button>
+                                  </div>
+                                </div>
+                                <div>
+                                  <label className={sLabel}>Alignment</label>
+                                  <div className="grid grid-cols-4 gap-1">
+                                    {([["left", AlignLeft], ["center", AlignCenter], ["right", AlignRight], ["justify", AlignJustify]] as const).map(([a, Icon]) => (
+                                      <button key={a} type="button" onClick={() => updateComp(selectedComp.id, { textAlign: a })} className={`flex items-center justify-center py-0.5 rounded border ${selectedComp.textAlign === a ? "bg-black text-white" : "hover:bg-muted"}`}>
+                                        <Icon className="h-3 w-3" />
+                                      </button>
+                                    ))}
+                                  </div>
+                                </div>
+                                <div>
+                                  <label className={sLabel}>Text color</label>
+                                  <div className="grid grid-cols-8 gap-1 mb-1">
+                                    {BRAND_TEXT_COLORS.map((c) => (
+                                      <button key={c} type="button" title={c} onClick={() => updateComp(selectedComp.id, { fontColor: c })}
+                                        className={`h-5 w-full rounded border ${selectedComp.fontColor === c ? "ring-2 ring-offset-1 ring-black" : ""}`}
+                                        style={{ backgroundColor: c }} />
+                                    ))}
+                                  </div>
+                                  {textContrastRatio(selectedComp) < 4.5 && (
+                                    <div className="flex items-start gap-1.5 p-1.5 rounded border border-amber-200 bg-amber-50">
+                                      <AlertTriangle className="h-3 w-3 text-amber-600 shrink-0 mt-0.5" />
+                                      <p className="text-[10px] text-amber-800 leading-tight">
+                                        Low contrast ({textContrastRatio(selectedComp).toFixed(1)}:1) against {selectedComp.bgColor && selectedComp.bgColor !== "transparent" ? "its background" : "a white page background"} — aim for 4.5:1 or higher.
+                                      </p>
+                                    </div>
+                                  )}
+                                </div>
+                                <div>
+                                  <label className={sLabel}>List</label>
+                                  <div className="grid grid-cols-4 gap-1">
+                                    <button type="button" title="Bulleted list" onClick={() => updateComp(selectedComp.id, { listType: selectedComp.listType === "bullet" ? "none" : "bullet" })} className={`flex items-center justify-center py-0.5 rounded border ${selectedComp.listType === "bullet" ? "bg-black text-white" : "hover:bg-muted"}`}><List className="h-3 w-3" /></button>
+                                    <button type="button" title="Numbered list" onClick={() => updateComp(selectedComp.id, { listType: selectedComp.listType === "number" ? "none" : "number" })} className={`flex items-center justify-center py-0.5 rounded border ${selectedComp.listType === "number" ? "bg-black text-white" : "hover:bg-muted"}`}><ListOrdered className="h-3 w-3" /></button>
+                                    <button type="button" title="Outdent" disabled={!selectedComp.listType || selectedComp.listType === "none" || !selectedComp.listIndent} onClick={() => updateComp(selectedComp.id, { listIndent: Math.max(0, (selectedComp.listIndent ?? 0) - 1) })} className="flex items-center justify-center py-0.5 rounded border hover:bg-muted disabled:opacity-30"><Outdent className="h-3 w-3" /></button>
+                                    <button type="button" title="Indent" disabled={!selectedComp.listType || selectedComp.listType === "none"} onClick={() => updateComp(selectedComp.id, { listIndent: Math.min(4, (selectedComp.listIndent ?? 0) + 1) })} className="flex items-center justify-center py-0.5 rounded border hover:bg-muted disabled:opacity-30"><Indent className="h-3 w-3" /></button>
+                                  </div>
+                                </div>
+                                <div>
+                                  <label className={sLabel + " flex items-center gap-0.5"}><Link2 className="h-2 w-2" /> Text link</label>
+                                  <div className="grid grid-cols-[1fr_auto] gap-1.5">
+                                    <Input value={selectedComp.link ?? ""} onChange={(e) => updateComp(selectedComp.id, { link: e.target.value })} placeholder="/products or https://…" className="h-6 text-xs px-1.5" />
+                                    <button type="button" title="Open in new tab (off = same window)" onClick={() => updateComp(selectedComp.id, { linkNewTab: !(selectedComp.linkNewTab === true) })}
+                                      className={`flex items-center gap-1 px-1.5 rounded border text-[11px] ${selectedComp.linkNewTab === true ? "bg-black text-white" : "hover:bg-muted"}`}>
+                                      <ExternalLink className="h-3 w-3" />
+                                    </button>
+                                  </div>
+                                </div>
+                              </>
+                            )}
+                          </>)}
+                          {renderPropertySection("appearance", "Appearance", <>
+                            <div className="grid grid-cols-2 gap-1.5">
+                              <ColorPicker key={`${selectedComp.id}-fc`} label="Text color" value={selectedComp.fontColor ?? "#000000"} onChange={(v) => updateComp(selectedComp.id, { fontColor: v })} />
+                              <ColorPicker key={`${selectedComp.id}-bg`} label="Background" value={selectedComp.bgColor === "transparent" ? "#ffffff" : (selectedComp.bgColor ?? "#ffffff")} onChange={(v) => updateComp(selectedComp.id, { bgColor: v })} />
                             </div>
-                          </div>
-                          <div>
-                            <label className={sLabel}>Font size</label>
-                            <div className="grid grid-cols-[1fr_64px] gap-1.5">
-                              <input type="range" min="1" max="300" value={selectedComp.fontSize ?? 20} onChange={(e) => updateComp(selectedComp.id, { fontSize: +e.target.value })} className="w-full" />
-                              <Input type="number" min="1" max="300" value={selectedComp.fontSize ?? 20} onChange={(e) => updateComp(selectedComp.id, { fontSize: +e.target.value })} className="h-6 text-xs px-1.5" />
+                            <div>
+                              <label className={sLabel}>Transparency</label>
+                              <div className="grid grid-cols-[1fr_54px] gap-1.5">
+                                <input type="range" min="0" max="100" value={selectedComp.opacity ?? 100} onChange={(e) => updateComp(selectedComp.id, { opacity: +e.target.value })} className="w-full" />
+                                <Input type="number" min="0" max="100" value={selectedComp.opacity ?? 100} onChange={(e) => updateComp(selectedComp.id, { opacity: +e.target.value })} className="h-6 text-xs px-1.5" />
+                              </div>
                             </div>
-                          </div>
-                          <div className="grid grid-cols-2 gap-1.5">
-                            <ColorPicker key={`${selectedComp.id}-fc`} label="Text color" value={selectedComp.fontColor ?? "#000000"} onChange={(v) => updateComp(selectedComp.id, { fontColor: v })} />
-                            <ColorPicker key={`${selectedComp.id}-bg`} label="Background" value={selectedComp.bgColor === "transparent" ? "#ffffff" : (selectedComp.bgColor ?? "#ffffff")} onChange={(v) => updateComp(selectedComp.id, { bgColor: v })} />
-                          </div>
-                          <div>
-                            <label className={sLabel}>Format</label>
-                            <div className="grid grid-cols-5 gap-1">
-                              <button type="button" onClick={() => updateComp(selectedComp.id, { bold: !selectedComp.bold, fontWeight: selectedComp.bold ? 400 : 700 })} className={`text-xs py-0.5 rounded border font-bold ${selectedComp.bold || (selectedComp.fontWeight ?? 400) >= 700 ? "bg-black text-white" : "hover:bg-muted"}`}>B</button>
-                              <button type="button" onClick={() => updateComp(selectedComp.id, { italic: !selectedComp.italic })} className={`text-xs py-0.5 rounded border italic ${selectedComp.italic ? "bg-black text-white" : "hover:bg-muted"}`}>I</button>
-                              {(["left", "center", "right"] as const).map((a) => (
-                                <button key={a} type="button" onClick={() => updateComp(selectedComp.id, { textAlign: a })} className={`text-[11px] py-0.5 rounded border ${selectedComp.textAlign === a ? "bg-black text-white" : "hover:bg-muted"}`}>{a[0].toUpperCase()}</button>
-                              ))}
+                          </>)}
+                          {renderPropertySection("responsive", "Responsive", renderResponsiveHint())}
+                          {!selectedComp.lockedTypography && renderPropertySection("advanced", "Advanced", <>
+                            <div>
+                              <label className={sLabel}>Font weight</label>
+                              <select value={selectedComp.fontWeight ?? (selectedComp.bold ? 700 : 400)} onChange={(e) => updateComp(selectedComp.id, { fontWeight: +e.target.value, bold: +e.target.value >= 700 })} className="w-full text-xs border rounded px-1.5 py-1 bg-background h-6">
+                                {FONT_WEIGHTS.map((w) => <option key={w.value} value={w.value}>{w.label}</option>)}
+                              </select>
                             </div>
-                          </div>
-                          <div>
-                            <label className={sLabel}>Font weight</label>
-                            <select value={selectedComp.fontWeight ?? (selectedComp.bold ? 700 : 400)} onChange={(e) => updateComp(selectedComp.id, { fontWeight: +e.target.value, bold: +e.target.value >= 700 })} className="w-full text-xs border rounded px-1.5 py-1 bg-background h-6">
-                              {FONT_WEIGHTS.map((w) => <option key={w.value} value={w.value}>{w.label}</option>)}
-                            </select>
-                          </div>
-                          <div className="grid grid-cols-2 gap-1.5">
+                            <div>
+                              <label className={sLabel}>Line height</label>
+                              <div className="grid grid-cols-3 gap-1">
+                                {LINE_HEIGHT_PRESETS.map((p) => (
+                                  <button key={p.id} type="button" onClick={() => updateComp(selectedComp.id, { lineHeight: p.value })}
+                                    className={`text-[11px] py-0.5 rounded border ${selectedComp.lineHeight === p.value ? "bg-black text-white" : "hover:bg-muted"}`}>
+                                    {p.label}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
                             <div>
                               <label className={sLabel}>Letter spacing</label>
-                              <Input type="number" step="0.5" min="-20" max="80" value={selectedComp.letterSpacing ?? 0} onChange={(e) => updateComp(selectedComp.id, { letterSpacing: +e.target.value })} className="h-6 text-xs px-1.5" />
+                              <div className="grid grid-cols-3 gap-1">
+                                {LETTER_SPACING_PRESETS.map((p) => (
+                                  <button key={p.id} type="button" onClick={() => updateComp(selectedComp.id, { letterSpacing: p.value })}
+                                    className={`text-[11px] py-0.5 rounded border ${selectedComp.letterSpacing === p.value ? "bg-black text-white" : "hover:bg-muted"}`}>
+                                    {p.label}
+                                  </button>
+                                ))}
+                              </div>
                             </div>
                             <div>
-                              <label className={sLabel}>Line spacing</label>
-                              <Input type="number" step="0.1" min="0.5" max="5" value={selectedComp.lineHeight ?? 1.4} onChange={(e) => updateComp(selectedComp.id, { lineHeight: +e.target.value })} className="h-6 text-xs px-1.5" />
+                              <label className={sLabel}>Text transform</label>
+                              <div className="grid grid-cols-3 gap-1">
+                                {(["none", "uppercase", "capitalize"] as const).map((t) => (
+                                  <button key={t} type="button" onClick={() => updateComp(selectedComp.id, { textTransform: t })}
+                                    className={`text-[11px] py-0.5 rounded border capitalize ${(selectedComp.textTransform ?? "none") === t ? "bg-black text-white" : "hover:bg-muted"}`}>
+                                    {t}
+                                  </button>
+                                ))}
+                              </div>
                             </div>
-                          </div>
-                          <div>
-                            <label className={sLabel}>Effect</label>
-                            <select value={selectedComp.textEffect ?? "none"} onChange={(e) => updateComp(selectedComp.id, { textEffect: e.target.value as TextEffect })} className="w-full text-xs border rounded px-1.5 py-1 bg-background h-6">
-                              {(["none", "glow", "outline", "background", "hollow", "neon", "glitch"] as const).map((effect) => (
-                                <option key={effect} value={effect}>{effect[0].toUpperCase() + effect.slice(1)}</option>
-                              ))}
-                            </select>
-                          </div>
-                          <div>
-                            <label className={sLabel}>Effect strength</label>
-                            <div className="grid grid-cols-[1fr_54px] gap-1.5">
-                              <input type="range" min="0" max="100" value={selectedComp.effectStrength ?? 30} onChange={(e) => updateComp(selectedComp.id, { effectStrength: +e.target.value })} className="w-full" />
-                              <Input type="number" min="0" max="100" value={selectedComp.effectStrength ?? 30} onChange={(e) => updateComp(selectedComp.id, { effectStrength: +e.target.value })} className="h-6 text-xs px-1.5" />
+                            <div>
+                              <label className={sLabel}>Max lines (0 = no limit)</label>
+                              <Input type="number" min="0" max="20" value={selectedComp.maxLines ?? 0} onChange={(e) => updateComp(selectedComp.id, { maxLines: +e.target.value || undefined })} className="h-6 text-xs px-1.5" />
                             </div>
-                          </div>
-                          <div>
-                            <label className={sLabel}>Transparency</label>
-                            <div className="grid grid-cols-[1fr_54px] gap-1.5">
-                              <input type="range" min="0" max="100" value={selectedComp.opacity ?? 100} onChange={(e) => updateComp(selectedComp.id, { opacity: +e.target.value })} className="w-full" />
-                              <Input type="number" min="0" max="100" value={selectedComp.opacity ?? 100} onChange={(e) => updateComp(selectedComp.id, { opacity: +e.target.value })} className="h-6 text-xs px-1.5" />
+                            <div>
+                              <label className={sLabel}>Effect</label>
+                              <select value={selectedComp.textEffect ?? "none"} onChange={(e) => updateComp(selectedComp.id, { textEffect: e.target.value as TextEffect })} className="w-full text-xs border rounded px-1.5 py-1 bg-background h-6">
+                                {(["none", "glow", "outline", "background", "hollow", "neon", "glitch"] as const).map((effect) => (
+                                  <option key={effect} value={effect}>{effect[0].toUpperCase() + effect.slice(1)}</option>
+                                ))}
+                              </select>
                             </div>
-                          </div>
+                            <div>
+                              <label className={sLabel}>Effect strength</label>
+                              <div className="grid grid-cols-[1fr_54px] gap-1.5">
+                                <input type="range" min="0" max="100" value={selectedComp.effectStrength ?? 30} onChange={(e) => updateComp(selectedComp.id, { effectStrength: +e.target.value })} className="w-full" />
+                                <Input type="number" min="0" max="100" value={selectedComp.effectStrength ?? 30} onChange={(e) => updateComp(selectedComp.id, { effectStrength: +e.target.value })} className="h-6 text-xs px-1.5" />
+                              </div>
+                            </div>
+                          </>)}
                         </div>
                       ) : (
-                        <div className="grid grid-cols-2 gap-1">
-                          {TEXT_PRESETS.map((preset) => (
-                            <button key={preset.id} type="button" onClick={() => addComponent("text", preset.patch)}
-                              className="flex flex-col items-center justify-center gap-0.5 h-12 rounded border border-gray-200 bg-white hover:border-black transition-colors overflow-hidden px-1">
-                              <span className="truncate w-full text-center leading-tight"
-                                style={{ fontSize: Math.min(preset.patch.fontSize ?? 16, 20), fontWeight: preset.patch.fontWeight, letterSpacing: preset.patch.letterSpacing, color: preset.patch.fontColor }}>
-                                {preset.sample}
-                              </span>
-                              <span className="text-[9px] text-muted-foreground">{preset.label}</span>
+                        <div className="flex flex-col gap-2">
+                          <div>
+                            <button type="button" onClick={() => setShowTextTemplates((v) => !v)}
+                              className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md border border-gray-200 hover:bg-muted text-xs text-left">
+                              <LayoutGrid className="h-3.5 w-3.5 text-muted-foreground shrink-0" /> Text Templates
+                              <ChevronDown className={`h-3 w-3 ml-auto text-muted-foreground transition-transform ${showTextTemplates ? "rotate-180" : ""}`} />
                             </button>
-                          ))}
+                            {showTextTemplates && (
+                              <div className="mt-1.5 flex flex-col gap-1.5">
+                                {TEXT_TEMPLATES.map((tpl) => (
+                                  <button key={tpl.id} type="button" onClick={() => addTextTemplate(tpl.id)}
+                                    className="flex items-center gap-2 p-2 rounded-md border border-gray-200 bg-white hover:border-black transition-colors text-left">
+                                    <div className="w-16 h-12 rounded bg-gray-50 border flex flex-col items-center justify-center gap-0.5 shrink-0 overflow-hidden px-1">
+                                      {renderTextTemplatePreview(tpl.id)}
+                                    </div>
+                                    <div className="min-w-0">
+                                      <p className="text-xs font-semibold truncate">{tpl.label}</p>
+                                      <p className="text-[10px] text-muted-foreground truncate">{tpl.hint}</p>
+                                    </div>
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                          <div className="grid grid-cols-2 gap-1">
+                            {TEXT_PRESETS.map((preset) => (
+                              <button key={preset.id} type="button" onClick={() => addComponent("text", textTokenPatch(preset.token, canvasW, { content: preset.sample, fontColor: preset.fontColor }))}
+                                className="flex flex-col items-center justify-center gap-0.5 h-12 rounded border border-gray-200 bg-white hover:border-black transition-colors overflow-hidden px-1">
+                                <span className="truncate w-full text-center leading-tight"
+                                  style={{ fontSize: Math.min(TEXT_TOKENS[preset.token].fontSizeDesktop, 20), fontWeight: TEXT_TOKENS[preset.token].fontWeight, letterSpacing: TEXT_TOKENS[preset.token].letterSpacing, textTransform: TEXT_TOKENS[preset.token].textTransform, color: preset.fontColor }}>
+                                  {preset.sample}
+                                </span>
+                                <span className="text-[9px] text-muted-foreground">{preset.label}</span>
+                              </button>
+                            ))}
+                          </div>
                         </div>
                       )}
                     </div>
@@ -2344,40 +5808,45 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                   {openTool === "shape" && (
                     <div className="mt-1 p-1.5 border rounded-md bg-muted/30">
                       {selectedComp && selectedComp.type === "shape" ? (
-                        <div className="flex flex-col gap-2.5">
-                          {renderCommonFields(selectedComp)}
-                          <div>
-                            <label className={sLabel}>Shape type</label>
-                            <div className="grid grid-cols-4 gap-1">
-                              {SHAPES.map(({ type, label: shapeLabel }) => (
-                                <button
-                                  key={type}
-                                  type="button"
-                                  title={shapeLabel}
-                                  onClick={() => updateComp(selectedComp.id, { shapeType: type })}
-                                  className={`flex items-center justify-center h-7 rounded border ${(selectedComp.shapeType ?? "rectangle") === type ? "bg-black text-white" : "hover:bg-muted text-muted-foreground"}`}
-                                >
-                                  <ShapeSwatch type={type} />
-                                </button>
-                              ))}
-                            </div>
-                          </div>
-                          <div className="grid grid-cols-2 gap-1.5">
-                            <ColorPicker key={`${selectedComp.id}-bg`} label="Fill" value={selectedComp.bgColor ?? "#3b82f6"} onChange={(v) => updateComp(selectedComp.id, { bgColor: v })} />
-                            {shapeHasRadius(selectedComp.shapeType) && (
-                              <div>
-                                <label className={sLabel}>Radius</label>
-                                <Input type="number" min="0" value={selectedComp.borderRadius ?? 0} onChange={(e) => updateComp(selectedComp.id, { borderRadius: +e.target.value })} className="h-6 text-xs px-1.5" />
+                        <div className="flex flex-col">
+                          {renderTypeHeader(selectedComp)}
+                          {renderPropertySection("layout", "Layout", renderCommonFields(selectedComp))}
+                          {renderPropertySection("appearance", "Appearance", <>
+                            <div>
+                              <label className={sLabel}>Shape type</label>
+                              <div className="grid grid-cols-4 gap-1">
+                                {SHAPES.map(({ type, label: shapeLabel }) => (
+                                  <button
+                                    key={type}
+                                    type="button"
+                                    title={shapeLabel}
+                                    onClick={() => updateComp(selectedComp.id, { shapeType: type })}
+                                    className={`flex items-center justify-center h-7 rounded border ${(selectedComp.shapeType ?? "rectangle") === type ? "bg-black text-white" : "hover:bg-muted text-muted-foreground"}`}
+                                  >
+                                    <ShapeSwatch type={type} />
+                                  </button>
+                                ))}
                               </div>
-                            )}
-                          </div>
-                          <div>
-                            <label className={sLabel}>Transparency</label>
-                            <div className="grid grid-cols-[1fr_54px] gap-1.5">
-                              <input type="range" min="0" max="100" value={selectedComp.opacity ?? 100} onChange={(e) => updateComp(selectedComp.id, { opacity: +e.target.value })} className="w-full" />
-                              <Input type="number" min="0" max="100" value={selectedComp.opacity ?? 100} onChange={(e) => updateComp(selectedComp.id, { opacity: +e.target.value })} className="h-6 text-xs px-1.5" />
                             </div>
-                          </div>
+                            <div className="grid grid-cols-2 gap-1.5">
+                              <ColorPicker key={`${selectedComp.id}-bg`} label="Fill" value={selectedComp.bgColor ?? "#3b82f6"} onChange={(v) => updateComp(selectedComp.id, { bgColor: v })} />
+                              {shapeHasRadius(selectedComp.shapeType) && (
+                                <div>
+                                  <label className={sLabel}>Radius</label>
+                                  <Input type="number" min="0" value={selectedComp.borderRadius ?? 0} onChange={(e) => updateComp(selectedComp.id, { borderRadius: +e.target.value })} className="h-6 text-xs px-1.5" />
+                                </div>
+                              )}
+                            </div>
+                            <div>
+                              <label className={sLabel}>Transparency</label>
+                              <div className="grid grid-cols-[1fr_54px] gap-1.5">
+                                <input type="range" min="0" max="100" value={selectedComp.opacity ?? 100} onChange={(e) => updateComp(selectedComp.id, { opacity: +e.target.value })} className="w-full" />
+                                <Input type="number" min="0" max="100" value={selectedComp.opacity ?? 100} onChange={(e) => updateComp(selectedComp.id, { opacity: +e.target.value })} className="h-6 text-xs px-1.5" />
+                              </div>
+                            </div>
+                          </>)}
+                          {renderPropertySection("responsive", "Responsive", renderResponsiveHint())}
+                          {renderPropertySection("effects", "Effects", renderShadowBlurFields(selectedComp))}
                         </div>
                       ) : (
                         <div className="grid grid-cols-4 gap-1">
@@ -2403,23 +5872,20 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                   {openTool === "image" && (
                     <div className="mt-1 p-2 border rounded-md bg-muted/30">
                       {selectedComp && selectedComp.type === "image" ? (
-                        <div className="flex flex-col gap-2.5">
-                          {renderCommonFields(selectedComp)}
+                        <div className="flex flex-col">
+                          {renderTypeHeader(selectedComp)}
+                          {renderPropertySection("layout", "Layout", renderCommonFields(selectedComp))}
+                          {renderPropertySection("appearance", "Appearance", <>
                           {(selectedComp.imageMode ?? "single") === "single" ? (
                             <div>
-                              <label className={sLabel}>Upload</label>
-                              <label className="flex items-center gap-1.5 cursor-pointer px-2 py-1 rounded border text-xs hover:bg-muted">
-                                <ImageIcon className="h-3 w-3" />
-                                {uploading ? "Uploading…" : "Choose image"}
-                                <input type="file" accept="image/*" className="hidden"
-                                  onChange={async (e) => {
-                                    const file = e.target.files?.[0]; if (!file) return;
-                                    const localUrl = URL.createObjectURL(file);
-                                    updateComp(selectedComp.id, { imageUrl: localUrl });
-                                    const remoteUrl = await uploadImage(file);
-                                    if (remoteUrl) { updateComp(selectedComp.id, { imageUrl: remoteUrl }); URL.revokeObjectURL(localUrl); }
-                                  }} />
-                              </label>
+                              <label className={sLabel}>Image</label>
+                              <ImagePickerButton
+                                label="Choose image" icon={ImageIcon}
+                                uploading={uploading} uploadProgress={uploadProgress}
+                                assetItems={assetItems} assetsLoading={assetsLoading} loadAssets={loadAssets}
+                                onUpload={uploadToAssets}
+                                onSelect={(url) => updateComp(selectedComp.id, { imageUrl: url })}
+                              />
                             </div>
                           ) : (
                             <div className="flex flex-col gap-2.5 p-2 border rounded-md bg-white">
@@ -2463,22 +5929,13 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                                   );
                                 })()}
                                 {((selectedComp.slideshowMax ?? 5) === 0 || (selectedComp.images ?? []).length < (selectedComp.slideshowMax ?? 5)) && (
-                                  <label className="flex items-center gap-1.5 cursor-pointer px-2 py-1 rounded border text-xs hover:bg-muted">
-                                    <ImageIcon className="h-3 w-3" />
-                                    {uploading ? "Uploading…" : "Add photo"}
-                                    <input type="file" accept="image/*" className="hidden"
-                                      onChange={async (e) => {
-                                        const file = e.target.files?.[0]; if (!file) return;
-                                        const before = selectedComp.images ?? [];
-                                        const localUrl = URL.createObjectURL(file);
-                                        updateComp(selectedComp.id, { images: [...before, localUrl] });
-                                        const remoteUrl = await uploadImage(file);
-                                        if (remoteUrl) {
-                                          updateComp(selectedComp.id, { images: [...before, remoteUrl] });
-                                          URL.revokeObjectURL(localUrl);
-                                        }
-                                      }} />
-                                  </label>
+                                  <ImagePickerButton
+                                    label="Add photo" icon={ImageIcon}
+                                    uploading={uploading} uploadProgress={uploadProgress}
+                                    assetItems={assetItems} assetsLoading={assetsLoading} loadAssets={loadAssets}
+                                    onUpload={uploadToAssets}
+                                    onSelect={(url) => updateComp(selectedComp.id, { images: [...(selectedComp.images ?? []), url] })}
+                                  />
                                 )}
                               </div>
 
@@ -2513,6 +5970,9 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                               <Input type="number" value={selectedComp.borderRadius ?? 4} onChange={(e) => updateComp(selectedComp.id, { borderRadius: +e.target.value })} className="h-6 text-xs px-1.5" />
                             </div>
                           </div>
+                          </>)}
+                          {renderPropertySection("responsive", "Responsive", renderResponsiveHint())}
+                          {renderPropertySection("effects", "Effects", renderShadowBlurFields(selectedComp))}
                         </div>
                       ) : (
                         <div className="flex flex-col gap-2">
@@ -2558,60 +6018,67 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                   {openTool === "button" && (
                     <div className="mt-1 p-1.5 border rounded-md bg-muted/30">
                       {selectedComp && selectedComp.type === "button" ? (
-                        <div className="flex flex-col gap-2.5">
-                          {renderCommonFields(selectedComp)}
-                          <div>
-                            <label className={sLabel}>Label</label>
-                            <Input value={selectedComp.content ?? ""} onChange={(e) => updateComp(selectedComp.id, { content: e.target.value })} className="h-6 text-xs px-1.5" />
-                          </div>
-                          <div>
-                            <label className={sLabel}>Style</label>
-                            <div className="grid grid-cols-4 gap-1">
-                              {(["solid", "outline", "ghost", "link"] as const).map((s) => (
-                                <button key={s} onClick={() => updateComp(selectedComp.id, { buttonStyle: s })}
-                                  className={`text-[11px] py-0.5 rounded border capitalize ${(selectedComp.buttonStyle ?? "solid") === s ? "bg-black text-white" : "hover:bg-muted"}`}>{s}</button>
-                              ))}
+                        <div className="flex flex-col">
+                          {renderTypeHeader(selectedComp)}
+                          {renderPropertySection("layout", "Layout", <>
+                            {renderCommonFields(selectedComp)}
+                            <div>
+                              <label className={sLabel}>Action</label>
+                              <select value={selectedComp.buttonAction?.type ?? "url"} onChange={(e) => updateComp(selectedComp.id, { buttonAction: { type: e.target.value as ButtonActionType, value: selectedComp.buttonAction?.value ?? "" } })} className="w-full text-xs border rounded px-1.5 py-1 bg-background h-6">
+                                {BUTTON_ACTIONS.map((a) => <option key={a.value} value={a.value}>{a.label}</option>)}
+                              </select>
                             </div>
-                          </div>
-                          <div className="grid grid-cols-2 gap-1.5">
-                            <ColorPicker key={`${selectedComp.id}-bg`} label={(selectedComp.buttonStyle ?? "solid") === "solid" ? "Background" : "Accent"} value={selectedComp.bgColor ?? "#3b82f6"} onChange={(v) => updateComp(selectedComp.id, { bgColor: v })} />
-                            <ColorPicker key={`${selectedComp.id}-fc`} label="Text" value={selectedComp.fontColor ?? "#ffffff"} onChange={(v) => updateComp(selectedComp.id, { fontColor: v })} />
-                          </div>
-                          {(selectedComp.buttonStyle === "outline" || selectedComp.buttonStyle === "ghost") && (
-                            <ColorPicker key={`${selectedComp.id}-bc`} label="Border" value={selectedComp.borderColor ?? selectedComp.bgColor ?? "#3b82f6"} onChange={(v) => updateComp(selectedComp.id, { borderColor: v })} />
-                          )}
-                          <div className="grid grid-cols-2 gap-1.5">
-                            <ColorPicker key={`${selectedComp.id}-hbg`} label="Hover BG" value={selectedComp.hoverBgColor ?? "#2563eb"} onChange={(v) => updateComp(selectedComp.id, { hoverBgColor: v })} />
-                            <ColorPicker key={`${selectedComp.id}-hfc`} label="Hover text" value={selectedComp.hoverFontColor ?? "#ffffff"} onChange={(v) => updateComp(selectedComp.id, { hoverFontColor: v })} />
-                          </div>
-                          <div className="grid grid-cols-2 gap-1.5">
+                            <div>
+                              <label className={sLabel}>
+                                {selectedComp.buttonAction?.type === "url" ? "URL" : selectedComp.buttonAction?.type === "buy" ? "Product slug" : selectedComp.buttonAction?.type === "search" ? "Search query" : "Value"}
+                              </label>
+                              <Input value={selectedComp.buttonAction?.value ?? ""} onChange={(e) => updateComp(selectedComp.id, { buttonAction: { type: selectedComp.buttonAction?.type ?? "url", value: e.target.value } })}
+                                placeholder={selectedComp.buttonAction?.type === "url" ? "https://…" : selectedComp.buttonAction?.type === "buy" ? "product-slug" : ""}
+                                className="h-6 text-xs px-1.5" />
+                            </div>
+                          </>)}
+                          {renderPropertySection("typography", "Typography", <>
+                            <div>
+                              <label className={sLabel}>Label</label>
+                              <Input value={selectedComp.content ?? ""} onChange={(e) => updateComp(selectedComp.id, { content: e.target.value })} className="h-6 text-xs px-1.5" />
+                            </div>
                             <div>
                               <label className={sLabel}>Font size</label>
                               <Input type="number" value={selectedComp.fontSize ?? 16} onChange={(e) => updateComp(selectedComp.id, { fontSize: +e.target.value })} className="h-6 text-xs px-1.5" />
                             </div>
                             <div>
+                              <label className={sLabel}>Font</label>
+                              <FontSelect value={selectedComp.fontFamily ?? "system-ui, -apple-system, sans-serif"} onChange={(v) => updateComp(selectedComp.id, { fontFamily: v })} />
+                            </div>
+                          </>)}
+                          {renderPropertySection("appearance", "Appearance", <>
+                            <div>
+                              <label className={sLabel}>Style</label>
+                              <div className="grid grid-cols-4 gap-1">
+                                {(["solid", "outline", "ghost", "link"] as const).map((s) => (
+                                  <button key={s} onClick={() => updateComp(selectedComp.id, { buttonStyle: s })}
+                                    className={`text-[11px] py-0.5 rounded border capitalize ${(selectedComp.buttonStyle ?? "solid") === s ? "bg-black text-white" : "hover:bg-muted"}`}>{s}</button>
+                                ))}
+                              </div>
+                            </div>
+                            <div className="grid grid-cols-2 gap-1.5">
+                              <ColorPicker key={`${selectedComp.id}-bg`} label={(selectedComp.buttonStyle ?? "solid") === "solid" ? "Background" : "Accent"} value={selectedComp.bgColor ?? "#3b82f6"} onChange={(v) => updateComp(selectedComp.id, { bgColor: v })} />
+                              <ColorPicker key={`${selectedComp.id}-fc`} label="Text" value={selectedComp.fontColor ?? "#ffffff"} onChange={(v) => updateComp(selectedComp.id, { fontColor: v })} />
+                            </div>
+                            {(selectedComp.buttonStyle === "outline" || selectedComp.buttonStyle === "ghost") && (
+                              <ColorPicker key={`${selectedComp.id}-bc`} label="Border" value={selectedComp.borderColor ?? selectedComp.bgColor ?? "#3b82f6"} onChange={(v) => updateComp(selectedComp.id, { borderColor: v })} />
+                            )}
+                            <div className="grid grid-cols-2 gap-1.5">
+                              <ColorPicker key={`${selectedComp.id}-hbg`} label="Hover BG" value={selectedComp.hoverBgColor ?? "#2563eb"} onChange={(v) => updateComp(selectedComp.id, { hoverBgColor: v })} />
+                              <ColorPicker key={`${selectedComp.id}-hfc`} label="Hover text" value={selectedComp.hoverFontColor ?? "#ffffff"} onChange={(v) => updateComp(selectedComp.id, { hoverFontColor: v })} />
+                            </div>
+                            <div>
                               <label className={sLabel}>Radius</label>
                               <Input type="number" min="0" max="200" value={selectedComp.borderRadius ?? 8} onChange={(e) => updateComp(selectedComp.id, { borderRadius: +e.target.value })} className="h-6 text-xs px-1.5" />
                             </div>
-                          </div>
-                          <div>
-                            <label className={sLabel}>Font</label>
-                            <FontSelect value={selectedComp.fontFamily ?? "system-ui, -apple-system, sans-serif"} onChange={(v) => updateComp(selectedComp.id, { fontFamily: v })} />
-                          </div>
-                          <div>
-                            <label className={sLabel}>Action</label>
-                            <select value={selectedComp.buttonAction?.type ?? "url"} onChange={(e) => updateComp(selectedComp.id, { buttonAction: { type: e.target.value as ButtonActionType, value: selectedComp.buttonAction?.value ?? "" } })} className="w-full text-xs border rounded px-1.5 py-1 bg-background h-6">
-                              {BUTTON_ACTIONS.map((a) => <option key={a.value} value={a.value}>{a.label}</option>)}
-                            </select>
-                          </div>
-                          <div>
-                            <label className={sLabel}>
-                              {selectedComp.buttonAction?.type === "url" ? "URL" : selectedComp.buttonAction?.type === "buy" ? "Product slug" : selectedComp.buttonAction?.type === "search" ? "Search query" : "Value"}
-                            </label>
-                            <Input value={selectedComp.buttonAction?.value ?? ""} onChange={(e) => updateComp(selectedComp.id, { buttonAction: { type: selectedComp.buttonAction?.type ?? "url", value: e.target.value } })}
-                              placeholder={selectedComp.buttonAction?.type === "url" ? "https://…" : selectedComp.buttonAction?.type === "buy" ? "product-slug" : ""}
-                              className="h-6 text-xs px-1.5" />
-                          </div>
+                          </>)}
+                          {renderPropertySection("responsive", "Responsive", renderResponsiveHint())}
+                          {renderPropertySection("effects", "Effects", renderShadowBlurFields(selectedComp))}
                         </div>
                       ) : (
                         <div className="grid grid-cols-2 gap-1">
@@ -2645,9 +6112,10 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                       {selectedComp && selectedComp.type === "carousel" ? (() => {
                         const items = selectedComp.carouselItems ?? [];
                         return (
-                          <div className="flex flex-col gap-2.5">
-                            {renderCommonFields(selectedComp)}
-
+                          <div className="flex flex-col">
+                            {renderTypeHeader(selectedComp)}
+                            {renderPropertySection("layout", "Layout", renderCommonFields(selectedComp))}
+                            {renderPropertySection("appearance", "Appearance", <>
                             <div>
                               <label className={sLabel}>Items ({items.length})</label>
                               {items.length > 0 && (
@@ -2678,23 +6146,14 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                                   className={`flex items-center justify-center gap-1 h-7 rounded border text-xs transition-colors ${showCategoryPicker ? "bg-black text-white border-black" : "border-gray-200 hover:bg-muted"}`}>
                                   <Tag className="h-3 w-3" /> From Categories
                                 </button>
-                                <label className="flex items-center justify-center gap-1 h-7 rounded border border-gray-200 text-xs hover:bg-muted cursor-pointer">
-                                  <ImageIcon className="h-3 w-3" />
-                                  {uploading ? "Uploading…" : "Custom item"}
-                                  <input type="file" accept="image/*" className="hidden"
-                                    onChange={async (e) => {
-                                      const file = e.target.files?.[0]; if (!file) return;
-                                      const before = items;
-                                      const localUrl = URL.createObjectURL(file);
-                                      const newItem: CarouselItem = { id: uid(), imageUrl: localUrl, label: "", link: "" };
-                                      updateComp(selectedComp.id, { carouselItems: [...before, newItem] });
-                                      const remoteUrl = await uploadImage(file);
-                                      if (remoteUrl) {
-                                        updateComp(selectedComp.id, { carouselItems: [...before, { ...newItem, imageUrl: remoteUrl }] });
-                                        URL.revokeObjectURL(localUrl);
-                                      }
-                                    }} />
-                                </label>
+                                <ImagePickerButton
+                                  label="Custom item" icon={ImageIcon}
+                                  buttonClassName="flex items-center justify-center gap-1 h-7 rounded border border-gray-200 text-xs hover:bg-muted cursor-pointer w-full"
+                                  uploading={uploading} uploadProgress={uploadProgress}
+                                  assetItems={assetItems} assetsLoading={assetsLoading} loadAssets={loadAssets}
+                                  onUpload={uploadToAssets}
+                                  onSelect={(url) => updateComp(selectedComp.id, { carouselItems: [...items, { id: uid(), imageUrl: url, label: "", link: "" }] })}
+                                />
                               </div>
                               {showCategoryPicker && (
                                 <div className="mt-1.5 max-h-36 overflow-y-auto border rounded bg-white flex flex-col gap-0.5 p-1">
@@ -2715,30 +6174,321 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                               )}
                             </div>
 
-                            <div className="grid grid-cols-2 gap-1.5">
+                            <div>
+                              <label className={sLabel}>Style</label>
+                              <div className="grid grid-cols-2 gap-1">
+                                <button type="button" onClick={() => updateComp(selectedComp.id, { carouselStyle: "zoom" })}
+                                  className={`text-[11px] py-1 rounded border ${(selectedComp.carouselStyle ?? "zoom") === "zoom" ? "bg-black text-white" : "hover:bg-muted"}`}>
+                                  Zoom carousel
+                                </button>
+                                <button type="button" onClick={() => updateComp(selectedComp.id, { carouselStyle: "row" })}
+                                  className={`text-[11px] py-1 rounded border ${selectedComp.carouselStyle === "row" ? "bg-black text-white" : "hover:bg-muted"}`}>
+                                  Category row
+                                </button>
+                              </div>
+                            </div>
+                            <div className="grid grid-cols-3 gap-1.5">
                               <div>
                                 <label className={sLabel}>Item width</label>
-                                <Input type="number" min="60" max="600" value={selectedComp.carouselItemWidth ?? 160} onChange={(e) => updateComp(selectedComp.id, { carouselItemWidth: +e.target.value })} className="h-6 text-xs px-1.5" />
+                                <Input type="number" min="40" max="600" value={selectedComp.carouselItemWidth ?? 160} onChange={(e) => updateComp(selectedComp.id, { carouselItemWidth: +e.target.value })} className="h-6 text-xs px-1.5" />
+                              </div>
+                              <div>
+                                <label className={sLabel}>Spacing</label>
+                                <Input type="number" min="0" max="100" value={selectedComp.carouselGap ?? 12} onChange={(e) => updateComp(selectedComp.id, { carouselGap: +e.target.value })} className="h-6 text-xs px-1.5" />
                               </div>
                               <div>
                                 <label className={sLabel}>Radius</label>
                                 <Input type="number" min="0" value={selectedComp.borderRadius ?? 12} onChange={(e) => updateComp(selectedComp.id, { borderRadius: +e.target.value })} className="h-6 text-xs px-1.5" />
                               </div>
                             </div>
-                            <div>
-                              <label className={sLabel}>Center zoom</label>
-                              <div className="grid grid-cols-[1fr_54px] gap-1.5">
-                                <input type="range" min="1" max="2" step="0.05" value={selectedComp.carouselZoom ?? 1.25} onChange={(e) => updateComp(selectedComp.id, { carouselZoom: +e.target.value })} className="w-full" />
-                                <Input type="number" min="1" max="2" step="0.05" value={selectedComp.carouselZoom ?? 1.25} onChange={(e) => updateComp(selectedComp.id, { carouselZoom: +e.target.value })} className="h-6 text-xs px-1.5" />
+                            {(selectedComp.carouselStyle ?? "zoom") === "zoom" ? (
+                              <div>
+                                <label className={sLabel}>Center zoom</label>
+                                <div className="grid grid-cols-[1fr_54px] gap-1.5">
+                                  <input type="range" min="1" max="2" step="0.05" value={selectedComp.carouselZoom ?? 1.25} onChange={(e) => updateComp(selectedComp.id, { carouselZoom: +e.target.value })} className="w-full" />
+                                  <Input type="number" min="1" max="2" step="0.05" value={selectedComp.carouselZoom ?? 1.25} onChange={(e) => updateComp(selectedComp.id, { carouselZoom: +e.target.value })} className="h-6 text-xs px-1.5" />
+                                </div>
                               </div>
-                            </div>
+                            ) : (
+                              <ColorPicker label="Item background" value={selectedComp.carouselItemBg ?? "#eef2f6"} onChange={(v) => updateComp(selectedComp.id, { carouselItemBg: v })} />
+                            )}
                             <ColorPicker label="Background" value={selectedComp.bgColor === "transparent" ? "#ffffff" : (selectedComp.bgColor ?? "#ffffff")} onChange={(v) => updateComp(selectedComp.id, { bgColor: v })} />
+                            </>)}
+                            {renderPropertySection("responsive", "Responsive", renderResponsiveHint())}
+                            {renderPropertySection("effects", "Effects", renderShadowBlurFields(selectedComp))}
                           </div>
                         );
                       })() : (
-                        <button type="button" onClick={addCarousel}
+                        <button type="button" onClick={() => addCarousel()}
                           className="w-full flex items-center justify-center gap-1.5 h-9 rounded border border-gray-200 bg-white hover:border-black transition-colors text-xs">
                           <GalleryHorizontal className="h-4 w-4" /> Add Carousel
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Hero Carousel */}
+                <div>
+                  <button type="button" onClick={() => setOpenTool(openTool === "hero-carousel" ? null : "hero-carousel")}
+                    className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md border text-xs transition-colors text-left ${openTool === "hero-carousel" ? "border-black bg-muted" : "border-gray-200 hover:bg-muted"}`}>
+                    <GalleryHorizontalEnd className="h-3.5 w-3.5 text-muted-foreground shrink-0" /> Hero Carousel
+                    <ChevronDown className={`h-3 w-3 ml-auto text-muted-foreground transition-transform ${openTool === "hero-carousel" ? "rotate-180" : ""}`} />
+                  </button>
+                  {openTool === "hero-carousel" && (
+                    <div className="mt-1 p-1.5 border rounded-md bg-muted/30">
+                      {selectedComp && selectedComp.type === "hero-carousel" ? (() => {
+                        const slides = selectedComp.heroSlides ?? [];
+                        return (
+                          <div className="flex flex-col">
+                            {renderTypeHeader(selectedComp)}
+                            {renderPropertySection("layout", "Layout", renderCommonFields(selectedComp))}
+                            {renderPropertySection("appearance", "Appearance", <>
+                            <div>
+                              <div className="flex items-center justify-between mb-1">
+                                <label className={sLabel + " mb-0"}>Slides ({slides.length})</label>
+                                <button type="button" onClick={() => addHeroSlide(selectedComp.id, slides)} className="text-[10px] px-1.5 py-0.5 rounded border hover:bg-muted flex items-center gap-1"><Plus className="h-3 w-3" /> Add</button>
+                              </div>
+                              <div className="flex flex-col gap-1.5">
+                                {slides.map((slide, i) => (
+                                  <div key={slide.id} className="flex flex-col gap-1 p-1.5 border rounded bg-white">
+                                    <div className="flex gap-1.5 items-center">
+                                      <ImagePickerButton
+                                        label="Slide image"
+                                        buttonClassName="w-9 h-9 rounded bg-gray-100 overflow-hidden shrink-0 flex items-center justify-center cursor-pointer hover:opacity-80"
+                                        uploading={uploading} uploadProgress={uploadProgress}
+                                        assetItems={assetItems} assetsLoading={assetsLoading} loadAssets={loadAssets}
+                                        onUpload={uploadToAssets}
+                                        onSelect={(url) => updateHeroSlide(selectedComp.id, slides, slide.id, { imageUrl: url })}
+                                      >
+                                        {slide.imageUrl ? <img src={slide.imageUrl} alt="" className="w-full h-full object-cover" /> : <ImageIcon className="h-3.5 w-3.5 text-gray-300" />}
+                                      </ImagePickerButton>
+                                      <div className="flex-1 min-w-0 flex flex-col gap-1">
+                                        <Input value={slide.headline ?? ""} onChange={(e) => updateHeroSlide(selectedComp.id, slides, slide.id, { headline: e.target.value })} placeholder="Headline" className="h-6 text-xs px-1.5" />
+                                        <Input value={slide.subtext ?? ""} onChange={(e) => updateHeroSlide(selectedComp.id, slides, slide.id, { subtext: e.target.value })} placeholder="Subtext" className="h-6 text-xs px-1.5" />
+                                      </div>
+                                      <div className="flex flex-col shrink-0">
+                                        <button type="button" title="Move earlier" disabled={i === 0} onClick={() => moveHeroSlide(selectedComp.id, slides, i, -1)} className="h-4 w-4 flex items-center justify-center disabled:opacity-20 hover:bg-muted rounded"><ChevronLeft className="h-3 w-3" /></button>
+                                        <button type="button" title="Move later" disabled={i === slides.length - 1} onClick={() => moveHeroSlide(selectedComp.id, slides, i, 1)} className="h-4 w-4 flex items-center justify-center disabled:opacity-20 hover:bg-muted rounded"><ChevronRight className="h-3 w-3" /></button>
+                                      </div>
+                                      <button type="button" title="Remove" onClick={() => removeHeroSlide(selectedComp.id, slides, slide.id)} className="text-destructive shrink-0 hover:bg-destructive/10 rounded p-0.5">
+                                        <Trash2 className="h-3.5 w-3.5" />
+                                      </button>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-1">
+                                      <Input value={slide.buttonLabel ?? ""} onChange={(e) => updateHeroSlide(selectedComp.id, slides, slide.id, { buttonLabel: e.target.value })} placeholder="Button label" className="h-6 text-xs px-1.5" />
+                                      <Input value={slide.buttonLink ?? ""} onChange={(e) => updateHeroSlide(selectedComp.id, slides, slide.id, { buttonLink: e.target.value })} placeholder="Link to page" className="h-6 text-xs px-1.5" />
+                                    </div>
+                                  </div>
+                                ))}
+                                {slides.length === 0 && <p className="text-[11px] text-muted-foreground text-center py-2">No slides yet</p>}
+                              </div>
+                            </div>
+                            <div className="flex items-center justify-between">
+                              <label className={sLabel + " mb-0"}>Autoplay</label>
+                              <button type="button" onClick={() => updateComp(selectedComp.id, { heroAutoplay: !(selectedComp.heroAutoplay ?? true) })}
+                                className={`text-[11px] px-2 py-0.5 rounded border ${(selectedComp.heroAutoplay ?? true) ? "bg-black text-white border-black" : "hover:bg-muted"}`}>
+                                {(selectedComp.heroAutoplay ?? true) ? "On" : "Off"}
+                              </button>
+                            </div>
+                            {(selectedComp.heroAutoplay ?? true) && (
+                              <div>
+                                <label className={sLabel}>Autoplay every (seconds)</label>
+                                <div className="grid grid-cols-[1fr_54px] gap-1.5">
+                                  <input type="range" min="3" max="10" step="0.5" value={selectedComp.heroAutoplaySeconds ?? 5} onChange={(e) => updateComp(selectedComp.id, { heroAutoplaySeconds: +e.target.value })} className="w-full" />
+                                  <Input type="number" min="3" max="10" step="0.5" value={selectedComp.heroAutoplaySeconds ?? 5} onChange={(e) => updateComp(selectedComp.id, { heroAutoplaySeconds: +e.target.value })} className="h-6 text-xs px-1.5" />
+                                </div>
+                              </div>
+                            )}
+                            <div className="grid grid-cols-2 gap-1.5">
+                              <button type="button" onClick={() => updateComp(selectedComp.id, { heroShowArrows: !(selectedComp.heroShowArrows ?? true) })}
+                                className={`text-[11px] py-1 rounded border ${(selectedComp.heroShowArrows ?? true) ? "bg-black text-white border-black" : "hover:bg-muted"}`}>
+                                Arrows {(selectedComp.heroShowArrows ?? true) ? "On" : "Off"}
+                              </button>
+                              <button type="button" onClick={() => updateComp(selectedComp.id, { heroShowDots: !(selectedComp.heroShowDots ?? true) })}
+                                className={`text-[11px] py-1 rounded border ${(selectedComp.heroShowDots ?? true) ? "bg-black text-white border-black" : "hover:bg-muted"}`}>
+                                Dots {(selectedComp.heroShowDots ?? true) ? "On" : "Off"}
+                              </button>
+                            </div>
+                            <div>
+                              <label className={sLabel}>Next-slide peek (%)</label>
+                              <div className="grid grid-cols-[1fr_54px] gap-1.5">
+                                <input type="range" min="0" max="20" value={selectedComp.heroPeekPercent ?? 6} onChange={(e) => updateComp(selectedComp.id, { heroPeekPercent: +e.target.value })} className="w-full" />
+                                <Input type="number" min="0" max="20" value={selectedComp.heroPeekPercent ?? 6} onChange={(e) => updateComp(selectedComp.id, { heroPeekPercent: +e.target.value })} className="h-6 text-xs px-1.5" />
+                              </div>
+                            </div>
+                            <div>
+                              <label className={sLabel}>Image overlay darkness (%)</label>
+                              <div className="grid grid-cols-[1fr_54px] gap-1.5">
+                                <input type="range" min="0" max="80" value={selectedComp.heroOverlayOpacity ?? 35} onChange={(e) => updateComp(selectedComp.id, { heroOverlayOpacity: +e.target.value })} className="w-full" />
+                                <Input type="number" min="0" max="80" value={selectedComp.heroOverlayOpacity ?? 35} onChange={(e) => updateComp(selectedComp.id, { heroOverlayOpacity: +e.target.value })} className="h-6 text-xs px-1.5" />
+                              </div>
+                            </div>
+                            <ColorPicker label="Headline color" value={selectedComp.heroHeadlineColor ?? "#ffffff"} onChange={(v) => updateComp(selectedComp.id, { heroHeadlineColor: v })} />
+                            <ColorPicker label="Subtext color" value={selectedComp.heroSubtextColor ?? "#f3f4f6"} onChange={(v) => updateComp(selectedComp.id, { heroSubtextColor: v })} />
+                            <ColorPicker label="Button background" value={selectedComp.heroCtaBgColor ?? "#ffffff"} onChange={(v) => updateComp(selectedComp.id, { heroCtaBgColor: v })} />
+                            <ColorPicker label="Button text" value={selectedComp.heroCtaFontColor ?? "#111111"} onChange={(v) => updateComp(selectedComp.id, { heroCtaFontColor: v })} />
+                            <ColorPicker label="Background" value={selectedComp.bgColor === "transparent" ? "#111827" : (selectedComp.bgColor ?? "#111827")} onChange={(v) => updateComp(selectedComp.id, { bgColor: v })} />
+                            </>)}
+                            {renderPropertySection("responsive", "Responsive", renderResponsiveHint())}
+                            {renderPropertySection("effects", "Effects", renderShadowBlurFields(selectedComp))}
+                          </div>
+                        );
+                      })() : (
+                        <button type="button" onClick={() => addHeroCarousel()}
+                          className="w-full flex items-center justify-center gap-1.5 h-9 rounded border border-gray-200 bg-white hover:border-black transition-colors text-xs">
+                          <GalleryHorizontalEnd className="h-4 w-4" /> Add Hero Carousel
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Category Carousel */}
+                <div>
+                  <button type="button" onClick={() => setOpenTool(openTool === "category-carousel" ? null : "category-carousel")}
+                    className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md border text-xs transition-colors text-left ${openTool === "category-carousel" ? "border-black bg-muted" : "border-gray-200 hover:bg-muted"}`}>
+                    <LayoutGrid className="h-3.5 w-3.5 text-muted-foreground shrink-0" /> Category Carousel
+                    <ChevronDown className={`h-3 w-3 ml-auto text-muted-foreground transition-transform ${openTool === "category-carousel" ? "rotate-180" : ""}`} />
+                  </button>
+                  {openTool === "category-carousel" && (
+                    <div className="mt-1 p-1.5 border rounded-md bg-muted/30">
+                      {selectedComp && selectedComp.type === "category-carousel" ? (() => {
+                        const items = selectedComp.catCarouselItems ?? [];
+                        const cardStyle = selectedComp.catCarouselCardStyle ?? "image-first";
+                        return (
+                          <div className="flex flex-col">
+                            {renderTypeHeader(selectedComp)}
+                            {renderPropertySection("layout", "Layout", renderCommonFields(selectedComp))}
+                            {renderPropertySection("appearance", "Appearance", <>
+                            <div>
+                              <label className={sLabel}>Section title</label>
+                              <Input value={selectedComp.catCarouselTitle ?? ""} onChange={(e) => updateComp(selectedComp.id, { catCarouselTitle: e.target.value })} placeholder="e.g. Shop by Category" className="h-7 text-xs" />
+                            </div>
+                            <div>
+                              <label className={sLabel}>Section subtitle</label>
+                              <Input value={selectedComp.catCarouselSubtitle ?? ""} onChange={(e) => updateComp(selectedComp.id, { catCarouselSubtitle: e.target.value })} placeholder="Optional subtitle" className="h-7 text-xs" />
+                            </div>
+                            <div>
+                              <label className={sLabel}>Card style</label>
+                              <div className="grid grid-cols-3 gap-1">
+                                {([["image-first", "Image-first"], ["icon-text", "Icon + text"], ["split", "Split"]] as [CardStyle, string][]).map(([val, label]) => (
+                                  <button key={val} type="button" onClick={() => updateComp(selectedComp.id, { catCarouselCardStyle: val })}
+                                    className={`text-[10px] py-1 rounded border ${cardStyle === val ? "bg-black text-white border-black" : "hover:bg-muted"}`}>
+                                    {label}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                            <div className="grid grid-cols-2 gap-1.5">
+                              <div>
+                                <label className={sLabel}>Aspect ratio</label>
+                                <div className="grid grid-cols-2 gap-1">
+                                  {(["1:1", "3:4"] as CardAspectRatio[]).map((val) => (
+                                    <button key={val} type="button" onClick={() => updateComp(selectedComp.id, { catCarouselAspectRatio: val })}
+                                      className={`text-[10px] py-1 rounded border ${(selectedComp.catCarouselAspectRatio ?? "1:1") === val ? "bg-black text-white border-black" : "hover:bg-muted"}`}>
+                                      {val}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                              <div>
+                                <label className={sLabel}>Corner radius</label>
+                                <Input type="number" min="0" max="40" value={selectedComp.catCarouselCornerRadius ?? 12} onChange={(e) => updateComp(selectedComp.id, { catCarouselCornerRadius: +e.target.value })} className="h-6 text-xs px-1.5" />
+                              </div>
+                            </div>
+                            <div className="grid grid-cols-2 gap-1.5">
+                              <button type="button" onClick={() => updateComp(selectedComp.id, { catCarouselShowDescriptor: !(selectedComp.catCarouselShowDescriptor ?? false) })}
+                                className={`text-[11px] py-1 rounded border ${(selectedComp.catCarouselShowDescriptor ?? false) ? "bg-black text-white border-black" : "hover:bg-muted"}`}>
+                                Descriptor {(selectedComp.catCarouselShowDescriptor ?? false) ? "On" : "Off"}
+                              </button>
+                              <button type="button" onClick={() => updateComp(selectedComp.id, { catCarouselShowBadge: !(selectedComp.catCarouselShowBadge ?? false) })}
+                                className={`text-[11px] py-1 rounded border ${(selectedComp.catCarouselShowBadge ?? false) ? "bg-black text-white border-black" : "hover:bg-muted"}`}>
+                                Badge {(selectedComp.catCarouselShowBadge ?? false) ? "On" : "Off"}
+                              </button>
+                            </div>
+                            <div>
+                              <label className={sLabel}>Snap scrolling</label>
+                              <div className="grid grid-cols-2 gap-1">
+                                {(["single", "double"] as SnapMode[]).map((val) => (
+                                  <button key={val} type="button" onClick={() => updateComp(selectedComp.id, { catCarouselSnapMode: val })}
+                                    className={`text-[10px] py-1 rounded border ${(selectedComp.catCarouselSnapMode ?? "single") === val ? "bg-black text-white border-black" : "hover:bg-muted"}`}>
+                                    {val === "single" ? "Per card" : "Per 2 cards"}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                            <div className="grid grid-cols-3 gap-1.5">
+                              <div>
+                                <label className={sLabel}>Desktop cards</label>
+                                <Input type="number" min="3" max="5" value={selectedComp.catCarouselDesktopCards ?? 4} onChange={(e) => updateComp(selectedComp.id, { catCarouselDesktopCards: Math.max(3, Math.min(5, +e.target.value)) })} className="h-6 text-xs px-1.5" />
+                              </div>
+                              <div>
+                                <label className={sLabel}>Gap desktop</label>
+                                <Input type="number" min="0" value={selectedComp.catCarouselGapDesktop ?? 16} onChange={(e) => updateComp(selectedComp.id, { catCarouselGapDesktop: +e.target.value })} className="h-6 text-xs px-1.5" />
+                              </div>
+                              <div>
+                                <label className={sLabel}>Gap mobile</label>
+                                <Input type="number" min="0" value={selectedComp.catCarouselGapMobile ?? 12} onChange={(e) => updateComp(selectedComp.id, { catCarouselGapMobile: +e.target.value })} className="h-6 text-xs px-1.5" />
+                              </div>
+                            </div>
+                            <ColorPicker label="Title color" value={selectedComp.catCarouselTitleColor ?? "#111111"} onChange={(v) => updateComp(selectedComp.id, { catCarouselTitleColor: v })} />
+                            <ColorPicker label="Subtitle color" value={selectedComp.catCarouselSubtitleColor ?? "#6b7280"} onChange={(v) => updateComp(selectedComp.id, { catCarouselSubtitleColor: v })} />
+                            <div>
+                              <div className="flex items-center justify-between mb-1">
+                                <label className={sLabel + " mb-0"}>Categories ({items.length})</label>
+                                <button type="button" onClick={() => addCatCarouselItem(selectedComp.id, items)} className="text-[10px] px-1.5 py-0.5 rounded border hover:bg-muted flex items-center gap-1"><Plus className="h-3 w-3" /> Add</button>
+                              </div>
+                              <div className="flex flex-col gap-1.5">
+                                {items.map((item, i) => (
+                                  <div key={item.id} className="flex flex-col gap-1 p-1.5 border rounded bg-white">
+                                    <div className="flex gap-1.5 items-center">
+                                      <ImagePickerButton
+                                        label="Category image"
+                                        buttonClassName="w-9 h-9 rounded bg-gray-100 overflow-hidden shrink-0 flex items-center justify-center cursor-pointer hover:opacity-80"
+                                        uploading={uploading} uploadProgress={uploadProgress}
+                                        assetItems={assetItems} assetsLoading={assetsLoading} loadAssets={loadAssets}
+                                        onUpload={uploadToAssets}
+                                        onSelect={(url) => updateCatCarouselItem(selectedComp.id, items, item.id, { imageUrl: url })}
+                                      >
+                                        {item.imageUrl ? <img src={item.imageUrl} alt="" className="w-full h-full object-cover" /> : <ImageIcon className="h-3.5 w-3.5 text-gray-300" />}
+                                      </ImagePickerButton>
+                                      <div className="flex-1 min-w-0 flex flex-col gap-1">
+                                        <Input value={item.name ?? ""} onChange={(e) => updateCatCarouselItem(selectedComp.id, items, item.id, { name: e.target.value })} placeholder="Category name" className="h-6 text-xs px-1.5" />
+                                        <Input value={item.link ?? ""} onChange={(e) => updateCatCarouselItem(selectedComp.id, items, item.id, { link: e.target.value })} placeholder="Link to page" className="h-6 text-xs px-1.5" />
+                                      </div>
+                                      <div className="flex flex-col shrink-0">
+                                        <button type="button" title="Move earlier" disabled={i === 0} onClick={() => moveCatCarouselItem(selectedComp.id, items, i, -1)} className="h-4 w-4 flex items-center justify-center disabled:opacity-20 hover:bg-muted rounded"><ChevronLeft className="h-3 w-3" /></button>
+                                        <button type="button" title="Move later" disabled={i === items.length - 1} onClick={() => moveCatCarouselItem(selectedComp.id, items, i, 1)} className="h-4 w-4 flex items-center justify-center disabled:opacity-20 hover:bg-muted rounded"><ChevronRight className="h-3 w-3" /></button>
+                                      </div>
+                                      <button type="button" title="Remove" onClick={() => removeCatCarouselItem(selectedComp.id, items, item.id)} className="text-destructive shrink-0 hover:bg-destructive/10 rounded p-0.5">
+                                        <Trash2 className="h-3.5 w-3.5" />
+                                      </button>
+                                    </div>
+                                    {((selectedComp.catCarouselShowDescriptor ?? false) || (selectedComp.catCarouselShowBadge ?? false)) && (
+                                      <div className="grid grid-cols-2 gap-1">
+                                        {(selectedComp.catCarouselShowDescriptor ?? false) && (
+                                          <Input value={item.descriptor ?? ""} onChange={(e) => updateCatCarouselItem(selectedComp.id, items, item.id, { descriptor: e.target.value })} placeholder="Descriptor" className="h-6 text-xs px-1.5" />
+                                        )}
+                                        {(selectedComp.catCarouselShowBadge ?? false) && (
+                                          <Input value={item.badge ?? ""} onChange={(e) => updateCatCarouselItem(selectedComp.id, items, item.id, { badge: e.target.value })} placeholder="Badge, e.g. New" className="h-6 text-xs px-1.5" />
+                                        )}
+                                      </div>
+                                    )}
+                                  </div>
+                                ))}
+                                {items.length === 0 && <p className="text-[11px] text-muted-foreground text-center py-2">No categories yet</p>}
+                              </div>
+                            </div>
+                            </>)}
+                            {renderPropertySection("responsive", "Responsive", renderResponsiveHint())}
+                            {renderPropertySection("effects", "Effects", renderShadowBlurFields(selectedComp))}
+                          </div>
+                        );
+                      })() : (
+                        <button type="button" onClick={() => addCategoryCarousel()}
+                          className="w-full flex items-center justify-center gap-1.5 h-9 rounded border border-gray-200 bg-white hover:border-black transition-colors text-xs">
+                          <LayoutGrid className="h-4 w-4" /> Add Category Carousel
                         </button>
                       )}
                     </div>
@@ -2755,27 +6505,32 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                   {openTool === "icon" && (
                     <div className="mt-1 p-1.5 border rounded-md bg-muted/30">
                       {selectedComp && selectedComp.type === "icon" ? (
-                        <div className="flex flex-col gap-2.5">
-                          {renderCommonFields(selectedComp)}
-                          <div>
-                            <label className={sLabel}>Icon</label>
-                            {renderIconPicker((id) => updateComp(selectedComp.id, { iconName: id }), selectedComp.iconName)}
-                          </div>
-                          <ColorPicker label="Color" value={selectedComp.fontColor ?? "#111111"} onChange={(v) => updateComp(selectedComp.id, { fontColor: v })} />
-                          <div>
-                            <label className={sLabel}>Icon size</label>
-                            <div className="grid grid-cols-[1fr_54px] gap-1.5">
-                              <input type="range" min="8" max="300" value={selectedComp.fontSize ?? 32} onChange={(e) => updateComp(selectedComp.id, { fontSize: +e.target.value })} className="w-full" />
-                              <Input type="number" min="8" max="300" value={selectedComp.fontSize ?? 32} onChange={(e) => updateComp(selectedComp.id, { fontSize: +e.target.value })} className="h-6 text-xs px-1.5" />
+                        <div className="flex flex-col">
+                          {renderTypeHeader(selectedComp)}
+                          {renderPropertySection("layout", "Layout", renderCommonFields(selectedComp))}
+                          {renderPropertySection("appearance", "Appearance", <>
+                            <div>
+                              <label className={sLabel}>Icon</label>
+                              {renderIconPicker((id) => updateComp(selectedComp.id, { iconName: id }), selectedComp.iconName)}
                             </div>
-                          </div>
-                          <div>
-                            <label className={sLabel}>Transparency</label>
-                            <div className="grid grid-cols-[1fr_54px] gap-1.5">
-                              <input type="range" min="0" max="100" value={selectedComp.opacity ?? 100} onChange={(e) => updateComp(selectedComp.id, { opacity: +e.target.value })} className="w-full" />
-                              <Input type="number" min="0" max="100" value={selectedComp.opacity ?? 100} onChange={(e) => updateComp(selectedComp.id, { opacity: +e.target.value })} className="h-6 text-xs px-1.5" />
+                            <ColorPicker label="Color" value={selectedComp.fontColor ?? "#111111"} onChange={(v) => updateComp(selectedComp.id, { fontColor: v })} />
+                            <div>
+                              <label className={sLabel}>Icon size</label>
+                              <div className="grid grid-cols-[1fr_54px] gap-1.5">
+                                <input type="range" min="8" max="300" value={selectedComp.fontSize ?? 32} onChange={(e) => updateComp(selectedComp.id, { fontSize: +e.target.value })} className="w-full" />
+                                <Input type="number" min="8" max="300" value={selectedComp.fontSize ?? 32} onChange={(e) => updateComp(selectedComp.id, { fontSize: +e.target.value })} className="h-6 text-xs px-1.5" />
+                              </div>
                             </div>
-                          </div>
+                            <div>
+                              <label className={sLabel}>Transparency</label>
+                              <div className="grid grid-cols-[1fr_54px] gap-1.5">
+                                <input type="range" min="0" max="100" value={selectedComp.opacity ?? 100} onChange={(e) => updateComp(selectedComp.id, { opacity: +e.target.value })} className="w-full" />
+                                <Input type="number" min="0" max="100" value={selectedComp.opacity ?? 100} onChange={(e) => updateComp(selectedComp.id, { opacity: +e.target.value })} className="h-6 text-xs px-1.5" />
+                              </div>
+                            </div>
+                          </>)}
+                          {renderPropertySection("responsive", "Responsive", renderResponsiveHint())}
+                          {renderPropertySection("effects", "Effects", renderShadowBlurFields(selectedComp))}
                         </div>
                       ) : (
                         renderIconPicker(addIcon)
@@ -2784,6 +6539,462 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                   )}
                 </div>
 
+                {/* Location Input */}
+                <div>
+                  <button type="button" onClick={() => setOpenTool(openTool === "location-input" ? null : "location-input")}
+                    className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md border text-xs transition-colors text-left ${openTool === "location-input" ? "border-black bg-muted" : "border-gray-200 hover:bg-muted"}`}>
+                    <MapPin className="h-3.5 w-3.5 text-muted-foreground shrink-0" /> Location Input
+                    <ChevronDown className={`h-3 w-3 ml-auto text-muted-foreground transition-transform ${openTool === "location-input" ? "rotate-180" : ""}`} />
+                  </button>
+                  {openTool === "location-input" && (
+                    <div className="mt-1 p-1.5 border rounded-md bg-muted/30">
+                      {selectedComp && selectedComp.type === "location-input" ? (
+                        <div className="flex flex-col">
+                          {renderTypeHeader(selectedComp)}
+                          {renderPropertySection("layout", "Layout", renderCommonFields(selectedComp))}
+                          {renderPropertySection("appearance", "Appearance", <>
+                            <div>
+                              <label className={sLabel}>Label</label>
+                              <Input value={selectedComp.locationLabel ?? ""} onChange={(e) => updateComp(selectedComp.id, { locationLabel: e.target.value })} placeholder="Pickup location" className="h-7 text-xs" />
+                            </div>
+                            <div>
+                              <label className={sLabel}>Placeholder</label>
+                              <Input value={selectedComp.locationPlaceholder ?? ""} onChange={(e) => updateComp(selectedComp.id, { locationPlaceholder: e.target.value })} placeholder="Enter location" className="h-7 text-xs" />
+                            </div>
+                            <ColorPicker label="Icon / text color" value={selectedComp.fontColor ?? "#111111"} onChange={(v) => updateComp(selectedComp.id, { fontColor: v })} />
+                            <ColorPicker label="Background" value={selectedComp.bgColor === "transparent" ? "#ffffff" : (selectedComp.bgColor ?? "#ffffff")} onChange={(v) => updateComp(selectedComp.id, { bgColor: v })} />
+                            <ColorPicker label="Border" value={selectedComp.borderColor ?? "#e5e7eb"} onChange={(v) => updateComp(selectedComp.id, { borderColor: v })} />
+                          </>)}
+                          {renderPropertySection("responsive", "Responsive", renderResponsiveHint())}
+                          {renderPropertySection("effects", "Effects", renderShadowBlurFields(selectedComp))}
+                        </div>
+                      ) : (
+                        <button type="button" onClick={() => addLocationInput()}
+                          className="w-full flex items-center justify-center gap-1.5 h-9 rounded border border-gray-200 bg-white hover:border-black transition-colors text-xs">
+                          <MapPin className="h-4 w-4" /> Add Location Input
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Map */}
+                <div>
+                  <button type="button" onClick={() => setOpenTool(openTool === "map" ? null : "map")}
+                    className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md border text-xs transition-colors text-left ${openTool === "map" ? "border-black bg-muted" : "border-gray-200 hover:bg-muted"}`}>
+                    <MapIcon className="h-3.5 w-3.5 text-muted-foreground shrink-0" /> Map
+                    <ChevronDown className={`h-3 w-3 ml-auto text-muted-foreground transition-transform ${openTool === "map" ? "rotate-180" : ""}`} />
+                  </button>
+                  {openTool === "map" && (
+                    <div className="mt-1 p-1.5 border rounded-md bg-muted/30">
+                      {selectedComp && selectedComp.type === "map" ? (() => {
+                        const markers = selectedComp.mapMarkers ?? [];
+                        return (
+                          <div className="flex flex-col">
+                            {renderTypeHeader(selectedComp)}
+                            {renderPropertySection("layout", "Layout", renderCommonFields(selectedComp))}
+                            {renderPropertySection("appearance", "Appearance", <>
+                              {!process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY && (
+                                <p className="text-[10px] text-amber-600 bg-amber-50 border border-amber-200 rounded px-2 py-1">Set NEXT_PUBLIC_GOOGLE_MAPS_API_KEY to preview the real map.</p>
+                              )}
+                              <div className="grid grid-cols-2 gap-1.5">
+                                <div>
+                                  <label className={sLabel}>Center lat</label>
+                                  <Input type="number" step="0.0001" value={selectedComp.mapCenterLat ?? 12.9716} onChange={(e) => updateComp(selectedComp.id, { mapCenterLat: +e.target.value })} className="h-6 text-xs px-1.5" />
+                                </div>
+                                <div>
+                                  <label className={sLabel}>Center lng</label>
+                                  <Input type="number" step="0.0001" value={selectedComp.mapCenterLng ?? 77.5946} onChange={(e) => updateComp(selectedComp.id, { mapCenterLng: +e.target.value })} className="h-6 text-xs px-1.5" />
+                                </div>
+                              </div>
+                              <div>
+                                <label className={sLabel}>Zoom</label>
+                                <div className="grid grid-cols-[1fr_54px] gap-1.5">
+                                  <input type="range" min="1" max="20" value={selectedComp.mapZoom ?? 13} onChange={(e) => updateComp(selectedComp.id, { mapZoom: +e.target.value })} className="w-full" />
+                                  <Input type="number" min="1" max="20" value={selectedComp.mapZoom ?? 13} onChange={(e) => updateComp(selectedComp.id, { mapZoom: +e.target.value })} className="h-6 text-xs px-1.5" />
+                                </div>
+                              </div>
+                              <div>
+                                <label className={sLabel}>Service radius (km)</label>
+                                <Input type="number" min="0" step="0.5" value={selectedComp.mapServiceRadiusKm ?? 5} onChange={(e) => updateComp(selectedComp.id, { mapServiceRadiusKm: +e.target.value })} className="h-6 text-xs px-1.5" />
+                              </div>
+                              <div>
+                                <div className="flex items-center justify-between mb-1">
+                                  <label className={sLabel + " mb-0"}>Markers ({markers.length})</label>
+                                  <button type="button" onClick={() => addMapMarker(selectedComp.id, markers)} className="text-[10px] px-1.5 py-0.5 rounded border hover:bg-muted flex items-center gap-1"><Plus className="h-3 w-3" /> Add</button>
+                                </div>
+                                <div className="flex flex-col gap-1.5">
+                                  {markers.map((m) => (
+                                    <div key={m.id} className="flex items-center gap-1 p-1 border rounded bg-white">
+                                      <Input value={m.label ?? ""} onChange={(e) => updateMapMarker(selectedComp.id, markers, m.id, { label: e.target.value })} placeholder="Label" className="h-6 text-xs px-1.5 flex-1 min-w-0" />
+                                      <Input type="number" step="0.0001" value={m.lat} onChange={(e) => updateMapMarker(selectedComp.id, markers, m.id, { lat: +e.target.value })} placeholder="Lat" className="h-6 text-xs px-1.5 w-16" />
+                                      <Input type="number" step="0.0001" value={m.lng} onChange={(e) => updateMapMarker(selectedComp.id, markers, m.id, { lng: +e.target.value })} placeholder="Lng" className="h-6 text-xs px-1.5 w-16" />
+                                      <button type="button" title="Remove" onClick={() => removeMapMarker(selectedComp.id, markers, m.id)} className="text-destructive shrink-0 hover:bg-destructive/10 rounded p-0.5">
+                                        <X className="h-3 w-3" />
+                                      </button>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            </>)}
+                            {renderPropertySection("responsive", "Responsive", renderResponsiveHint())}
+                            {renderPropertySection("effects", "Effects", renderShadowBlurFields(selectedComp))}
+                          </div>
+                        );
+                      })() : (
+                        <button type="button" onClick={() => addMap()}
+                          className="w-full flex items-center justify-center gap-1.5 h-9 rounded border border-gray-200 bg-white hover:border-black transition-colors text-xs">
+                          <MapIcon className="h-4 w-4" /> Add Map
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Date & Time Picker */}
+                <div>
+                  <button type="button" onClick={() => setOpenTool(openTool === "datetime-picker" ? null : "datetime-picker")}
+                    className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md border text-xs transition-colors text-left ${openTool === "datetime-picker" ? "border-black bg-muted" : "border-gray-200 hover:bg-muted"}`}>
+                    <CalendarClock className="h-3.5 w-3.5 text-muted-foreground shrink-0" /> Date & Time Picker
+                    <ChevronDown className={`h-3 w-3 ml-auto text-muted-foreground transition-transform ${openTool === "datetime-picker" ? "rotate-180" : ""}`} />
+                  </button>
+                  {openTool === "datetime-picker" && (
+                    <div className="mt-1 p-1.5 border rounded-md bg-muted/30">
+                      {selectedComp && selectedComp.type === "datetime-picker" ? (
+                        <div className="flex flex-col">
+                          {renderTypeHeader(selectedComp)}
+                          {renderPropertySection("layout", "Layout", renderCommonFields(selectedComp))}
+                          {renderPropertySection("appearance", "Appearance", <>
+                            <div>
+                              <label className={sLabel}>Default date</label>
+                              <div className="flex gap-1">
+                                {(["today", "tomorrow", "custom"] as DateOption[]).map((opt) => (
+                                  <button key={opt} type="button" onClick={() => updateComp(selectedComp.id, { dtDefaultOption: opt })}
+                                    className={`flex-1 text-[11px] px-1.5 py-1 rounded border capitalize ${(selectedComp.dtDefaultOption ?? "today") === opt ? "border-black bg-black text-white" : "hover:bg-muted"}`}>
+                                    {opt}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                            {(selectedComp.dtDefaultOption ?? "today") === "custom" && (
+                              <div>
+                                <label className={sLabel}>Custom date</label>
+                                <Input type="date" value={selectedComp.dtCustomDate ?? ""} onChange={(e) => updateComp(selectedComp.id, { dtCustomDate: e.target.value })} className="h-7 text-xs" />
+                              </div>
+                            )}
+                            <div>
+                              <label className={sLabel}>Time</label>
+                              <Input type="time" value={selectedComp.dtTime ?? "09:00"} onChange={(e) => updateComp(selectedComp.id, { dtTime: e.target.value })} className="h-7 text-xs" />
+                            </div>
+                            <ColorPicker label="Text color" value={selectedComp.fontColor ?? "#111111"} onChange={(v) => updateComp(selectedComp.id, { fontColor: v })} />
+                            <ColorPicker label="Background" value={selectedComp.bgColor === "transparent" ? "#ffffff" : (selectedComp.bgColor ?? "#ffffff")} onChange={(v) => updateComp(selectedComp.id, { bgColor: v })} />
+                            <ColorPicker label="Border" value={selectedComp.borderColor ?? "#e5e7eb"} onChange={(v) => updateComp(selectedComp.id, { borderColor: v })} />
+                          </>)}
+                          {renderPropertySection("responsive", "Responsive", renderResponsiveHint())}
+                          {renderPropertySection("effects", "Effects", renderShadowBlurFields(selectedComp))}
+                        </div>
+                      ) : (
+                        <button type="button" onClick={() => addDateTimePicker()}
+                          className="w-full flex items-center justify-center gap-1.5 h-9 rounded border border-gray-200 bg-white hover:border-black transition-colors text-xs">
+                          <CalendarClock className="h-4 w-4" /> Add Date & Time Picker
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Vehicle Selector */}
+                <div>
+                  <button type="button" onClick={() => setOpenTool(openTool === "vehicle-selector" ? null : "vehicle-selector")}
+                    className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md border text-xs transition-colors text-left ${openTool === "vehicle-selector" ? "border-black bg-muted" : "border-gray-200 hover:bg-muted"}`}>
+                    <CarFront className="h-3.5 w-3.5 text-muted-foreground shrink-0" /> Vehicle Selector
+                    <ChevronDown className={`h-3 w-3 ml-auto text-muted-foreground transition-transform ${openTool === "vehicle-selector" ? "rotate-180" : ""}`} />
+                  </button>
+                  {openTool === "vehicle-selector" && (
+                    <div className="mt-1 p-1.5 border rounded-md bg-muted/30">
+                      {selectedComp && selectedComp.type === "vehicle-selector" ? (() => {
+                        const options = selectedComp.vehicleOptions ?? [];
+                        return (
+                          <div className="flex flex-col">
+                            {renderTypeHeader(selectedComp)}
+                            {renderPropertySection("layout", "Layout", renderCommonFields(selectedComp))}
+                            {renderPropertySection("appearance", "Appearance", <>
+                              <div>
+                                <div className="flex items-center justify-between mb-1">
+                                  <label className={sLabel + " mb-0"}>Options ({options.length})</label>
+                                  <button type="button" onClick={() => addVehicleOption(selectedComp.id, options)} className="text-[10px] px-1.5 py-0.5 rounded border hover:bg-muted flex items-center gap-1"><Plus className="h-3 w-3" /> Add</button>
+                                </div>
+                                <div className="flex flex-col gap-2">
+                                  {options.map((opt) => {
+                                    const isSelected = (selectedComp.selectedVehicleId ?? options[0]?.id) === opt.id;
+                                    return (
+                                      <div key={opt.id} className="flex flex-col gap-1 p-1.5 border rounded bg-white">
+                                        <div className="flex items-center gap-1">
+                                          <Input value={opt.label} onChange={(e) => updateVehicleOption(selectedComp.id, options, opt.id, { label: e.target.value })} placeholder="Label" className="h-6 text-xs px-1.5 flex-1 min-w-0" />
+                                          <Input value={opt.fareText ?? ""} onChange={(e) => updateVehicleOption(selectedComp.id, options, opt.id, { fareText: e.target.value })} placeholder="₹99" className="h-6 text-xs px-1.5 w-16" />
+                                          <button type="button" title="Remove" onClick={() => removeVehicleOption(selectedComp.id, options, opt.id)} className="text-destructive shrink-0 hover:bg-destructive/10 rounded p-0.5">
+                                            <X className="h-3 w-3" />
+                                          </button>
+                                        </div>
+                                        <div className="flex items-center justify-between">
+                                          {renderIconPicker((id) => updateVehicleOption(selectedComp.id, options, opt.id, { iconId: id }), opt.iconId)}
+                                          <button type="button" onClick={() => updateComp(selectedComp.id, { selectedVehicleId: opt.id })}
+                                            className={`text-[10px] px-1.5 py-0.5 rounded border shrink-0 ml-1 ${isSelected ? "border-black bg-black text-white" : "hover:bg-muted"}`}>
+                                            {isSelected ? "Default" : "Set default"}
+                                          </button>
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                              <ColorPicker label="Background" value={selectedComp.bgColor === "transparent" ? "#ffffff" : (selectedComp.bgColor ?? "#ffffff")} onChange={(v) => updateComp(selectedComp.id, { bgColor: v })} />
+                            </>)}
+                            {renderPropertySection("responsive", "Responsive", renderResponsiveHint())}
+                            {renderPropertySection("effects", "Effects", renderShadowBlurFields(selectedComp))}
+                          </div>
+                        );
+                      })() : (
+                        <button type="button" onClick={() => addVehicleSelector()}
+                          className="w-full flex items-center justify-center gap-1.5 h-9 rounded border border-gray-200 bg-white hover:border-black transition-colors text-xs">
+                          <CarFront className="h-4 w-4" /> Add Vehicle Selector
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Driver Badge */}
+                <div>
+                  <button type="button" onClick={() => setOpenTool(openTool === "driver-badge" ? null : "driver-badge")}
+                    className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md border text-xs transition-colors text-left ${openTool === "driver-badge" ? "border-black bg-muted" : "border-gray-200 hover:bg-muted"}`}>
+                    <BadgeCheck className="h-3.5 w-3.5 text-muted-foreground shrink-0" /> Driver Badge
+                    <ChevronDown className={`h-3 w-3 ml-auto text-muted-foreground transition-transform ${openTool === "driver-badge" ? "rotate-180" : ""}`} />
+                  </button>
+                  {openTool === "driver-badge" && (
+                    <div className="mt-1 p-1.5 border rounded-md bg-muted/30">
+                      {selectedComp && selectedComp.type === "driver-badge" ? (
+                        <div className="flex flex-col">
+                          {renderTypeHeader(selectedComp)}
+                          {renderPropertySection("layout", "Layout", renderCommonFields(selectedComp))}
+                          {renderPropertySection("appearance", "Appearance", <>
+                            <div>
+                              <label className={sLabel}>Photo</label>
+                              <ImagePickerButton
+                                label="Choose photo" icon={ImageIcon}
+                                buttonClassName="flex items-center gap-1.5 cursor-pointer px-2 py-1 rounded border text-xs hover:bg-muted w-fit"
+                                uploading={uploading} uploadProgress={uploadProgress}
+                                assetItems={assetItems} assetsLoading={assetsLoading} loadAssets={loadAssets}
+                                onUpload={uploadToAssets}
+                                onSelect={(url) => updateComp(selectedComp.id, { driverPhotoUrl: url })}
+                              />
+                            </div>
+                            <div>
+                              <label className={sLabel}>Name</label>
+                              <Input value={selectedComp.driverName ?? ""} onChange={(e) => updateComp(selectedComp.id, { driverName: e.target.value })} placeholder="Driver name" className="h-7 text-xs" />
+                            </div>
+                            <div>
+                              <label className={sLabel}>Rating</label>
+                              <div className="grid grid-cols-[1fr_54px] gap-1.5">
+                                <input type="range" min="1" max="5" step="0.1" value={selectedComp.driverRating ?? 4.8} onChange={(e) => updateComp(selectedComp.id, { driverRating: +e.target.value })} className="w-full" />
+                                <Input type="number" min="1" max="5" step="0.1" value={selectedComp.driverRating ?? 4.8} onChange={(e) => updateComp(selectedComp.id, { driverRating: +e.target.value })} className="h-6 text-xs px-1.5" />
+                              </div>
+                            </div>
+                            <div>
+                              <label className={sLabel}>Vehicle</label>
+                              <Input value={selectedComp.driverVehicle ?? ""} onChange={(e) => updateComp(selectedComp.id, { driverVehicle: e.target.value })} placeholder="White Toyota Etios · KA 01 AB 1234" className="h-7 text-xs" />
+                            </div>
+                            <ColorPicker label="Text color" value={selectedComp.fontColor ?? "#111111"} onChange={(v) => updateComp(selectedComp.id, { fontColor: v })} />
+                            <ColorPicker label="Background" value={selectedComp.bgColor === "transparent" ? "#ffffff" : (selectedComp.bgColor ?? "#ffffff")} onChange={(v) => updateComp(selectedComp.id, { bgColor: v })} />
+                          </>)}
+                          {renderPropertySection("responsive", "Responsive", renderResponsiveHint())}
+                          {renderPropertySection("effects", "Effects", renderShadowBlurFields(selectedComp))}
+                        </div>
+                      ) : (
+                        <button type="button" onClick={() => addDriverBadge()}
+                          className="w-full flex items-center justify-center gap-1.5 h-9 rounded border border-gray-200 bg-white hover:border-black transition-colors text-xs">
+                          <BadgeCheck className="h-4 w-4" /> Add Driver Badge
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Fare Display */}
+                <div>
+                  <button type="button" onClick={() => setOpenTool(openTool === "fare-display" ? null : "fare-display")}
+                    className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md border text-xs transition-colors text-left ${openTool === "fare-display" ? "border-black bg-muted" : "border-gray-200 hover:bg-muted"}`}>
+                    <Receipt className="h-3.5 w-3.5 text-muted-foreground shrink-0" /> Fare Display
+                    <ChevronDown className={`h-3 w-3 ml-auto text-muted-foreground transition-transform ${openTool === "fare-display" ? "rotate-180" : ""}`} />
+                  </button>
+                  {openTool === "fare-display" && (
+                    <div className="mt-1 p-1.5 border rounded-md bg-muted/30">
+                      {selectedComp && selectedComp.type === "fare-display" ? (
+                        <div className="flex flex-col">
+                          {renderTypeHeader(selectedComp)}
+                          {renderPropertySection("layout", "Layout", renderCommonFields(selectedComp))}
+                          {renderPropertySection("appearance", "Appearance", <>
+                            <div>
+                              <label className={sLabel}>Currency symbol</label>
+                              <Input value={selectedComp.fareCurrency ?? "₹"} onChange={(e) => updateComp(selectedComp.id, { fareCurrency: e.target.value })} className="h-7 text-xs" />
+                            </div>
+                            <div className="grid grid-cols-2 gap-1.5">
+                              <div>
+                                <label className={sLabel}>Base fare</label>
+                                <Input type="number" min="0" value={selectedComp.fareBase ?? 50} onChange={(e) => updateComp(selectedComp.id, { fareBase: +e.target.value })} className="h-6 text-xs px-1.5" />
+                              </div>
+                              <div>
+                                <label className={sLabel}>Distance (km)</label>
+                                <Input type="number" min="0" step="0.1" value={selectedComp.fareDistanceKm ?? 5} onChange={(e) => updateComp(selectedComp.id, { fareDistanceKm: +e.target.value })} className="h-6 text-xs px-1.5" />
+                              </div>
+                              <div>
+                                <label className={sLabel}>Rate / km</label>
+                                <Input type="number" min="0" value={selectedComp.fareRatePerKm ?? 12} onChange={(e) => updateComp(selectedComp.id, { fareRatePerKm: +e.target.value })} className="h-6 text-xs px-1.5" />
+                              </div>
+                              <div>
+                                <label className={sLabel}>Surge ×</label>
+                                <Input type="number" min="1" step="0.1" value={selectedComp.fareSurgeMultiplier ?? 1} onChange={(e) => updateComp(selectedComp.id, { fareSurgeMultiplier: +e.target.value })} className="h-6 text-xs px-1.5" />
+                              </div>
+                            </div>
+                            <ColorPicker label="Text color" value={selectedComp.fontColor ?? "#111111"} onChange={(v) => updateComp(selectedComp.id, { fontColor: v })} />
+                            <ColorPicker label="Background" value={selectedComp.bgColor === "transparent" ? "#ffffff" : (selectedComp.bgColor ?? "#ffffff")} onChange={(v) => updateComp(selectedComp.id, { bgColor: v })} />
+                          </>)}
+                          {renderPropertySection("responsive", "Responsive", renderResponsiveHint())}
+                          {renderPropertySection("effects", "Effects", renderShadowBlurFields(selectedComp))}
+                        </div>
+                      ) : (
+                        <button type="button" onClick={() => addFareDisplay()}
+                          className="w-full flex items-center justify-center gap-1.5 h-9 rounded border border-gray-200 bg-white hover:border-black transition-colors text-xs">
+                          <Receipt className="h-4 w-4" /> Add Fare Display
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+              </div>
+
+              {/* Canvas Background — page-level (see canvasBgColor state comment),
+                  applies to whichever zone canvas is currently being edited and to
+                  every zone on the live site (see PageRenderer.tsx). */}
+              <div className="mt-3 pt-3 border-t">
+                <ColorPicker label="Canvas Background" value={canvasBgColor} onChange={setCanvasBgColor} />
+              </div>
+
+              {/* Logo & Favicon — genuinely global (see siteSettings state comment
+                  above), shared across every page's header/browser tab, not tied to
+                  this page. See the "Live Preview" overlay for the true WYSIWYG check
+                  (the free-drag canvas doesn't render this overlay). */}
+              <div className="mt-3 pt-3 border-t flex flex-col gap-3">
+                <p className={sLabel}>Logo & Favicon</p>
+
+                <div>
+                  <label className="text-[10px] text-muted-foreground block mb-1 uppercase tracking-wide">Logo</label>
+                  <div className="flex items-center gap-2">
+                    <button type="button" onClick={() => logoInputRef.current?.click()}
+                      className="h-12 w-12 shrink-0 rounded border border-dashed border-gray-300 bg-gray-50 flex items-center justify-center overflow-hidden hover:border-black transition-colors">
+                      {logoUploading ? (
+                        <span className="text-[9px] text-muted-foreground">…</span>
+                      ) : siteSettings.logoUrl ? (
+                        <img src={siteSettings.logoUrl} alt="" className="max-h-full max-w-full object-contain" />
+                      ) : (
+                        <ImageIcon className="h-4 w-4 text-muted-foreground" />
+                      )}
+                    </button>
+                    <div className="flex-1 flex flex-col gap-1">
+                      <button type="button" onClick={() => logoInputRef.current?.click()} className="text-[11px] px-2 py-1 rounded border hover:bg-muted text-left">
+                        {siteSettings.logoUrl ? "Replace logo" : "Upload logo"}
+                      </button>
+                      {siteSettings.logoUrl && (
+                        <button type="button" onClick={() => updateSiteSettings({ logoUrl: null })} className="text-[11px] text-muted-foreground hover:text-destructive text-left">
+                          Remove
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  <input ref={logoInputRef} type="file" accept="image/*" className="hidden"
+                    onChange={(e) => { const f = e.target.files?.[0]; if (f) handleLogoUpload(f); e.target.value = ""; }} />
+
+                  {siteSettings.logoUrl && (
+                    <div className="mt-2 flex flex-col gap-1.5">
+                      <div>
+                        <label className={sLabel}>Width (px)</label>
+                        <Input type="number" min="20" max="600" value={siteSettings.logoWidth}
+                          onChange={(e) => updateSiteSettings({ logoWidth: +e.target.value || 120 })} className="h-6 text-xs px-1.5" />
+                      </div>
+                      <div>
+                        <label className={sLabel}>Alignment</label>
+                        <div className="grid grid-cols-3 gap-1">
+                          {(["left", "center", "right"] as const).map((a) => (
+                            <button key={a} type="button" onClick={() => updateSiteSettings({ logoAlign: a })}
+                              className={`text-[11px] py-0.5 rounded border capitalize ${siteSettings.logoAlign === a ? "bg-black text-white" : "hover:bg-muted"}`}>
+                              {a}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      <div>
+                        <label className={sLabel}>Link</label>
+                        <Input value={siteSettings.logoLink} onChange={(e) => updateSiteSettings({ logoLink: e.target.value })}
+                          placeholder="/" className="h-6 text-xs px-1.5" />
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <label className="text-[10px] text-muted-foreground block mb-1 uppercase tracking-wide">Favicon</label>
+                  <div className="flex items-center gap-2">
+                    <button type="button" onClick={() => faviconInputRef.current?.click()}
+                      className="h-8 w-8 shrink-0 rounded border border-dashed border-gray-300 bg-gray-50 flex items-center justify-center overflow-hidden hover:border-black transition-colors">
+                      {faviconUploading ? (
+                        <span className="text-[8px] text-muted-foreground">…</span>
+                      ) : siteSettings.faviconUrl ? (
+                        <img src={siteSettings.faviconUrl} alt="" className="max-h-full max-w-full object-contain" />
+                      ) : (
+                        <ImageIcon className="h-3 w-3 text-muted-foreground" />
+                      )}
+                    </button>
+                    <div className="flex-1 flex flex-col gap-1">
+                      <button type="button" onClick={() => faviconInputRef.current?.click()} className="text-[11px] px-2 py-1 rounded border hover:bg-muted text-left">
+                        {siteSettings.faviconUrl ? "Replace favicon" : "Upload favicon"}
+                      </button>
+                      {siteSettings.faviconUrl && (
+                        <button type="button" onClick={() => updateSiteSettings({ faviconUrl: null })} className="text-[11px] text-muted-foreground hover:text-destructive text-left">
+                          Remove
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  <input ref={faviconInputRef} type="file" accept="image/*" className="hidden"
+                    onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFaviconUpload(f); e.target.value = ""; }} />
+                </div>
+              </div>
+
+              {/* Reusable Components — always visible (not an openTool accordion) since
+                  it's a persistent drag source, not a per-type settings panel. Populated
+                  by the "Save as Reusable Component" context-menu action above. */}
+              <div className="mt-3 pt-3 border-t">
+                <p className={sLabel + " mb-2"}>Reusable Components</p>
+                {reusableComponents.length === 0 ? (
+                  <p className="text-[11px] text-muted-foreground">Right-click a component and choose "Save as Reusable Component" to see it here.</p>
+                ) : (
+                  <div className="flex flex-col gap-1.5">
+                    {reusableComponents.map((r) => (
+                      <div
+                        key={r.id}
+                        draggable
+                        onDragStart={(e) => e.dataTransfer.setData("application/x-reusable-component", JSON.stringify(r))}
+                        className="flex items-center gap-2 px-2.5 py-1.5 rounded-md border border-gray-200 text-xs cursor-grab hover:bg-muted"
+                        title={`From "${r.sourcePage}"`}
+                      >
+                        <ComponentIcon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                        <span className="truncate flex-1">{r.name}</span>
+                        <span className="text-[9px] uppercase text-muted-foreground shrink-0">{componentTypeLabel(r.type)}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {/* Group / multi-selection settings — not tied to one component type */}
@@ -2824,6 +7035,26 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                   <p className="text-[10px] text-muted-foreground pt-1.5 border-t">
                     {selectedComps.length} component{selectedComps.length !== 1 ? "s" : ""} · drag to move together · corner to resize together
                   </p>
+
+                  {/* Batch property edit — only when every selected component shares one
+                      type, so "color/size" edits below apply meaningfully to all of them. */}
+                  {selectedComps.every((c) => c.type === selectedComps[0].type) && (
+                    <div className="flex flex-col gap-2 pt-2 border-t">
+                      <p className={sLabel}>Batch edit — all {selectedComps.length} {componentTypeLabel(selectedComps[0].type)}{selectedComps.length !== 1 ? "s" : ""}</p>
+                      <ColorPicker label="Background" value={selectedComps[0].bgColor === "transparent" ? "#ffffff" : (selectedComps[0].bgColor ?? "#ffffff")} onChange={(v) => updateSelectedBatch({ bgColor: v })} />
+                      <ColorPicker label="Text color" value={selectedComps[0].fontColor ?? "#111111"} onChange={(v) => updateSelectedBatch({ fontColor: v })} />
+                      <div className="grid grid-cols-2 gap-1.5">
+                        <div>
+                          <label className={sLabel}>Opacity</label>
+                          <Input type="number" min="0" max="100" value={selectedComps[0].opacity ?? 100} onChange={(e) => updateSelectedBatch({ opacity: +e.target.value })} className="h-6 text-xs px-1.5" />
+                        </div>
+                        <div>
+                          <label className={sLabel}>Radius</label>
+                          <Input type="number" min="0" value={selectedComps[0].borderRadius ?? 0} onChange={(e) => updateSelectedBatch({ borderRadius: +e.target.value })} className="h-6 text-xs px-1.5" />
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -2835,6 +7066,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                 </div>
               )}
             </div>
+            )}
           </div>
           {/* end right panel */}
 
@@ -2875,15 +7107,113 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                 <Copy className="h-3.5 w-3.5" /> Duplicate
               </button>
             )}
+            {selectedComp && (
+              <button
+                type="button"
+                className="w-full flex items-center gap-2 text-left px-3 py-1.5 hover:bg-muted"
+                onClick={() => copyStyle(selectedComp)}
+              >
+                <Paintbrush className="h-3.5 w-3.5" /> Copy style
+              </button>
+            )}
+            {selectedComp && copiedStyleRef.current && (
+              <button
+                type="button"
+                className="w-full flex items-center gap-2 text-left px-3 py-1.5 hover:bg-muted"
+                onClick={() => pasteStyle(selectedComp)}
+              >
+                <ClipboardPaste className="h-3.5 w-3.5" /> Paste style
+              </button>
+            )}
+            {selectedComp && !selectedComp.reusable && (
+              <button
+                type="button"
+                className="w-full flex items-center gap-2 text-left px-3 py-1.5 hover:bg-muted"
+                onClick={() => {
+                  setReusablePrompt({ id: selectedComp.id, name: selectedComp.reusableName ?? selectedComp.name ?? "", x: contextMenu.x, y: contextMenu.y });
+                  setContextMenu(null);
+                }}
+              >
+                <ComponentIcon className="h-3.5 w-3.5" /> Save as Reusable Component
+              </button>
+            )}
+            {selectedComp && selectedComp.reusable && (
+              <button
+                type="button"
+                className="w-full flex items-center gap-2 text-left px-3 py-1.5 hover:bg-muted"
+                onClick={() => {
+                  updateComp(selectedComp.id, { reusable: false, reusableName: undefined });
+                  setReusableRefreshPending(true);
+                  setContextMenu(null);
+                }}
+              >
+                <ComponentIcon className="h-3.5 w-3.5" /> Remove from Reusable Components
+              </button>
+            )}
             <button
               type="button"
-              className="w-full flex items-center gap-2 text-left px-3 py-1.5 hover:bg-muted text-destructive"
+              disabled={selectedComps.some((c) => c.locked)}
+              className="w-full flex items-center gap-2 text-left px-3 py-1.5 hover:bg-muted text-destructive disabled:opacity-40 disabled:cursor-not-allowed"
               onClick={() => { deleteComp(selectedIds); setContextMenu(null); }}
             >
               <Trash2 className="h-3.5 w-3.5" /> Delete
             </button>
           </div>
         )}
+
+        {/* Save as Reusable Component — naming popover, positioned at the same
+            spot the context menu appeared (reusablePrompt carries {id, name}
+            forward past the menu closing). */}
+        {reusablePrompt && (
+          <div
+            className="fixed z-50 min-w-[220px] rounded-md border bg-white shadow-lg p-2.5 text-xs"
+            style={{ top: reusablePrompt.y, left: reusablePrompt.x }}
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <p className="font-medium mb-1.5">Save as Reusable Component</p>
+            <Input
+              autoFocus
+              value={reusablePrompt.name}
+              onChange={(e) => setReusablePrompt({ ...reusablePrompt, name: e.target.value })}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && reusablePrompt.name.trim()) {
+                  updateComp(reusablePrompt.id, { reusable: true, reusableName: reusablePrompt.name.trim() });
+                  setReusableRefreshPending(true);
+                  setReusablePrompt(null);
+                } else if (e.key === "Escape") {
+                  setReusablePrompt(null);
+                }
+              }}
+              placeholder="e.g. Featured Product Card"
+              className="h-7 text-xs px-2 mb-2"
+            />
+            <div className="flex justify-end gap-1.5">
+              <Button variant="outline" size="sm" className="h-6 px-2 text-xs" onClick={() => setReusablePrompt(null)}>Cancel</Button>
+              <Button
+                size="sm"
+                className="h-6 px-2 text-xs"
+                disabled={!reusablePrompt.name.trim()}
+                onClick={() => {
+                  updateComp(reusablePrompt.id, { reusable: true, reusableName: reusablePrompt.name.trim() });
+                  setReusableRefreshPending(true);
+                  setReusablePrompt(null);
+                }}
+              >
+                Save
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* Status bar — "All changes saved"/"Saving…" plus Version Control counts,
+            absorbed from the stat-tile row that used to sit above the canvas. */}
+        <div className="flex items-center gap-3 shrink-0 pt-2 mt-1 border-t text-xs text-muted-foreground">
+          <span className={`flex items-center gap-1.5 font-medium ${syncStatus === "error" ? "text-destructive" : syncStatus === "dirty" ? "text-amber-700" : "text-foreground"}`}>
+            <Cloud className={`h-3 w-3 ${syncStatus === "syncing" ? "animate-pulse" : ""}`} /> {syncLabel}
+          </span>
+          <span className="flex items-center gap-1"><History className="h-3 w-3" /> {versions.length} checkpoint{versions.length === 1 ? "" : "s"}</span>
+          <span className="flex items-center gap-1"><Activity className="h-3 w-3" /> {changeCount === 0 ? "Clean" : `${changeCount} tracked`}</span>
+        </div>
 
       </div>
       {/* end main editor */}

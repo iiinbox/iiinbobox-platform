@@ -3,7 +3,9 @@ import { ImageResponse } from "next/og";
 export const size = { width: 32, height: 32 };
 export const contentType = "image/png";
 
-export default function Icon() {
+const API = process.env.API_INTERNAL_URL ?? "http://localhost:4000";
+
+function defaultIcon() {
   return new ImageResponse(
     <div
       style={{
@@ -113,4 +115,26 @@ export default function Icon() {
     </div>,
     { width: 32, height: 32 },
   );
+}
+
+// Admin-uploaded favicon (see PageEditor.tsx's "Logo & Favicon" sidebar
+// section) takes over once set; falls back to the hardcoded gift-box glyph
+// above if unset, or if anything along the way fails — a broken/unreachable
+// settings fetch must never take the site's favicon down entirely.
+export default async function Icon() {
+  try {
+    const settingsRes = await fetch(`${API}/settings/public`, { next: { revalidate: 60 } });
+    if (!settingsRes.ok) return defaultIcon();
+    const settings = await settingsRes.json();
+    if (!settings?.faviconUrl) return defaultIcon();
+
+    const imageRes = await fetch(settings.faviconUrl, { next: { revalidate: 60 } });
+    if (!imageRes.ok) return defaultIcon();
+    const bytes = await imageRes.arrayBuffer();
+    return new Response(bytes, {
+      headers: { "content-type": settings.faviconContentType || "image/png" },
+    });
+  } catch {
+    return defaultIcon();
+  }
 }

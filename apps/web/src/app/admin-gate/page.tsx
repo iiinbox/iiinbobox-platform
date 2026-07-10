@@ -1,30 +1,32 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 
 export default function AdminGatePage() {
-  const router = useRouter();
   const [password, setPassword] = useState("");
-  const [error, setError] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true);
-    setError(false);
-    const res = await fetch("/api/admin-gate", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ password }),
-    });
-    setBusy(false);
-    if (res.ok) {
-      router.push("/admin/vendors");
-      router.refresh();
-    } else {
-      setError(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/admin-gate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password }),
+      });
+      if (res.ok) {
+        window.location.href = "/admin/homepage";
+        return;
+      }
+      setError("Incorrect password");
       setPassword("");
+    } catch {
+      setError("Network error — please try again");
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -40,7 +42,7 @@ export default function AdminGatePage() {
           autoFocus
           className="border border-black px-4 py-2 text-sm outline-none"
         />
-        {error && <p className="text-xs text-red-600 text-center">Incorrect password</p>}
+        {error && <p className="text-xs text-red-600 text-center">{error}</p>}
         <button
           type="submit"
           disabled={busy}

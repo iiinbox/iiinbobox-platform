@@ -29,6 +29,16 @@
         reverse_proxy host.docker.internal:3000
     }
 
+    @seller host seller.iiinbox.com
+    handle @seller {
+        reverse_proxy host.docker.internal:3000
+    }
+
+    @rider host rider.iiinbox.com
+    handle @rider {
+        reverse_proxy host.docker.internal:3000
+    }
+
     @deploy host deploy.iiinbox.com
     handle @deploy {
         reverse_proxy host.docker.internal:9001

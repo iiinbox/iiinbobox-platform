@@ -231,14 +231,22 @@ export class PageConfigService {
     return prisma.folder.create({ data: { name, projectId } });
   }
 
-  // Only arbitrary folders (no root page) can be deleted — Home/Seller/Rider
-  // and any other subdomain-wired folder stay permanent. Member pages fall
-  // back to Unassigned automatically (PageConfig.folder is onDelete: SetNull).
+  // Any folder can be deleted now (the confirmation dialog in the Pages
+  // panel is the safety gate, not a backend block) — member pages fall back
+  // to Unassigned automatically (PageConfig.folder is onDelete: SetNull),
+  // and a root page is explicitly detached here (folderId: null) rather than
+  // deleted, so its content and slug survive as an ordinary draft-only page.
+  // A folder connected to a subdomain (folder.subdomain) loses that
+  // connection — the frontend warns about this before calling here.
   async deleteFolder(id: string) {
     const folder = await prisma.folder.findUnique({ where: { id } });
     if (!folder) throw new BadRequestException("Folder not found");
-    if (folder.rootPageId) throw new BadRequestException("Can't delete a folder that has a root page");
-    await prisma.folder.delete({ where: { id } });
+    await prisma.$transaction(async (tx) => {
+      if (folder.rootPageId) {
+        await tx.pageConfig.update({ where: { id: folder.rootPageId }, data: { folderId: null } });
+      }
+      await tx.folder.delete({ where: { id } });
+    });
     return { ok: true };
   }
 

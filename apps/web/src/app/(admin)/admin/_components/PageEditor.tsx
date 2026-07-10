@@ -1313,7 +1313,7 @@ type AlignEdge = "left" | "right" | "centerH" | "top" | "bottom" | "centerV";
 function ToolbarBtn({ title, onClick, destructive, disabled, children }: { title: string; onClick?: () => void; destructive?: boolean; disabled?: boolean; children: React.ReactNode }) {
   return (
     <button type="button" title={title} disabled={disabled}
-      className={`flex h-6 w-6 items-center justify-center rounded hover:bg-muted disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent ${destructive ? "text-destructive hover:bg-destructive/10" : ""}`}
+      className={`flex h-6 w-6 items-center justify-center rounded hover:bg-muted hover:text-gray-900 disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent ${destructive ? "text-destructive hover:bg-destructive/10" : ""}`}
       onClick={(e) => { e.stopPropagation(); onClick?.(); }}
     >
       {children}
@@ -1671,97 +1671,6 @@ function textTokenPatch(token: TextToken, canvasW: number, extra: Partial<PageCo
   };
 }
 
-// Text Templates: Canva-style pre-designed text groups. Each template inserts
-// 2-3 "text" components sharing one groupId (the same grouping mechanism
-// buildMarketWidget already uses), with lockedTypography set on every piece
-// so the properties panel keeps typography fixed — only content, color, and
-// alignment stay editable.
-
-const TEXT_TEMPLATES = [
-  { id: "hero-title", label: "Hero Title Block", hint: "heading-xl + subtitle" },
-  { id: "section-header", label: "Section Header", hint: "heading-m + description" },
-  { id: "card-title-desc", label: "Card Title + Description", hint: "heading-s + body-s" },
-  { id: "testimonial", label: "Testimonial", hint: "Quote + author + role" },
-  { id: "pricing-block", label: "Pricing Block", hint: "Title + price + features" },
-] as const;
-type TextTemplateId = (typeof TEXT_TEMPLATES)[number]["id"];
-
-function buildTextTemplate(id: TextTemplateId, center: { x: number; y: number }, canvasW: number): PageComponent[] {
-  const gid = uid();
-  const gname = TEXT_TEMPLATES.find((t) => t.id === id)?.label ?? "Text Template";
-  const lineH = (token: TextToken, lines = 1) => Math.round(tokenFontSize(token, canvasW) * TEXT_TOKENS[token].lineHeight * lines);
-
-  if (id === "hero-title") {
-    const width = Math.max(220, Math.round(canvasW * 0.6));
-    const titleH = lineH("heading-xl") + 12;
-    const subH = lineH("body-l") + 8;
-    const gap = 8;
-    const x = center.x - width / 2;
-    const y = center.y - (titleH + gap + subH) / 2;
-    return [
-      makeWidgetText(gid, x, y, width, titleH, "Add a bold headline", textTokenPatch("heading-xl", canvasW, { groupName: gname, lockedTypography: true, bgColor: "transparent", textAlign: "center", fontColor: "#0f172a" })),
-      makeWidgetText(gid, x, y + titleH + gap, width, subH, "Add a supporting subtitle to set the tone", textTokenPatch("body-l", canvasW, { groupName: gname, lockedTypography: true, bgColor: "transparent", textAlign: "center", fontColor: "#475569" })),
-    ];
-  }
-
-  if (id === "section-header") {
-    const width = Math.max(200, Math.round(canvasW * 0.45));
-    const titleH = lineH("heading-m") + 10;
-    const descH = lineH("body-m") + 8;
-    const gap = 6;
-    const x = center.x - width / 2;
-    const y = center.y - (titleH + gap + descH) / 2;
-    return [
-      makeWidgetText(gid, x, y, width, titleH, "Section title", textTokenPatch("heading-m", canvasW, { groupName: gname, lockedTypography: true, bgColor: "transparent", textAlign: "left", fontColor: "#0f172a" })),
-      makeWidgetText(gid, x, y + titleH + gap, width, descH, "A short description that explains this section.", textTokenPatch("body-m", canvasW, { groupName: gname, lockedTypography: true, bgColor: "transparent", textAlign: "left", fontColor: "#475569" })),
-    ];
-  }
-
-  if (id === "card-title-desc") {
-    const width = Math.max(160, Math.round(canvasW * 0.26));
-    const titleH = lineH("heading-s") + 8;
-    const descH = lineH("body-s", 2) + 8;
-    const gap = 4;
-    const x = center.x - width / 2;
-    const y = center.y - (titleH + gap + descH) / 2;
-    return [
-      makeWidgetText(gid, x, y, width, titleH, "Card title", textTokenPatch("heading-s", canvasW, { groupName: gname, lockedTypography: true, bgColor: "transparent", textAlign: "left", fontColor: "#0f172a" })),
-      makeWidgetText(gid, x, y + titleH + gap, width, descH, "A brief description of this card's content goes here.", textTokenPatch("body-s", canvasW, { groupName: gname, lockedTypography: true, bgColor: "transparent", textAlign: "left", fontColor: "#64748b" })),
-    ];
-  }
-
-  if (id === "testimonial") {
-    const width = Math.max(220, Math.round(canvasW * 0.42));
-    const quoteH = lineH("body-l", 3) + 8;
-    const authorH = lineH("body-s") + 6;
-    const roleH = lineH("caption") + 4;
-    const gap = 4;
-    const totalH = quoteH + gap + authorH + roleH;
-    const x = center.x - width / 2;
-    const y = center.y - totalH / 2;
-    return [
-      makeWidgetText(gid, x, y, width, quoteH, "This product completely changed how we work — simple, fast, and reliable.", textTokenPatch("body-l", canvasW, { groupName: gname, lockedTypography: true, bgColor: "transparent", textAlign: "center", fontColor: "#1f2937", italic: true })),
-      makeWidgetText(gid, x, y + quoteH + gap, width, authorH, "Jordan Lee", textTokenPatch("body-s", canvasW, { groupName: gname, lockedTypography: true, bgColor: "transparent", textAlign: "center", fontColor: "#0f172a", fontWeight: 700 })),
-      makeWidgetText(gid, x, y + quoteH + gap + authorH, width, roleH, "Head of Operations, Acme Co.", textTokenPatch("caption", canvasW, { groupName: gname, lockedTypography: true, bgColor: "transparent", textAlign: "center", fontColor: "#94a3b8" })),
-    ];
-  }
-
-  // pricing-block
-  const width = Math.max(180, Math.round(canvasW * 0.3));
-  const titleH = lineH("heading-m") + 6;
-  const priceH = lineH("heading-l") + 8;
-  const featuresH = lineH("body-m", 3) + 10;
-  const gap = 6;
-  const totalH = titleH + priceH + featuresH + gap * 2;
-  const x = center.x - width / 2;
-  const y = center.y - totalH / 2;
-  return [
-    makeWidgetText(gid, x, y, width, titleH, "Pro Plan", textTokenPatch("heading-m", canvasW, { groupName: gname, lockedTypography: true, bgColor: "transparent", textAlign: "center", fontColor: "#0f172a" })),
-    makeWidgetText(gid, x, y + titleH + gap, width, priceH, "$29/mo", textTokenPatch("heading-l", canvasW, { groupName: gname, lockedTypography: true, bgColor: "transparent", textAlign: "center", fontColor: "#111827" })),
-    makeWidgetText(gid, x, y + titleH + gap + priceH + gap, width, featuresH, "• All core features\n• Priority support\n• Unlimited projects", textTokenPatch("body-m", canvasW, { groupName: gname, lockedTypography: true, bgColor: "transparent", textAlign: "left", fontColor: "#334155" })),
-  ];
-}
-
 function resolveButtonStyles(comp: PageComponent, hovered: boolean) {
   const isSolid = !comp.buttonStyle || comp.buttonStyle === "solid";
   const isOutline = comp.buttonStyle === "outline";
@@ -1841,13 +1750,13 @@ function renderStepperInput(value: number, step: number, min: number, max: numbe
   const round = (v: number) => Math.round(v / step) * step;
   return (
     <div className="flex items-center gap-1">
-      <button type="button" onClick={() => onChange(clamp(round(value - step)))} className="h-6 w-6 shrink-0 flex items-center justify-center rounded border hover:bg-muted">
+      <button type="button" onClick={() => onChange(clamp(round(value - step)))} className="h-6 w-6 shrink-0 flex items-center justify-center rounded border hover:bg-muted hover:text-gray-900">
         <Minus className="h-3 w-3" />
       </button>
       <Input type="number" step={step} min={min} max={max} value={value}
         onChange={(e) => { const v = +e.target.value; if (Number.isFinite(v)) onChange(clamp(v)); }}
         className="h-6 text-xs px-1 text-center" />
-      <button type="button" onClick={() => onChange(clamp(round(value + step)))} className="h-6 w-6 shrink-0 flex items-center justify-center rounded border hover:bg-muted">
+      <button type="button" onClick={() => onChange(clamp(round(value + step)))} className="h-6 w-6 shrink-0 flex items-center justify-center rounded border hover:bg-muted hover:text-gray-900">
         <Plus className="h-3 w-3" />
       </button>
     </div>
@@ -1888,7 +1797,7 @@ function FontSelect({ value, onChange, options = FONT_FAMILIES }: { value: strin
               key={f.value}
               type="button"
               onClick={() => { onChange(f.value); setOpen(false); }}
-              className={`block w-full text-left px-2 py-1 text-[13px] hover:bg-muted ${f.value === value ? "bg-muted" : ""}`}
+              className={`block w-full text-left px-2 py-1 text-[13px] hover:bg-muted hover:text-gray-900 ${f.value === value ? "bg-muted" : ""}`}
               style={{ fontFamily: f.value }}
             >
               {f.label}
@@ -1959,7 +1868,7 @@ function ImagePickerButton({
   return (
     <div ref={ref} className="relative">
       <button type="button" onClick={() => { setOpen((o) => !o); setView("choose"); }}
-        className={buttonClassName ?? "flex items-center gap-1.5 cursor-pointer px-2 py-1 rounded border text-xs hover:bg-muted w-full"}>
+        className={buttonClassName ?? "flex items-center gap-1.5 cursor-pointer px-2 py-1 rounded border text-xs hover:bg-muted hover:text-gray-900 w-full"}>
         {children ?? (
           <>
             {Icon && <Icon className="h-3 w-3" />}
@@ -1979,11 +1888,11 @@ function ImagePickerButton({
           ) : view === "choose" ? (
             <>
               <button type="button" onClick={() => { setView("assets"); loadAssets(); }}
-                className="flex items-center gap-1.5 text-xs px-2 py-1.5 rounded hover:bg-muted text-left">
+                className="flex items-center gap-1.5 text-xs px-2 py-1.5 rounded hover:bg-muted hover:text-gray-900 text-left">
                 <ImageIcon className="h-3 w-3" /> Select from Asset
               </button>
               <button type="button" onClick={() => fileInputRef.current?.click()}
-                className="flex items-center gap-1.5 text-xs px-2 py-1.5 rounded hover:bg-muted text-left">
+                className="flex items-center gap-1.5 text-xs px-2 py-1.5 rounded hover:bg-muted hover:text-gray-900 text-left">
                 <Plus className="h-3 w-3" /> Upload New Image
               </button>
             </>
@@ -2209,12 +2118,6 @@ export function PageEditor({ slug, label }: PageEditorProps) {
     } finally { setFaviconUploading(false); }
   }
   const [headerSettingsOpen, setHeaderSettingsOpen] = useState(false);
-  // Bug fix: these number inputs used to call their real setter on every
-  // keystroke with a `+value || fallback` pattern — the instant the field was
-  // cleared to type a new value, `+"" || fallback` snapped the height/threshold
-  // to the fallback and the canvas visibly "unsized" mid-edit. Both now buffer
-  // the raw text locally and only commit (with proper clamping) on blur/Enter.
-  const [zoneHeightDrafts, setZoneHeightDrafts] = useState<Partial<Record<Zone, string>>>({});
   const [footerDesktopComponents, setFooterDesktopComponents] = useState<PageComponent[]>([]);
   const [footerMobileComponents, setFooterMobileComponents] = useState<PageComponent[]>([]);
   const [pageLabel, setPageLabel] = useState(label ?? "");
@@ -2257,14 +2160,12 @@ export function PageEditor({ slug, label }: PageEditorProps) {
   // ── Design-tool redesign: additive UI state (inert until wired into JSX) ──
   const [zoom, setZoom] = useState(100);
   const [activeLeftTab, setActiveLeftTab] = useState<"project" | "assets" | "history">("project");
-  // Auto-hide sidebars — collapsed (pinned hidden, persisted) vs. hoverReveal
-  // (transient "peek" while the mouse is over the thin edge strip, never
-  // persisted). Visible = !collapsed || hoverReveal — see the wrapper divs
-  // in the JSX below for the width transition + hover handlers.
+  // Manual-only sidebar toggle — no hover-reveal. Visible/hidden is purely
+  // the persisted `collapsed` flag; the only way to change it is clicking
+  // the arrow button (see hideLeftSidebar/hideRightSidebar and the "Show
+  // panel" buttons in the JSX below).
   const [leftSidebarCollapsed, setLeftSidebarCollapsed] = useState(false);
   const [rightSidebarCollapsed, setRightSidebarCollapsed] = useState(false);
-  const [leftHoverReveal, setLeftHoverReveal] = useState(false);
-  const [rightHoverReveal, setRightHoverReveal] = useState(false);
   useEffect(() => {
     try {
       setLeftSidebarCollapsed(localStorage.getItem(LEFT_SIDEBAR_HIDDEN_KEY) === "1");
@@ -2290,10 +2191,10 @@ export function PageEditor({ slug, label }: PageEditorProps) {
     if (rightPersistSkipFirst.current) { rightPersistSkipFirst.current = false; return; }
     try { localStorage.setItem(RIGHT_SIDEBAR_HIDDEN_KEY, rightSidebarCollapsed ? "1" : "0"); } catch {}
   }, [rightSidebarCollapsed]);
-  function hideLeftSidebar() { setLeftSidebarCollapsed(true); setLeftHoverReveal(false); }
-  function hideRightSidebar() { setRightSidebarCollapsed(true); setRightHoverReveal(false); }
-  const leftSidebarVisible = !leftSidebarCollapsed || leftHoverReveal;
-  const rightSidebarVisible = !rightSidebarCollapsed || rightHoverReveal;
+  function hideLeftSidebar() { setLeftSidebarCollapsed(true); }
+  function hideRightSidebar() { setRightSidebarCollapsed(true); }
+  const leftSidebarVisible = !leftSidebarCollapsed;
+  const rightSidebarVisible = !rightSidebarCollapsed;
   const [openPropertySections, setOpenPropertySections] = useState<Record<PropertySection, boolean>>({
     layout: true, appearance: true, typography: true, responsive: true, effects: true, advanced: false,
   });
@@ -2456,7 +2357,6 @@ export function PageEditor({ slug, label }: PageEditorProps) {
   const [renameInput, setRenameInput] = useState("");
   const [expandedContainers, setExpandedContainers] = useState<Record<string, boolean>>({});
   const [layerSearch, setLayerSearch] = useState("");
-  const [showTextTemplates, setShowTextTemplates] = useState(false);
   const nameInputRef = useRef<HTMLInputElement>(null);
   // Pinned pages never get a delete button — any folder's root page across
   // any project, not just the default project's literal home/seller-dashboard/
@@ -2587,9 +2487,17 @@ export function PageEditor({ slug, label }: PageEditorProps) {
   const dragRef        = useRef<{ ids: string[]; startX: number; startY: number; origins: Map<string, { x: number; y: number; width: number; height: number }> } | null>(null);
   const resizeRef      = useRef<{ ids: string[]; corner: ResizeCorner; startX: number; startY: number; bbox: { x: number; y: number; width: number; height: number }; origins: Map<string, { x: number; y: number; width: number; height: number }> } | null>(null);
   const rotateRef      = useRef<{ id: string; centerX: number; centerY: number; startAngle: number; startRotation: number } | null>(null);
-  const heightDragRef  = useRef<{ startY: number; origH: number } | null>(null);
+  const heightDragRef  = useRef<{ startY: number; origH: number; zone: Zone } | null>(null);
   const marqueeStartRef = useRef<{ x: number; y: number } | null>(null);
-  const canvasRef      = useRef<HTMLDivElement>(null);
+  // Item 2: header/template/footer render as one seamless, simultaneously-
+  // interactive canvas rather than separate switchable zone views. Each zone
+  // keeps its own DOM element (for accurate getBoundingClientRect/scale math
+  // during drag/resize/rotate) — canvasElRefs holds all three, and
+  // getActiveCanvasEl() resolves whichever one the interaction in progress
+  // actually targets (set at the start of that interaction, see onDragStart
+  // etc. below).
+  const canvasElRefs   = useRef<Record<Zone, HTMLDivElement | null>>({ header: null, template: null, footer: null });
+  function getActiveCanvasEl(): HTMLDivElement | null { return canvasElRefs.current[activeZoneRef.current]; }
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const logoInputRef = useRef<HTMLInputElement>(null);
   const faviconInputRef = useRef<HTMLInputElement>(null);
@@ -2601,6 +2509,16 @@ export function PageEditor({ slug, label }: PageEditorProps) {
   const canvasWRef      = useRef(canvasW);
   const canvasHRef      = useRef(canvasH);
   const setHeightRef    = useRef<(h: number) => void>(() => {});
+  // Always-current mirror of the render-scoped `zoneSetters` object below —
+  // needed so the height-drag mousemove handler (a mount-once effect, see
+  // "Global mouse events") can resolve whichever zone's height-drag handle
+  // was actually grabbed (heightDragRef.current.zone), not just whatever was
+  // "active" back when that effect first ran.
+  const zoneSettersRef  = useRef<Record<Zone, { setDesktopHeight: (v: React.SetStateAction<number>) => void; setMobileHeight: (v: React.SetStateAction<number>) => void }>>({
+    header: { setDesktopHeight: () => {}, setMobileHeight: () => {} },
+    template: { setDesktopHeight: () => {}, setMobileHeight: () => {} },
+    footer: { setDesktopHeight: () => {}, setMobileHeight: () => {} },
+  });
   const selectedIdsRef  = useRef<string[]>([]);
   const viewRef         = useRef<ViewMode>("desktop");
   const activeZoneRef   = useRef<Zone>("template");
@@ -2666,6 +2584,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
   canvasWRef.current      = canvasW;
   canvasHRef.current      = canvasH;
   setHeightRef.current    = (h) => setCanvasHeight(h);
+  zoneSettersRef.current  = zoneSetters;
   selectedIdsRef.current  = selectedIds;
   viewRef.current         = view;
   activeZoneRef.current   = activeZone;
@@ -2915,7 +2834,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
   // component while scrolled down drops it in view instead of off-screen at (80,80).
   function getVisibleCenter(): { x: number; y: number } {
     const container = scrollContainerRef.current;
-    const canvas = canvasRef.current;
+    const canvas = getActiveCanvasEl();
     if (!container || !canvas || canvas.getBoundingClientRect().width === 0) {
       return { x: canvasW / 2, y: canvasH / 2 };
     }
@@ -3036,20 +2955,6 @@ export function PageEditor({ slug, label }: PageEditorProps) {
     const setter = zone === activeZone ? setComponents : (view === "desktop" ? zoneSetters[zone].setDesktop : zoneSetters[zone].setMobile);
     setter((prev) => [...prev, ...widget]);
     setSelectedIds(widget.map((c) => c.id));
-    if (zone !== activeZone) setActiveZone(zone);
-  }
-  function addTextTemplate(id: TextTemplateId, targetZone?: Zone) {
-    const zone = targetZone ?? activeZone;
-    commitUndoSnapshot(zone);
-    const zh = zoneHeights[zone][view];
-    const center = zone === activeZone ? getVisibleCenter() : { x: canvasW / 2, y: zh / 2 };
-    const group = buildTextTemplate(id, center, canvasW).map((c) => ({
-      ...c,
-      ...clampToCanvas(c.x, c.y, c.width, c.height, canvasW, zh, c.rotation ?? 0),
-    }));
-    const setter = zone === activeZone ? setComponents : (view === "desktop" ? zoneSetters[zone].setDesktop : zoneSetters[zone].setMobile);
-    setter((prev) => [...prev, ...group]);
-    setSelectedIds(group.map((c) => c.id));
     if (zone !== activeZone) setActiveZone(zone);
   }
   // Property-panel field edits (text/number/color/etc.) share this one entry point —
@@ -3455,20 +3360,29 @@ export function PageEditor({ slug, label }: PageEditorProps) {
     setter((prev) => prev.map((c) => (selectedIds.includes(c.id) ? { ...c, groupId: undefined, groupName: undefined, groupLink: undefined } : c)));
     setContextMenu(null);
   }
-  function handleContextMenu(e: React.MouseEvent, comp: PageComponent) {
+  function handleContextMenu(e: React.MouseEvent, comp: PageComponent, zone: Zone) {
     e.preventDefault(); e.stopPropagation();
+    if (zone !== activeZoneRef.current) { activeZoneRef.current = zone; setActiveZone(zone); }
     setSelectedIds((prev) => {
       if (prev.includes(comp.id)) return prev;
-      const list = compsRef.current[activeZoneRef.current][viewRef.current === "desktop" ? "desktop" : "mobile"];
+      const list = compsRef.current[zone][viewRef.current === "desktop" ? "desktop" : "mobile"];
       return comp.groupId ? list.filter((c) => c.groupId === comp.groupId).map((c) => c.id) : [comp.id];
     });
     setContextMenu({ x: e.clientX, y: e.clientY });
   }
 
   // ── Drag / resize / rotate start ───────────────────────────────────────────
-  const onDragStart = useCallback((e: React.MouseEvent, id: string) => {
+  // Every one of these takes an explicit `zone` (which canvas — header/
+  // template/footer — the pointer actually came down on) and switches
+  // activeZone to it immediately, so clicking/dragging a component in a
+  // zone that wasn't "active" a moment ago just works in the same gesture —
+  // no separate "click to activate this zone, then click again to select"
+  // step, which is what made the old zone-strip UI feel like 3 disconnected
+  // canvases instead of 1 (item 2).
+  const onDragStart = useCallback((e: React.MouseEvent, id: string, zone: Zone) => {
     e.preventDefault(); e.stopPropagation();
-    const list = compsRef.current[activeZoneRef.current][viewRef.current === "desktop" ? "desktop" : "mobile"];
+    if (zone !== activeZoneRef.current) { activeZoneRef.current = zone; setActiveZone(zone); }
+    const list = compsRef.current[zone][viewRef.current === "desktop" ? "desktop" : "mobile"];
     const comp = list.find((c) => c.id === id);
     if (!comp) return;
     const groupIds = comp.groupId ? list.filter((c) => c.groupId === comp.groupId).map((c) => c.id) : [id];
@@ -3501,9 +3415,10 @@ export function PageEditor({ slug, label }: PageEditorProps) {
     dragRef.current = { ids: idsToMove, startX: e.clientX, startY: e.clientY, origins };
   }, []);
 
-  const onResizeStart = useCallback((e: React.MouseEvent, ids: string[], corner: ResizeCorner = "br") => {
+  const onResizeStart = useCallback((e: React.MouseEvent, ids: string[], zone: Zone, corner: ResizeCorner = "br") => {
     e.preventDefault(); e.stopPropagation();
-    const list = compsRef.current[activeZoneRef.current][viewRef.current === "desktop" ? "desktop" : "mobile"];
+    if (zone !== activeZoneRef.current) { activeZoneRef.current = zone; setActiveZone(zone); }
+    const list = compsRef.current[zone][viewRef.current === "desktop" ? "desktop" : "mobile"];
     const comps = ids.map((id) => list.find((c) => c.id === id)).filter((c): c is PageComponent => !!c);
     if (comps.length === 0 || comps.some((c) => c.locked)) return;
     commitUndoSnapshot();
@@ -3516,11 +3431,12 @@ export function PageEditor({ slug, label }: PageEditorProps) {
     resizeRef.current = { ids, corner, startX: e.clientX, startY: e.clientY, bbox, origins };
   }, []);
 
-  const onRotateStart = useCallback((e: React.MouseEvent, id: string) => {
+  const onRotateStart = useCallback((e: React.MouseEvent, id: string, zone: Zone) => {
     e.preventDefault(); e.stopPropagation();
-    const canvas = canvasRef.current; if (!canvas) return;
+    if (zone !== activeZoneRef.current) { activeZoneRef.current = zone; setActiveZone(zone); }
+    const canvas = canvasElRefs.current[zone]; if (!canvas) return;
     const rect = canvas.getBoundingClientRect();
-    const comp = compsRef.current[activeZoneRef.current][viewRef.current === "desktop" ? "desktop" : "mobile"].find((c) => c.id === id);
+    const comp = compsRef.current[zone][viewRef.current === "desktop" ? "desktop" : "mobile"].find((c) => c.id === id);
     if (!comp || comp.locked) return;
     commitUndoSnapshot();
     const scale = rect.width / canvasWRef.current;
@@ -3534,14 +3450,19 @@ export function PageEditor({ slug, label }: PageEditorProps) {
     rotateRef.current = { id, centerX, centerY, startAngle, startRotation: comp.rotation ?? 0 };
   }, []);
 
-  const onHeightDragStart = useCallback((e: React.MouseEvent) => {
+  // Plain function, not useCallback — needs the latest `zoneHeights` (a
+  // render-scoped const, not a ref) for whichever zone's handle was grabbed,
+  // and re-creating this on every render costs nothing (it's just an
+  // onMouseDown prop).
+  function onHeightDragStart(e: React.MouseEvent, zone: Zone) {
     e.preventDefault();
-    heightDragRef.current = { startY: e.clientY, origH: canvasH };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [canvasH]);
+    if (zone !== activeZoneRef.current) { activeZoneRef.current = zone; setActiveZone(zone); }
+    heightDragRef.current = { startY: e.clientY, origH: zoneHeights[zone][view], zone };
+  }
 
-  const onCanvasMouseDown = useCallback((e: React.MouseEvent) => {
-    const rect = canvasRef.current?.getBoundingClientRect();
+  const onCanvasMouseDown = useCallback((e: React.MouseEvent, zone: Zone) => {
+    if (zone !== activeZoneRef.current) { activeZoneRef.current = zone; setActiveZone(zone); }
+    const rect = canvasElRefs.current[zone]?.getBoundingClientRect();
     if (!rect) return;
     const scale = rect.width / canvasWRef.current;
     const x = (e.clientX - rect.left) / scale;
@@ -3554,7 +3475,8 @@ export function PageEditor({ slug, label }: PageEditorProps) {
   // ── Global mouse events ─────────────────────────────────────────────────────
   useEffect(() => {
     const onMove = (e: MouseEvent) => {
-      const scale = canvasRef.current ? canvasRef.current.clientWidth / canvasWRef.current : 1;
+      const activeCanvasEl = canvasElRefs.current[activeZoneRef.current];
+      const scale = activeCanvasEl ? activeCanvasEl.clientWidth / canvasWRef.current : 1;
       if (dragRef.current) {
         // Boundary clamping happens centrally in updateCompRef, so the raw delta is enough here.
         const { ids, startX, startY, origins } = dragRef.current;
@@ -3635,11 +3557,13 @@ export function PageEditor({ slug, label }: PageEditorProps) {
         updateCompRef.current(id, { rotation: Math.round(((rotation % 360) + 360) % 360) });
       }
       if (heightDragRef.current) {
-        const { startY, origH } = heightDragRef.current;
-        setHeightRef.current(Math.max(400, origH + (e.clientY - startY) / scale));
+        const { startY, origH, zone } = heightDragRef.current;
+        const setter = viewRef.current === "desktop" ? zoneSettersRef.current[zone].setDesktopHeight : zoneSettersRef.current[zone].setMobileHeight;
+        const minH = zone === "template" ? 400 : 40;
+        setter(Math.max(minH, origH + (e.clientY - startY) / scale));
       }
       if (marqueeStartRef.current) {
-        const rect = canvasRef.current?.getBoundingClientRect();
+        const rect = canvasElRefs.current[activeZoneRef.current]?.getBoundingClientRect();
         if (rect) {
           const curX = (e.clientX - rect.left) / scale;
           const curY = (e.clientY - rect.top) / scale;
@@ -4014,7 +3938,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
             setDragPageSlug(null); setDragOverPageSlug(null); setDragOverBucketId(null);
           }}
           onDragEnd={() => { setDragPageSlug(null); setDragOverPageSlug(null); setDragOverBucketId(null); }}
-          className={`group flex items-center rounded hover:bg-muted cursor-grab active:cursor-grabbing ${dragOverPageSlug === pageSlug && dragPageSlug !== pageSlug ? "border-t-2 border-blue-500" : ""}`}
+          className={`group flex items-center rounded hover:bg-muted hover:text-gray-900 cursor-grab active:cursor-grabbing ${dragOverPageSlug === pageSlug && dragPageSlug !== pageSlug ? "border-t-2 border-blue-500" : ""}`}
         >
           <GripVertical className="h-3 w-3 text-muted-foreground/50 shrink-0 ml-1" />
           <button type="button" onClick={() => router.push(`/admin/pages/${encodeURIComponent(pageSlug)}`)}
@@ -4102,7 +4026,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
           <div className="grid grid-cols-4 gap-1">
             {(["top", "bottom", "left", "right"] as const).map((d) => (
               <button key={d} type="button" onClick={() => patch({ dock: d })}
-                className={`h-6 text-[10px] rounded border capitalize ${block.dock === d ? "bg-black text-white border-black" : "border-gray-200 hover:bg-muted"}`}>
+                className={`h-6 text-[10px] rounded border capitalize ${block.dock === d ? "bg-black text-white border-black" : "border-gray-200 hover:bg-muted hover:text-gray-900"}`}>
                 {d}
               </button>
             ))}
@@ -4122,7 +4046,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
           <div className="flex items-center gap-1">
             {([0, 90, 180, 270] as const).map((deg) => (
               <button key={deg} type="button" onClick={() => patch({ rotation: deg })}
-                className={`flex-1 h-6 text-[10px] rounded border ${block.rotation === deg ? "bg-black text-white border-black" : "border-gray-200 hover:bg-muted"}`}>
+                className={`flex-1 h-6 text-[10px] rounded border ${block.rotation === deg ? "bg-black text-white border-black" : "border-gray-200 hover:bg-muted hover:text-gray-900"}`}>
                 {deg}°
               </button>
             ))}
@@ -4144,63 +4068,301 @@ export function PageEditor({ slug, label }: PageEditorProps) {
       <div className="flex items-center gap-1 px-1 pb-1 flex-wrap">
         {blocks.map((b, i) => (
           <button key={b.id} type="button" onClick={() => setActiveBlock(kind, view, b.id)}
-            className={`text-[10px] px-1.5 py-0.5 rounded border ${b.id === activeId ? "bg-black text-white border-black" : "border-gray-200 hover:bg-muted"}`}>
+            className={`text-[10px] px-1.5 py-0.5 rounded border ${b.id === activeId ? "bg-black text-white border-black" : "border-gray-200 hover:bg-muted hover:text-gray-900"}`}>
             {kind === "header" ? "Header" : "Footer"} {i + 1}
           </button>
         ))}
         <button type="button" title={`Add another ${kind}`} onClick={() => addBlock(kind)}
-          className="flex items-center justify-center h-5 w-5 rounded border border-dashed border-gray-300 hover:bg-muted text-muted-foreground">
+          className="flex items-center justify-center h-5 w-5 rounded border border-dashed border-gray-300 hover:bg-muted hover:text-gray-900 text-muted-foreground">
           <Plus className="h-3 w-3" />
         </button>
       </div>
     );
   }
 
-  // Read-only strip for a zone that ISN'T the currently-active one (item 3:
-  // "all three zones must be visible simultaneously while editing any one").
-  // Reuses the existing PreviewCanvas renderer rather than a second copy of
-  // the fully-interactive canvas — clicking the strip switches activeZone so
-  // it becomes the live, editable canvas in its place. Header/Footer also get
-  // a height input right in the strip's label bar so they're adjustable
-  // without needing to activate them first.
-  function renderZoneStrip(zone: Zone, label: string) {
+  // Item 2: one zone's fully-interactive canvas (header, template, or
+  // footer) — drag/resize/rotate/select/context-menu/drop all wired
+  // directly to `zone`, so interacting with a zone that wasn't "active" a
+  // moment ago just works in the same gesture (see onDragStart etc. above).
+  // Called once per visible zone from the JSX below; stacked back-to-back
+  // with no border/gap/label between them so header → template → footer
+  // reads as one continuous canvas, not three separate views.
+  function renderZoneCanvas(zone: Zone) {
     const comps = zoneComponents[zone][view];
-    const h = zoneHeights[zone][view];
-    const setHeight = view === "desktop" ? zoneSetters[zone].setDesktopHeight : zoneSetters[zone].setMobileHeight;
+    const zCanvasH = zoneHeights[zone][view];
+    const isActiveZone = zone === activeZone;
+    const pct = (v: number, total: number) => `${(v / total) * 100}%`;
     return (
-      <div key={zone} className="mx-auto mb-2" style={{ width: "100%", maxWidth: canvasW }}>
-        <div
-          className="border rounded-md overflow-hidden bg-white shadow-sm cursor-pointer hover:ring-2 hover:ring-blue-300 transition-shadow"
-          onClick={() => setActiveZone(zone)}
-        >
-          <div className="flex items-center justify-between px-2 py-1 bg-muted/60 border-b text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-            <span>{label} · click to edit</span>
-            {zone !== "template" && (
-              <label className="flex items-center gap-1 normal-case font-normal" onClick={(e) => e.stopPropagation()}>
-                Height
-                <input
-                  type="number" min={40} max={2000}
-                  value={zoneHeightDrafts[zone] ?? String(Math.round(h))}
-                  onChange={(e) => setZoneHeightDrafts((prev) => ({ ...prev, [zone]: e.target.value }))}
-                  onBlur={() => {
-                    const draft = zoneHeightDrafts[zone];
-                    if (draft !== undefined) {
-                      const parsed = parseInt(draft, 10);
-                      // Clamp to a sane range — an accidental extra digit (e.g. "5000050"
-                      // instead of "500") used to silently blow up the whole page's layout.
-                      setHeight(Number.isFinite(parsed) ? Math.min(2000, Math.max(40, parsed)) : Math.round(h));
-                    }
-                    setZoneHeightDrafts((prev) => { const next = { ...prev }; delete next[zone]; return next; });
-                  }}
-                  onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
-                  className="w-14 h-5 text-[10px] border rounded px-1 bg-background"
+      <div key={zone}>
+        <div className="flex">
+          <div
+            ref={(el) => { canvasElRefs.current[zone] = el; }}
+            className="relative shadow-sm select-none flex-1 min-w-0"
+            style={{ aspectRatio: `${canvasW} / ${zCanvasH}`, backgroundColor: zone === "template" ? canvasBgColor : (activeBlock(zone as "header" | "footer")?.bgColor ?? "#ffffff") }}
+            onMouseDown={(e) => onCanvasMouseDown(e, zone)}
+            onDragOver={(e) => {
+              if (e.dataTransfer.types.includes("application/x-reusable-component")) e.preventDefault();
+            }}
+            onDrop={(e) => {
+              const raw = e.dataTransfer.getData("application/x-reusable-component");
+              if (!raw) return;
+              e.preventDefault();
+              const entry: ReusableComponentEntry = JSON.parse(raw);
+              const rect = canvasElRefs.current[zone]!.getBoundingClientRect();
+              const scale = rect.width / canvasW;
+              const dropX = (e.clientX - rect.left) / scale;
+              const dropY = (e.clientY - rect.top) / scale;
+              // Independent copy, not a live-synced instance — same pattern as
+              // duplicateInPlace() (new id, group fields stripped so it doesn't
+              // silently join a group it has nothing to do with on this page).
+              // reusable/reusableName also stripped: only the original library
+              // entry should be a "source" — a dropped copy staying flagged would
+              // duplicate it in the sidebar with a second sourcePage.
+              const copy: PageComponent = {
+                ...(entry.component as PageComponent),
+                id: uid(),
+                x: dropX - entry.component.width / 2,
+                y: dropY - entry.component.height / 2,
+                groupId: undefined, groupName: undefined, groupLink: undefined,
+                reusable: undefined, reusableName: undefined,
+              };
+              if (zone !== activeZoneRef.current) { activeZoneRef.current = zone; setActiveZone(zone); }
+              commitUndoSnapshot(zone);
+              const setter = view === "desktop" ? zoneSetters[zone].setDesktop : zoneSetters[zone].setMobile;
+              setter((prev) => [...prev, copy]);
+              setSelectedIds([copy.id]);
+            }}
+          >
+        {zone === "template" && loading && <div className="absolute inset-0 flex items-center justify-center text-sm text-muted-foreground">Loading…</div>}
+        {isActiveZone && draggingId && (() => {
+          const dragged = comps.find((c) => c.id === draggingId);
+          if (!dragged) return null;
+          const guides = computeSpacingGuides(dragged, comps.filter((c) => c.id !== draggingId));
+          return guides.length > 0 ? <SpacingGuides guides={guides} canvasW={canvasW} canvasH={zCanvasH} /> : null;
+        })()}
+        {isActiveZone && draggingId && alignmentGuides.length > 0 && (
+          <AlignmentGuides guides={alignmentGuides} canvasW={canvasW} canvasH={zCanvasH} />
+        )}
+        {comps.map((comp) => {
+          const isSelected = selectedIds.includes(comp.id);
+          const isSoleSelected = isSelected && selectedIds.length === 1;
+          const isHovered = hoveredId === comp.id;
+          const isBtn = comp.type === "button";
+          const isShape = comp.type === "shape";
+          const isCarousel = comp.type === "carousel";
+          const isIcon = comp.type === "icon";
+          const isTaxi = comp.type === "location-input" || comp.type === "map" || comp.type === "datetime-picker" || comp.type === "vehicle-selector" || comp.type === "driver-badge" || comp.type === "fare-display";
+          const isHero = comp.type === "hero-carousel";
+          const isCatCarousel = comp.type === "category-carousel";
+          const isText = comp.type === "text" || comp.type === "header";
+          const btn = isBtn ? resolveButtonStyles(comp, isHovered) : null;
+          const rotation = comp.rotation ?? 0;
+
+          return (
+            <div key={comp.id}
+              className={`absolute group ${isSoleSelected ? "ring-2 ring-blue-500" : isSelected ? "ring-1 ring-blue-400" : "hover:ring-1 hover:ring-blue-300"}`}
+              style={{ left: pct(comp.x, canvasW), top: pct(comp.y, zCanvasH), width: pct(comp.width, canvasW), height: pct(comp.height, zCanvasH), borderRadius: isBtn || isShape || isCarousel || isIcon || isTaxi || isHero || isCatCarousel ? 0 : (comp.borderRadius ?? 0), backgroundColor: isBtn || isShape || isCarousel || isIcon || isTaxi || isHero || isCatCarousel ? "transparent" : (comp.bgColor === "transparent" ? "transparent" : (comp.bgColor ?? "transparent")), transform: `rotate(${rotation}deg)`, transformOrigin: "center", cursor: comp.locked ? "not-allowed" : "move",
+                boxShadow: buildBoxShadow(comp), filter: buildBlurFilter(comp),
+                // Editor-only convenience dimming — never affects the published page (see PageComponent.hidden).
+                ...(comp.hidden ? { opacity: 0.35, pointerEvents: "none" } : {}) }}
+              onMouseDown={(e) => onDragStart(e, comp.id, zone)}
+              onContextMenu={(e) => handleContextMenu(e, comp, zone)}
+              onMouseEnter={() => isBtn && setHoveredId(comp.id)}
+              onMouseLeave={() => isBtn && setHoveredId(null)}
+            >
+              {comp.locked && (
+                <div className="absolute -top-1.5 -left-1.5 z-10 h-4 w-4 rounded-full bg-amber-500 text-white flex items-center justify-center shadow pointer-events-none">
+                  <Lock className="h-2.5 w-2.5" />
+                </div>
+              )}
+              {(comp.type === "text" || comp.type === "header") && (
+                editingTextId === comp.id ? (
+                  <div
+                    contentEditable
+                    suppressContentEditableWarning
+                    className="w-full h-full flex items-center overflow-auto px-1 outline-none ring-2 ring-blue-500 cursor-text"
+                    style={{ fontSize: `calc(${comp.fontSize ?? 16}px * (${canvasElRefs.current[zone]?.clientWidth ?? canvasW} / ${canvasW}))`, fontFamily: comp.fontFamily ?? "system-ui, -apple-system, sans-serif", lineHeight: comp.lineHeight ?? 1.4, letterSpacing: `${comp.letterSpacing ?? 0}px`, color: comp.fontColor ?? "#111", textAlign: comp.textAlign ?? "left", whiteSpace: "pre-wrap", wordBreak: "break-word" }}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onClick={(e) => e.stopPropagation()}
+                    ref={(el) => {
+                      if (!el || el.dataset.focused) return;
+                      el.dataset.focused = "1";
+                      el.focus();
+                      const range = document.createRange();
+                      range.selectNodeContents(el);
+                      range.collapse(false);
+                      const sel = window.getSelection();
+                      sel?.removeAllRanges();
+                      sel?.addRange(range);
+                    }}
+                    onBlur={(e) => { updateComp(comp.id, { content: e.currentTarget.textContent ?? "" }, zone); setEditingTextId(null); }}
+                    onKeyDown={(e) => {
+                      e.stopPropagation();
+                      if (e.key === "Escape") { e.currentTarget.blur(); return; }
+                      if (e.key === "Enter" && !e.shiftKey && comp.type === "header") { e.preventDefault(); e.currentTarget.blur(); }
+                    }}
+                  >
+                    {comp.content}
+                  </div>
+                ) : (
+                  <div className="w-full h-full flex items-center overflow-hidden px-1"
+                    style={{ fontSize: `calc(${comp.fontSize ?? 16}px * (${canvasElRefs.current[zone]?.clientWidth ?? canvasW} / ${canvasW}))`, fontFamily: comp.fontFamily ?? "system-ui, -apple-system, sans-serif", fontWeight: comp.fontWeight ?? (comp.bold ? 700 : 400), fontStyle: comp.italic ? "italic" : "normal", lineHeight: comp.lineHeight ?? 1.4, letterSpacing: `${comp.letterSpacing ?? 0}px`, color: comp.fontColor ?? "#111", opacity: (comp.opacity ?? 100) / 100, textAlign: comp.textAlign ?? "left", textTransform: comp.textTransform ?? "none", textDecoration: textDecorationLine(comp), justifyContent: comp.textAlign === "center" ? "center" : comp.textAlign === "right" ? "flex-end" : "flex-start" }}
+                    onDoubleClick={(e) => { if (comp.locked) return; e.stopPropagation(); if (zone !== activeZoneRef.current) { activeZoneRef.current = zone; setActiveZone(zone); } setSelectedIds([comp.id]); setEditingTextId(comp.id); }}
+                  >
+                    {renderTextBody(comp)}
+                  </div>
+                )
+              )}
+              {isShape && (
+                <div className="w-full h-full" style={{ backgroundColor: comp.bgColor ?? "#3b82f6", borderRadius: shapeBorderRadius(comp), clipPath: shapeClipPath(comp.shapeType), opacity: (comp.opacity ?? 100) / 100 }} />
+              )}
+              {isCarousel && (
+                <div className="w-full h-full" style={{ backgroundColor: comp.bgColor === "transparent" ? "transparent" : (comp.bgColor ?? "transparent"), opacity: (comp.opacity ?? 100) / 100 }}>
+                  <CarouselBody comp={comp} editable />
+                </div>
+              )}
+              {isIcon && <IconGlyph comp={comp} />}
+              {comp.type === "location-input" && <LocationInputBody comp={comp} />}
+              {comp.type === "map" && <MapBody comp={comp} />}
+              {comp.type === "datetime-picker" && <DateTimePickerBody comp={comp} />}
+              {comp.type === "vehicle-selector" && <VehicleSelectorBody comp={comp} />}
+              {comp.type === "driver-badge" && <DriverBadgeBody comp={comp} />}
+              {comp.type === "fare-display" && <FareDisplayBody comp={comp} />}
+              {isHero && <HeroCarouselBody comp={comp} />}
+              {isCatCarousel && <CategoryCarouselBody comp={comp} canvasW={canvasW} />}
+              {comp.type === "image" && <ImageBody comp={comp} placeholderClass="text-gray-400" />}
+              {isBtn && btn && (
+                <div className="w-full h-full flex items-center justify-center overflow-hidden"
+                  style={{ borderRadius: comp.borderRadius ?? 8, backgroundColor: btn.bg, color: btn.color, border: btn.border, textDecoration: btn.isLink ? "underline" : "none", fontSize: `calc(${comp.fontSize ?? 16}px * (${canvasElRefs.current[zone]?.clientWidth ?? canvasW} / ${canvasW}))`, fontFamily: comp.fontFamily ?? "system-ui, -apple-system, sans-serif", fontWeight: comp.fontWeight ?? 600, transition: "background-color 0.15s, color 0.15s", pointerEvents: "none" }}>
+                  {comp.content ?? "Button"}
+                </div>
+              )}
+              {isSoleSelected && (
+                <>
+                  <FloatingToolbar
+                    mode="single"
+                    locked={comp.locked}
+                    hidden={comp.hidden}
+                    onDuplicate={() => duplicateComp(comp)}
+                    onDelete={() => deleteComp([comp.id], zone)}
+                    onToggleLock={() => toggleLocked([comp.id], zone)}
+                    onToggleHide={() => toggleHidden([comp.id], zone)}
+                    onBringForward={() => moveComponentOrder(comp.id, "forward")}
+                    onSendBackward={() => moveComponentOrder(comp.id, "backward")}
+                    onBringToFront={() => bringToFront(comp.id)}
+                    onSendToBack={() => sendToBack(comp.id)}
+                  />
+                  {(comp.type === "text" || comp.type === "header") && (
+                    <>
+                      <div
+                        className="absolute z-30 flex items-center gap-1 rounded-md border bg-white px-1 py-1 shadow-sm"
+                        style={{ bottom: -38, left: "50%", transform: "translateX(-50%)" }}
+                        onMouseDown={(e) => e.stopPropagation()}
+                      >
+                        <button
+                          type="button"
+                          title="Rotate"
+                          className="flex h-6 items-center gap-1 rounded px-1.5 text-[11px] hover:bg-muted hover:text-gray-900"
+                          onMouseDown={(e) => onRotateStart(e, comp.id, zone)}
+                        >
+                          <RotateCcw className="h-3.5 w-3.5" /> Rotate
+                        </button>
+                        <button
+                          type="button"
+                          title="Drag"
+                          className="flex h-6 items-center gap-1 rounded px-1.5 text-[11px] hover:bg-muted hover:text-gray-900"
+                          onMouseDown={(e) => onDragStart(e, comp.id, zone)}
+                        >
+                          <Move className="h-3.5 w-3.5" /> Drag
+                        </button>
+                      </div>
+                    </>
+                  )}
+                  {comp.type !== "text" && comp.type !== "header" && (
+                    <div className="absolute cursor-grab z-20 flex flex-col items-center" style={{ top: 0, left: "50%", transform: "translateX(-50%) translateY(-100%)", paddingBottom: 2 }} onMouseDown={(e) => onRotateStart(e, comp.id, zone)}>
+                      <div className="w-2.5 h-2.5 rounded-full bg-purple-500 border-2 border-white shadow" />
+                      <div style={{ width: 1, height: 8, backgroundColor: "#a855f7", opacity: 0.7 }} />
+                    </div>
+                  )}
+                  {/* Resize handles */}
+                  {isShape || isCarousel || isText ? (
+                    <>
+                      <div className="absolute -top-1.5 -left-1.5 w-3 h-3 bg-blue-500 rounded-full border-2 border-white shadow cursor-nwse-resize z-10" onMouseDown={(e) => onResizeStart(e, [comp.id], zone, "tl")} />
+                      <div className="absolute -top-1.5 -right-1.5 w-3 h-3 bg-blue-500 rounded-full border-2 border-white shadow cursor-nesw-resize z-10" onMouseDown={(e) => onResizeStart(e, [comp.id], zone, "tr")} />
+                      <div className="absolute -bottom-1.5 -left-1.5 w-3 h-3 bg-blue-500 rounded-full border-2 border-white shadow cursor-nesw-resize z-10" onMouseDown={(e) => onResizeStart(e, [comp.id], zone, "bl")} />
+                      <div className="absolute -bottom-1.5 -right-1.5 w-3 h-3 bg-blue-500 rounded-full border-2 border-white shadow cursor-nwse-resize z-10" onMouseDown={(e) => onResizeStart(e, [comp.id], zone, "br")} />
+                      {isText && (
+                        // Mid-edge (border) handles — "pull edges to change text box
+                        // width/height" independent of the corner handles above.
+                        <>
+                          <div className="absolute -top-1 left-1/2 -translate-x-1/2 w-4 h-2 bg-blue-500 rounded-sm border-2 border-white shadow cursor-ns-resize z-10" onMouseDown={(e) => onResizeStart(e, [comp.id], zone, "t")} />
+                          <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-4 h-2 bg-blue-500 rounded-sm border-2 border-white shadow cursor-ns-resize z-10" onMouseDown={(e) => onResizeStart(e, [comp.id], zone, "b")} />
+                          <div className="absolute -left-1 top-1/2 -translate-y-1/2 w-2 h-4 bg-blue-500 rounded-sm border-2 border-white shadow cursor-ew-resize z-10" onMouseDown={(e) => onResizeStart(e, [comp.id], zone, "l")} />
+                          <div className="absolute -right-1 top-1/2 -translate-y-1/2 w-2 h-4 bg-blue-500 rounded-sm border-2 border-white shadow cursor-ew-resize z-10" onMouseDown={(e) => onResizeStart(e, [comp.id], zone, "r")} />
+                        </>
+                      )}
+                    </>
+                  ) : (
+                    <div className="absolute bottom-0 right-0 w-3 h-3 bg-blue-500 cursor-se-resize z-10" style={{ borderRadius: "2px 0 2px 0" }} onMouseDown={(e) => onResizeStart(e, [comp.id], zone)} />
+                  )}
+                </>
+              )}
+            </div>
+          );
+        })}
+
+        {/* Multi/group selection bounding box + resize handles — only ever
+            meaningful for whichever zone is currently active (selection
+            never spans zones). */}
+        {isActiveZone && selectedComps.length > 1 && (() => {
+          const minX = Math.min(...selectedComps.map((c) => c.x));
+          const minY = Math.min(...selectedComps.map((c) => c.y));
+          const maxX = Math.max(...selectedComps.map((c) => c.x + c.width));
+          const maxY = Math.max(...selectedComps.map((c) => c.y + c.height));
+          const ids = selectedComps.map((c) => c.id);
+          return (
+            <div className="absolute border-2 border-blue-500 pointer-events-none z-20"
+              style={{ left: pct(minX, canvasW), top: pct(minY, zCanvasH), width: pct(maxX - minX, canvasW), height: pct(maxY - minY, zCanvasH) }}>
+              <div className="absolute -top-6 left-0 text-[10px] bg-blue-500 text-white px-1.5 py-0.5 rounded whitespace-nowrap">
+                {selectionGroupId ? (selectedComps[0].groupName || "Group") : `${ids.length} selected`}
+              </div>
+              <div className="pointer-events-auto">
+                <FloatingToolbar
+                  mode="multi"
+                  canGroup={!selectionGroupId}
+                  canUngroup={!!selectionGroupId}
+                  canDistribute={selectedComps.length >= 3}
+                  locked={selectedComps.every((c) => c.locked)}
+                  onDelete={() => deleteComp(ids)}
+                  onGroup={groupSelected}
+                  onUngroup={ungroupSelected}
+                  onAlign={alignSelected}
+                  onDistribute={distributeSelected}
+                  onToggleLock={() => setLockedForAll(ids, !selectedComps.every((c) => c.locked))}
                 />
-              </label>
-            )}
+              </div>
+              <div className="absolute -top-1.5 -left-1.5 w-3 h-3 bg-blue-500 rounded-full border-2 border-white shadow cursor-nwse-resize pointer-events-auto" onMouseDown={(e) => onResizeStart(e, ids, zone, "tl")} />
+              <div className="absolute -top-1.5 -right-1.5 w-3 h-3 bg-blue-500 rounded-full border-2 border-white shadow cursor-nesw-resize pointer-events-auto" onMouseDown={(e) => onResizeStart(e, ids, zone, "tr")} />
+              <div className="absolute -bottom-1.5 -left-1.5 w-3 h-3 bg-blue-500 rounded-full border-2 border-white shadow cursor-nesw-resize pointer-events-auto" onMouseDown={(e) => onResizeStart(e, ids, zone, "bl")} />
+              <div className="absolute -bottom-1.5 -right-1.5 w-3 h-3 bg-blue-500 rounded-full border-2 border-white shadow cursor-nwse-resize pointer-events-auto" onMouseDown={(e) => onResizeStart(e, ids, zone, "br")} />
+            </div>
+          );
+        })()}
+
+        {/* Rubber-band marquee */}
+        {isActiveZone && marquee && (marquee.w > 1 || marquee.h > 1) && (
+          <div className="absolute border border-blue-500 bg-blue-500/10 pointer-events-none z-30"
+            style={{ left: `${(marquee.x / canvasW) * 100}%`, top: `${(marquee.y / zCanvasH) * 100}%`, width: `${(marquee.w / canvasW) * 100}%`, height: `${(marquee.h / zCanvasH) * 100}%` }} />
+        )}
           </div>
-          <div className="pointer-events-none opacity-90">
-            <PreviewCanvas components={comps} canvasW={canvasW} canvasH={h} />
-          </div>
+        </div>
+
+        {/* Height drag handle — every visible zone gets one now (header/
+            footer used to only be resizable via a strip's numeric input;
+            this is a straightforward upgrade since all three sit in the
+            same interactive canvas already). */}
+        <div className="mx-auto mt-0 flex items-center justify-center h-4 cursor-ns-resize group" style={{ width: "100%", maxWidth: canvasW }} onMouseDown={(e) => onHeightDragStart(e, zone)}>
+          <div className="w-16 h-1 bg-gray-700 group-hover:bg-blue-400 rounded-full transition-colors" />
         </div>
       </div>
     );
@@ -4222,6 +4384,17 @@ export function PageEditor({ slug, label }: PageEditorProps) {
       </div>
     );
   }
+  // Non-collapsible variant — just a label + content, no toggle button, no
+  // way to hide it. Used by the Text panel (item 3): every option must be
+  // visible at once, with nothing behind a click-to-expand affordance.
+  function renderFlatSection(label: string, content: React.ReactNode) {
+    return (
+      <div className="border-t pt-1.5 mt-1.5 first:border-t-0 first:pt-0 first:mt-0">
+        <span className={`${sLabel} block mb-1.5`}>{label}</span>
+        <div className="flex flex-col gap-2">{content}</div>
+      </div>
+    );
+  }
 
   // Responsive section content — desktop/mobile are fully separate component
   // arrays already (no per-component override system), so this is a simple
@@ -4232,7 +4405,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
       <div className="flex items-center justify-between gap-2 text-xs">
         <span className="text-muted-foreground">Editing: <strong className="text-foreground capitalize">{view}</strong></span>
         <button type="button" onClick={() => { setSelectedIds([]); setView(other); }}
-          className="flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded border border-gray-200 hover:bg-muted">
+          className="flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded border border-gray-200 hover:bg-muted hover:text-gray-900">
           {other === "mobile" ? <Smartphone className="h-3 w-3" /> : <Monitor className="h-3 w-3" />} Check {other}
         </button>
       </div>
@@ -4269,13 +4442,13 @@ export function PageEditor({ slug, label }: PageEditorProps) {
         <div className="flex items-center gap-1">
           {[0, 90, 180, 270].map((deg) => (
             <button key={deg} type="button" onClick={() => updateComp(comp.id, { rotation: deg })}
-              className={`flex-1 h-6 text-[10px] rounded border ${Math.round(comp.rotation ?? 0) === deg ? "bg-black text-white border-black" : "border-gray-200 hover:bg-muted"}`}>
+              className={`flex-1 h-6 text-[10px] rounded border ${Math.round(comp.rotation ?? 0) === deg ? "bg-black text-white border-black" : "border-gray-200 hover:bg-muted hover:text-gray-900"}`}>
               {deg}°
             </button>
           ))}
         </div>
         <button type="button" onClick={() => setAspectLocked((v) => !v)}
-          className={`flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border w-fit ${aspectLocked ? "border-black bg-muted" : "border-gray-200 text-muted-foreground hover:bg-muted"}`}
+          className={`flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border w-fit ${aspectLocked ? "border-black bg-muted" : "border-gray-200 text-muted-foreground hover:bg-muted hover:text-gray-900"}`}
         >
           {aspectLocked ? <Lock className="h-2.5 w-2.5" /> : <Unlock className="h-2.5 w-2.5" />} Lock aspect ratio while resizing
         </button>
@@ -4335,51 +4508,6 @@ export function PageEditor({ slug, label }: PageEditorProps) {
 
   // Categorized icon grid, reused for both "add a new icon" and "change the
   // selected icon" — clicking an entry calls onPick with its registry id.
-  // Small representative preview for each Text Template's row in the picker —
-  // mimics the real hierarchy (size/weight/italic) at thumbnail scale; not the
-  // actual inserted content, just a visual hint of what each template looks like.
-  function renderTextTemplatePreview(id: TextTemplateId) {
-    switch (id) {
-      case "hero-title":
-        return (
-          <>
-            <span className="text-[11px] font-extrabold leading-none text-gray-900">Headline</span>
-            <span className="text-[7px] text-gray-500 leading-none">Subtitle text</span>
-          </>
-        );
-      case "section-header":
-        return (
-          <div className="w-full flex flex-col items-start">
-            <span className="text-[9px] font-bold leading-none text-gray-900">Section title</span>
-            <span className="text-[6px] text-gray-500 leading-none mt-0.5">Short description</span>
-          </div>
-        );
-      case "card-title-desc":
-        return (
-          <div className="w-full flex flex-col items-start">
-            <span className="text-[8px] font-bold leading-none text-gray-900">Card title</span>
-            <span className="text-[6px] text-gray-500 leading-none mt-0.5">Description text here</span>
-          </div>
-        );
-      case "testimonial":
-        return (
-          <>
-            <span className="text-[7px] italic leading-none text-gray-700 text-center">"Great product"</span>
-            <span className="text-[6px] font-bold leading-none text-gray-900 mt-0.5">Jordan Lee</span>
-            <span className="text-[5px] text-gray-400 leading-none">Head of Ops</span>
-          </>
-        );
-      case "pricing-block":
-        return (
-          <>
-            <span className="text-[7px] font-bold leading-none text-gray-900">Pro Plan</span>
-            <span className="text-[11px] font-extrabold leading-none text-gray-900">$29/mo</span>
-            <span className="text-[5px] text-gray-500 leading-none">• Feature one</span>
-          </>
-        );
-    }
-  }
-
   function renderIconPicker(onPick: (iconId: string) => void, activeId?: string) {
     return (
       <div className="max-h-56 overflow-y-auto flex flex-col gap-2 pr-0.5">
@@ -4458,12 +4586,12 @@ export function PageEditor({ slug, label }: PageEditorProps) {
             <div className="fixed inset-0 z-40" onClick={() => setConnectMenuFolderId(null)} />
             <div className="absolute left-0 right-0 top-full mt-1 z-50 rounded-md border bg-white shadow-lg p-1.5 flex flex-col gap-0.5 text-gray-900">
               <button type="button" onClick={() => choose(null)}
-                className={`text-left text-xs px-2 py-1.5 rounded hover:bg-muted ${!folder.subdomain ? "bg-muted font-medium" : ""}`}>
+                className={`text-left text-xs px-2 py-1.5 rounded hover:bg-muted hover:text-gray-900 ${!folder.subdomain ? "bg-muted font-medium" : ""}`}>
                 Domain (iiinbox.com)
               </button>
               {connectableSubdomains().map((s) => (
                 <button key={s.value} type="button" onClick={() => choose(s.value)}
-                  className={`text-left text-xs px-2 py-1.5 rounded hover:bg-muted ${folder.subdomain === s.value ? "bg-muted font-medium" : ""}`}>
+                  className={`text-left text-xs px-2 py-1.5 rounded hover:bg-muted hover:text-gray-900 ${folder.subdomain === s.value ? "bg-muted font-medium" : ""}`}>
                   {s.label}
                 </button>
               ))}
@@ -4541,7 +4669,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                           {/* Zone row (Header/Template/Footer) */}
                           <div className="flex items-center gap-1 px-1">
                             <button type="button" onClick={() => setExpandedZones((p) => ({ ...p, [zone]: !p[zone] }))}
-                              className="p-0.5 rounded hover:bg-muted shrink-0">
+                              className="p-0.5 rounded hover:bg-muted hover:text-gray-900 shrink-0">
                               <ChevronDown className={`h-3 w-3 text-muted-foreground transition-transform ${zoneIsExpanded ? "" : "-rotate-90"}`} />
                             </button>
                             <span className="text-[10px] uppercase tracking-wide font-semibold text-muted-foreground flex-1 truncate">
@@ -4550,11 +4678,11 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                             {zone === "header" && (
                               <>
                                 <button type="button" title="Header position/size/colour/scroll settings" onClick={() => setHeaderSettingsOpen((v) => !v)}
-                                  className={`p-1 rounded hover:bg-muted shrink-0 ${headerSettingsOpen ? "bg-muted text-foreground" : "text-muted-foreground"}`}>
+                                  className={`p-1 rounded hover:bg-muted hover:text-gray-900 shrink-0 ${headerSettingsOpen ? "bg-muted text-foreground" : "text-muted-foreground"}`}>
                                   <Settings className="h-3.5 w-3.5" />
                                 </button>
                                 <button type="button" title="Remove this header" onClick={() => { const id = (view === "desktop" ? activeHeaderId.desktop : activeHeaderId.mobile); if (id) removeBlock("header", id); }}
-                                  className="p-1 rounded hover:bg-muted shrink-0 text-muted-foreground hover:text-destructive">
+                                  className="p-1 rounded hover:bg-muted hover:text-gray-900 shrink-0 text-muted-foreground hover:text-destructive">
                                   <X className="h-3.5 w-3.5" />
                                 </button>
                               </>
@@ -4562,47 +4690,47 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                             {zone === "footer" && (
                               <>
                                 <button type="button" title="Footer position/size/colour/scroll settings" onClick={() => setFooterSettingsOpen((v) => !v)}
-                                  className={`p-1 rounded hover:bg-muted shrink-0 ${footerSettingsOpen ? "bg-muted text-foreground" : "text-muted-foreground"}`}>
+                                  className={`p-1 rounded hover:bg-muted hover:text-gray-900 shrink-0 ${footerSettingsOpen ? "bg-muted text-foreground" : "text-muted-foreground"}`}>
                                   <Settings className="h-3.5 w-3.5" />
                                 </button>
                                 <button type="button" title="Remove this footer" onClick={() => { const id = (view === "desktop" ? activeFooterId.desktop : activeFooterId.mobile); if (id) removeBlock("footer", id); }}
-                                  className="p-1 rounded hover:bg-muted shrink-0 text-muted-foreground hover:text-destructive">
+                                  className="p-1 rounded hover:bg-muted hover:text-gray-900 shrink-0 text-muted-foreground hover:text-destructive">
                                   <X className="h-3.5 w-3.5" />
                                 </button>
                               </>
                             )}
                             <div className="relative shrink-0">
-                              <button type="button" title={`Add to ${zoneLabel}`} onClick={() => setZoneAddMenuOpen((z) => (z === zone ? null : zone))} className="p-1 rounded hover:bg-muted">
+                              <button type="button" title={`Add to ${zoneLabel}`} onClick={() => setZoneAddMenuOpen((z) => (z === zone ? null : zone))} className="p-1 rounded hover:bg-muted hover:text-gray-900">
                                 <Plus className="h-3.5 w-3.5" />
                               </button>
                               {zoneAddMenuOpen === zone && (
                                 <>
                                   <div className="fixed inset-0 z-40" onClick={() => setZoneAddMenuOpen(null)} />
                                   <div className="absolute right-0 top-full mt-1 z-50 w-48 max-h-80 overflow-y-auto rounded-md border bg-white shadow-lg p-1.5 flex flex-col gap-0.5">
-                                    <button type="button" onClick={() => { addComponent("text", undefined, zone); setZoneAddMenuOpen(null); }} className="flex items-center gap-1.5 text-xs px-2 py-1 rounded hover:bg-muted text-left"><Type className="h-3 w-3" /> Text</button>
-                                    <button type="button" onClick={() => { addShape("rectangle", zone); setZoneAddMenuOpen(null); }} className="flex items-center gap-1.5 text-xs px-2 py-1 rounded hover:bg-muted text-left"><Square className="h-3 w-3" /> Shape</button>
-                                    <button type="button" onClick={() => { addImage("single", zone); setZoneAddMenuOpen(null); }} className="flex items-center gap-1.5 text-xs px-2 py-1 rounded hover:bg-muted text-left"><ImageIcon className="h-3 w-3" /> Image</button>
-                                    <button type="button" onClick={() => { addComponent("button", BUTTON_PRESETS[0].patch, zone); setZoneAddMenuOpen(null); }} className="flex items-center gap-1.5 text-xs px-2 py-1 rounded hover:bg-muted text-left"><ComponentIcon className="h-3 w-3" /> Button</button>
-                                    <button type="button" onClick={() => { addCarousel(zone); setZoneAddMenuOpen(null); }} className="flex items-center gap-1.5 text-xs px-2 py-1 rounded hover:bg-muted text-left"><GalleryHorizontal className="h-3 w-3" /> Carousel</button>
-                                    <button type="button" onClick={() => { addHeroCarousel(zone); setZoneAddMenuOpen(null); }} className="flex items-center gap-1.5 text-xs px-2 py-1 rounded hover:bg-muted text-left"><GalleryHorizontalEnd className="h-3 w-3" /> Hero Carousel</button>
-                                    <button type="button" onClick={() => { addCategoryCarousel(zone); setZoneAddMenuOpen(null); }} className="flex items-center gap-1.5 text-xs px-2 py-1 rounded hover:bg-muted text-left"><LayoutGrid className="h-3 w-3" /> Category Carousel</button>
-                                    <button type="button" onClick={() => { addIcon("cart", zone); setZoneAddMenuOpen(null); }} className="flex items-center gap-1.5 text-xs px-2 py-1 rounded hover:bg-muted text-left"><Square className="h-3 w-3" /> Icon</button>
+                                    <button type="button" onClick={() => { addComponent("text", undefined, zone); setZoneAddMenuOpen(null); }} className="flex items-center gap-1.5 text-xs px-2 py-1 rounded hover:bg-muted hover:text-gray-900 text-left"><Type className="h-3 w-3" /> Text</button>
+                                    <button type="button" onClick={() => { addShape("rectangle", zone); setZoneAddMenuOpen(null); }} className="flex items-center gap-1.5 text-xs px-2 py-1 rounded hover:bg-muted hover:text-gray-900 text-left"><Square className="h-3 w-3" /> Shape</button>
+                                    <button type="button" onClick={() => { addImage("single", zone); setZoneAddMenuOpen(null); }} className="flex items-center gap-1.5 text-xs px-2 py-1 rounded hover:bg-muted hover:text-gray-900 text-left"><ImageIcon className="h-3 w-3" /> Image</button>
+                                    <button type="button" onClick={() => { addComponent("button", BUTTON_PRESETS[0].patch, zone); setZoneAddMenuOpen(null); }} className="flex items-center gap-1.5 text-xs px-2 py-1 rounded hover:bg-muted hover:text-gray-900 text-left"><ComponentIcon className="h-3 w-3" /> Button</button>
+                                    <button type="button" onClick={() => { addCarousel(zone); setZoneAddMenuOpen(null); }} className="flex items-center gap-1.5 text-xs px-2 py-1 rounded hover:bg-muted hover:text-gray-900 text-left"><GalleryHorizontal className="h-3 w-3" /> Carousel</button>
+                                    <button type="button" onClick={() => { addHeroCarousel(zone); setZoneAddMenuOpen(null); }} className="flex items-center gap-1.5 text-xs px-2 py-1 rounded hover:bg-muted hover:text-gray-900 text-left"><GalleryHorizontalEnd className="h-3 w-3" /> Hero Carousel</button>
+                                    <button type="button" onClick={() => { addCategoryCarousel(zone); setZoneAddMenuOpen(null); }} className="flex items-center gap-1.5 text-xs px-2 py-1 rounded hover:bg-muted hover:text-gray-900 text-left"><LayoutGrid className="h-3 w-3" /> Category Carousel</button>
+                                    <button type="button" onClick={() => { addIcon("cart", zone); setZoneAddMenuOpen(null); }} className="flex items-center gap-1.5 text-xs px-2 py-1 rounded hover:bg-muted hover:text-gray-900 text-left"><Square className="h-3 w-3" /> Icon</button>
                                     <div className="h-px bg-border my-0.5" />
                                     <p className="text-[9px] uppercase tracking-wide text-muted-foreground px-2">Widgets</p>
                                     {MARKET_WIDGETS.map((w) => (
-                                      <button key={w.id} type="button" onClick={() => { addMarketWidget(w.id, zone); setZoneAddMenuOpen(null); }} className="flex items-center gap-1.5 text-xs px-2 py-1 rounded hover:bg-muted text-left">
+                                      <button key={w.id} type="button" onClick={() => { addMarketWidget(w.id, zone); setZoneAddMenuOpen(null); }} className="flex items-center gap-1.5 text-xs px-2 py-1 rounded hover:bg-muted hover:text-gray-900 text-left">
                                         <w.icon className="h-3 w-3" /> {w.label}
                                       </button>
                                     ))}
                                     <div className="h-px bg-border my-0.5" />
                                     <p className="text-[9px] uppercase tracking-wide text-muted-foreground px-2">Ride-hailing</p>
-                                    <button type="button" onClick={() => { addLocationInput(zone); setZoneAddMenuOpen(null); }} className="flex items-center gap-1.5 text-xs px-2 py-1 rounded hover:bg-muted text-left"><MapPin className="h-3 w-3" /> Location Input</button>
-                                    <button type="button" onClick={() => { addMap(zone); setZoneAddMenuOpen(null); }} className="flex items-center gap-1.5 text-xs px-2 py-1 rounded hover:bg-muted text-left"><MapIcon className="h-3 w-3" /> Map</button>
-                                    <button type="button" onClick={() => { addDateTimePicker(zone); setZoneAddMenuOpen(null); }} className="flex items-center gap-1.5 text-xs px-2 py-1 rounded hover:bg-muted text-left"><CalendarClock className="h-3 w-3" /> Date & Time Picker</button>
-                                    <button type="button" onClick={() => { addVehicleSelector(zone); setZoneAddMenuOpen(null); }} className="flex items-center gap-1.5 text-xs px-2 py-1 rounded hover:bg-muted text-left"><CarFront className="h-3 w-3" /> Vehicle Selector</button>
-                                    <button type="button" onClick={() => { addDriverBadge(zone); setZoneAddMenuOpen(null); }} className="flex items-center gap-1.5 text-xs px-2 py-1 rounded hover:bg-muted text-left"><BadgeCheck className="h-3 w-3" /> Driver Badge</button>
-                                    <button type="button" onClick={() => { addFareDisplay(zone); setZoneAddMenuOpen(null); }} className="flex items-center gap-1.5 text-xs px-2 py-1 rounded hover:bg-muted text-left"><Receipt className="h-3 w-3" /> Fare Display</button>
-                                    <button type="button" onClick={() => { addComponent("button", BUTTON_PRESETS.find((p) => p.label === "Book Now")?.patch ?? BUTTON_PRESETS[0].patch, zone); setZoneAddMenuOpen(null); }} className="flex items-center gap-1.5 text-xs px-2 py-1 rounded hover:bg-muted text-left"><ComponentIcon className="h-3 w-3" /> Book Now Button</button>
+                                    <button type="button" onClick={() => { addLocationInput(zone); setZoneAddMenuOpen(null); }} className="flex items-center gap-1.5 text-xs px-2 py-1 rounded hover:bg-muted hover:text-gray-900 text-left"><MapPin className="h-3 w-3" /> Location Input</button>
+                                    <button type="button" onClick={() => { addMap(zone); setZoneAddMenuOpen(null); }} className="flex items-center gap-1.5 text-xs px-2 py-1 rounded hover:bg-muted hover:text-gray-900 text-left"><MapIcon className="h-3 w-3" /> Map</button>
+                                    <button type="button" onClick={() => { addDateTimePicker(zone); setZoneAddMenuOpen(null); }} className="flex items-center gap-1.5 text-xs px-2 py-1 rounded hover:bg-muted hover:text-gray-900 text-left"><CalendarClock className="h-3 w-3" /> Date & Time Picker</button>
+                                    <button type="button" onClick={() => { addVehicleSelector(zone); setZoneAddMenuOpen(null); }} className="flex items-center gap-1.5 text-xs px-2 py-1 rounded hover:bg-muted hover:text-gray-900 text-left"><CarFront className="h-3 w-3" /> Vehicle Selector</button>
+                                    <button type="button" onClick={() => { addDriverBadge(zone); setZoneAddMenuOpen(null); }} className="flex items-center gap-1.5 text-xs px-2 py-1 rounded hover:bg-muted hover:text-gray-900 text-left"><BadgeCheck className="h-3 w-3" /> Driver Badge</button>
+                                    <button type="button" onClick={() => { addFareDisplay(zone); setZoneAddMenuOpen(null); }} className="flex items-center gap-1.5 text-xs px-2 py-1 rounded hover:bg-muted hover:text-gray-900 text-left"><Receipt className="h-3 w-3" /> Fare Display</button>
+                                    <button type="button" onClick={() => { addComponent("button", BUTTON_PRESETS.find((p) => p.label === "Book Now")?.patch ?? BUTTON_PRESETS[0].patch, zone); setZoneAddMenuOpen(null); }} className="flex items-center gap-1.5 text-xs px-2 py-1 rounded hover:bg-muted hover:text-gray-900 text-left"><ComponentIcon className="h-3 w-3" /> Book Now Button</button>
                                   </div>
                                 </>
                               )}
@@ -4663,14 +4791,14 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                                           setSelectedIds([comp.id]);
                                         }}
                                         className={`group flex-1 min-w-0 flex items-center gap-1 rounded-md border px-1.5 py-1 text-xs cursor-pointer transition-colors bg-background ${
-                                          isSelected ? "bg-blue-50 border-blue-400" : "border-transparent hover:bg-muted"
+                                          isSelected ? "bg-blue-50 border-blue-400" : "border-transparent hover:bg-muted hover:text-gray-900"
                                         } ${dragOverLayerId === comp.id && dragLayerId !== comp.id ? "border-dashed border-blue-500" : ""}`}
                                       >
                                         <GripVertical className="h-3 w-3 text-muted-foreground shrink-0 cursor-grab" />
                                         {isContainer && (
                                           <button type="button" title={containerExpanded ? "Collapse" : "Expand"}
                                             onClick={(e) => { e.stopPropagation(); setExpandedContainers((p) => ({ ...p, [comp.id]: !containerExpanded })); }}
-                                            className="p-0.5 rounded hover:bg-background shrink-0">
+                                            className="p-0.5 rounded hover:bg-background hover:text-gray-900 shrink-0">
                                             <ChevronRight className={`h-3 w-3 transition-transform ${containerExpanded ? "rotate-90" : ""}`} />
                                           </button>
                                         )}
@@ -4694,22 +4822,22 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                                         <div className="relative shrink-0">
                                           <button type="button" title="More options"
                                             onClick={(e) => { e.stopPropagation(); setOpenRowMenu((id) => (id === comp.id ? null : comp.id)); }}
-                                            className={`flex h-5 w-5 items-center justify-center rounded hover:bg-background ${openRowMenu === comp.id ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}>
+                                            className={`flex h-5 w-5 items-center justify-center rounded hover:bg-background hover:text-gray-900 ${openRowMenu === comp.id ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}>
                                             <MoreVertical className="h-3 w-3" />
                                           </button>
                                           {openRowMenu === comp.id && (
                                             <>
                                               <div className="fixed inset-0 z-40" onClick={(e) => { e.stopPropagation(); setOpenRowMenu(null); }} />
                                               <div className="absolute right-0 top-full mt-1 z-50 min-w-[150px] rounded-md border bg-white shadow-lg py-1 text-xs text-gray-900" onClick={(e) => e.stopPropagation()}>
-                                                <button type="button" onClick={() => { setActiveZone(zone); duplicateInPlace(comp, zone); setOpenRowMenu(null); }} className="w-full flex items-center gap-2 text-left px-3 py-1.5 hover:bg-muted"><Copy className="h-3 w-3" /> Duplicate</button>
-                                                <button type="button" onClick={() => { setActiveZone(zone); toggleHidden([comp.id], zone); setOpenRowMenu(null); }} className="w-full flex items-center gap-2 text-left px-3 py-1.5 hover:bg-muted">
+                                                <button type="button" onClick={() => { setActiveZone(zone); duplicateInPlace(comp, zone); setOpenRowMenu(null); }} className="w-full flex items-center gap-2 text-left px-3 py-1.5 hover:bg-muted hover:text-gray-900"><Copy className="h-3 w-3" /> Duplicate</button>
+                                                <button type="button" onClick={() => { setActiveZone(zone); toggleHidden([comp.id], zone); setOpenRowMenu(null); }} className="w-full flex items-center gap-2 text-left px-3 py-1.5 hover:bg-muted hover:text-gray-900">
                                                   {comp.hidden ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />} {comp.hidden ? "Show" : "Hide"}
                                                 </button>
-                                                <button type="button" onClick={() => { setActiveZone(zone); toggleLocked([comp.id], zone); setOpenRowMenu(null); }} className="w-full flex items-center gap-2 text-left px-3 py-1.5 hover:bg-muted">
+                                                <button type="button" onClick={() => { setActiveZone(zone); toggleLocked([comp.id], zone); setOpenRowMenu(null); }} className="w-full flex items-center gap-2 text-left px-3 py-1.5 hover:bg-muted hover:text-gray-900">
                                                   {comp.locked ? <Unlock className="h-3 w-3" /> : <Lock className="h-3 w-3" />} {comp.locked ? "Unlock" : "Lock"}
                                                 </button>
-                                                <button type="button" onClick={() => { setActiveZone(zone); setRenameInput(comp.name?.trim() || componentTypeLabel(comp.type)); setRenamingId(comp.id); setOpenRowMenu(null); }} className="w-full flex items-center gap-2 text-left px-3 py-1.5 hover:bg-muted"><Pencil className="h-3 w-3" /> Rename</button>
-                                                <button type="button" disabled={comp.locked} onClick={() => { setActiveZone(zone); deleteComp([comp.id], zone); setOpenRowMenu(null); }} className="w-full flex items-center gap-2 text-left px-3 py-1.5 hover:bg-muted text-destructive disabled:opacity-40 disabled:cursor-not-allowed"><Trash2 className="h-3 w-3" /> Delete</button>
+                                                <button type="button" onClick={() => { setActiveZone(zone); setRenameInput(comp.name?.trim() || componentTypeLabel(comp.type)); setRenamingId(comp.id); setOpenRowMenu(null); }} className="w-full flex items-center gap-2 text-left px-3 py-1.5 hover:bg-muted hover:text-gray-900"><Pencil className="h-3 w-3" /> Rename</button>
+                                                <button type="button" disabled={comp.locked} onClick={() => { setActiveZone(zone); deleteComp([comp.id], zone); setOpenRowMenu(null); }} className="w-full flex items-center gap-2 text-left px-3 py-1.5 hover:bg-muted hover:text-gray-900 text-destructive disabled:opacity-40 disabled:cursor-not-allowed"><Trash2 className="h-3 w-3" /> Delete</button>
                                               </div>
                                             </>
                                           )}
@@ -4726,19 +4854,19 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                                             <div key={item.id} className="flex items-stretch">
                                               <div className="w-3 shrink-0" />
                                               <div className="w-3 shrink-0 flex justify-center"><div className="w-px bg-muted-foreground/20 my-1" /></div>
-                                              <div className="flex-1 min-w-0 flex items-center gap-1 rounded-md px-1.5 py-1 text-xs hover:bg-muted group">
+                                              <div className="flex-1 min-w-0 flex items-center gap-1 rounded-md px-1.5 py-1 text-xs hover:bg-muted hover:text-gray-900 group">
                                                 <span className="truncate flex-1 min-w-0 text-muted-foreground">{item.label}</span>
                                                 <div className="relative shrink-0">
                                                   <button type="button" title="More options" onClick={() => setOpenRowMenu((id) => (id === childKey ? null : childKey))}
-                                                    className={`flex h-5 w-5 items-center justify-center rounded hover:bg-background ${openRowMenu === childKey ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}>
+                                                    className={`flex h-5 w-5 items-center justify-center rounded hover:bg-background hover:text-gray-900 ${openRowMenu === childKey ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}>
                                                     <MoreVertical className="h-3 w-3" />
                                                   </button>
                                                   {openRowMenu === childKey && (
                                                     <>
                                                       <div className="fixed inset-0 z-40" onClick={() => setOpenRowMenu(null)} />
                                                       <div className="absolute right-0 top-full mt-1 z-50 min-w-[130px] rounded-md border bg-white shadow-lg py-1 text-xs">
-                                                        <button type="button" onClick={() => { setActiveZone(zone); duplicateChildItem(comp, item.id, zone); setOpenRowMenu(null); }} className="w-full flex items-center gap-2 text-left px-3 py-1.5 hover:bg-muted"><Copy className="h-3 w-3" /> Duplicate</button>
-                                                        <button type="button" onClick={() => { setActiveZone(zone); removeChildItem(comp, item.id, zone); setOpenRowMenu(null); }} className="w-full flex items-center gap-2 text-left px-3 py-1.5 hover:bg-muted text-destructive"><Trash2 className="h-3 w-3" /> Delete</button>
+                                                        <button type="button" onClick={() => { setActiveZone(zone); duplicateChildItem(comp, item.id, zone); setOpenRowMenu(null); }} className="w-full flex items-center gap-2 text-left px-3 py-1.5 hover:bg-muted hover:text-gray-900"><Copy className="h-3 w-3" /> Duplicate</button>
+                                                        <button type="button" onClick={() => { setActiveZone(zone); removeChildItem(comp, item.id, zone); setOpenRowMenu(null); }} className="w-full flex items-center gap-2 text-left px-3 py-1.5 hover:bg-muted hover:text-gray-900 text-destructive"><Trash2 className="h-3 w-3" /> Delete</button>
                                                       </div>
                                                     </>
                                                   )}
@@ -4914,8 +5042,6 @@ export function PageEditor({ slug, label }: PageEditorProps) {
               same 300ms before re-measuring the canvas. */}
           <div
             className={`shrink-0 border-r border-gray-700 bg-gray-800 flex flex-col overflow-hidden transition-[width] duration-300 ease-in-out ${leftSidebarVisible ? "w-full lg:w-60" : "w-7"}`}
-            onMouseEnter={() => setLeftHoverReveal(true)}
-            onMouseLeave={() => setLeftHoverReveal(false)}
           >
             {!leftSidebarVisible ? (
               <button type="button" title="Show panel" onClick={() => setLeftSidebarCollapsed(false)}
@@ -4967,7 +5093,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                             const id = await projectsTree.createProject(`Project ${projectsTree.projects.length + 1}`);
                             if (id) projectsTree.startEditProject(id, `Project ${projectsTree.projects.length + 1}`);
                           }}
-                          className="p-1 rounded hover:bg-muted disabled:opacity-50"
+                          className="p-1 rounded disabled:opacity-50"
                         >
                           <FolderPlus className="h-3.5 w-3.5" />
                         </button>
@@ -5026,7 +5152,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                               title="Publish everything in this project — every folder, live instantly"
                               disabled={projectsTree.publishingProjectId === project.id}
                               onClick={() => handlePublishProject(project.id)}
-                              className="p-1 rounded hover:bg-background text-muted-foreground shrink-0 disabled:opacity-50"
+                              className="p-1 rounded text-muted-foreground shrink-0 disabled:opacity-50"
                             >
                               <Rocket className="h-3 w-3" />
                             </button>
@@ -5034,23 +5160,23 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                               type="button"
                               title="New folder in this project"
                               onClick={() => { setNewFolderProjectId(project.id); setNewFolderNameInput("New Folder"); }}
-                              className="p-1 rounded hover:bg-background text-muted-foreground shrink-0"
+                              className="p-1 rounded text-muted-foreground shrink-0"
                             >
                               <Plus className="h-3 w-3" />
                             </button>
                             <div className="relative shrink-0">
                               <button type="button" title="More options" onClick={() => setOpenTreeMenu((id) => (id === project.id ? null : project.id))}
-                                className={`p-1 rounded hover:bg-background text-muted-foreground ${openTreeMenu === project.id ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}>
+                                className={`p-1 rounded text-muted-foreground ${openTreeMenu === project.id ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}>
                                 <MoreVertical className="h-3 w-3" />
                               </button>
                               {openTreeMenu === project.id && (
                                 <>
                                   <div className="fixed inset-0 z-40" onClick={() => setOpenTreeMenu(null)} />
                                   <div className="absolute right-0 top-full mt-1 z-50 min-w-[150px] rounded-md border bg-white shadow-lg py-1 text-xs text-gray-900">
-                                    <button type="button" onClick={() => { projectsTree.startEditProject(project.id, project.name); setOpenTreeMenu(null); }} className="w-full flex items-center gap-2 text-left px-3 py-1.5 hover:bg-muted"><Pencil className="h-3 w-3" /> Edit name</button>
-                                    <button type="button" onClick={() => { projectsTree.toggleProjectCollapsed(project.id); setOpenTreeMenu(null); }} className="w-full flex items-center gap-2 text-left px-3 py-1.5 hover:bg-muted"><ChevronDown className="h-3 w-3" /> {isCollapsed ? "Expand" : "Minimize"}</button>
-                                    <button type="button" onClick={() => { projectsTree.duplicateProject(project.id); setOpenTreeMenu(null); }} className="w-full flex items-center gap-2 text-left px-3 py-1.5 hover:bg-muted"><Copy className="h-3 w-3" /> Duplicate project</button>
-                                    <button type="button" onClick={() => { setConfirmDeleteProjectId(project.id); setOpenTreeMenu(null); }} className="w-full flex items-center gap-2 text-left px-3 py-1.5 hover:bg-muted text-destructive"><Trash2 className="h-3 w-3" /> Delete</button>
+                                    <button type="button" onClick={() => { projectsTree.startEditProject(project.id, project.name); setOpenTreeMenu(null); }} className="w-full flex items-center gap-2 text-left px-3 py-1.5"><Pencil className="h-3 w-3" /> Edit name</button>
+                                    <button type="button" onClick={() => { projectsTree.toggleProjectCollapsed(project.id); setOpenTreeMenu(null); }} className="w-full flex items-center gap-2 text-left px-3 py-1.5"><ChevronDown className="h-3 w-3" /> {isCollapsed ? "Expand" : "Minimize"}</button>
+                                    <button type="button" onClick={() => { projectsTree.duplicateProject(project.id); setOpenTreeMenu(null); }} className="w-full flex items-center gap-2 text-left px-3 py-1.5"><Copy className="h-3 w-3" /> Duplicate project</button>
+                                    <button type="button" onClick={() => { setConfirmDeleteProjectId(project.id); setOpenTreeMenu(null); }} className="w-full flex items-center gap-2 text-left px-3 py-1.5 text-destructive"><Trash2 className="h-3 w-3" /> Delete</button>
                                   </div>
                                 </>
                               )}
@@ -5097,7 +5223,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                                 }}
                                 className={`mb-1.5 ml-1 rounded ${isDropTarget ? "ring-2 ring-blue-400" : ""}`}
                               >
-                                <div className="flex items-center gap-1 px-1 py-1 rounded hover:bg-muted group">
+                                <div className="flex items-center gap-1 px-1 py-1 rounded group">
                                   <FolderIcon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                                   {projectsTree.editingFolderId === folder.id ? (
                                     <input
@@ -5120,7 +5246,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                                       {folder.subdomain && <span className="text-[9px] text-muted-foreground shrink-0">{folder.subdomain}</span>}
                                     </button>
                                   )}
-                                  <button type="button" title="Preview this folder's live root page" onClick={() => openFolderPreview(folder)} className="p-1 rounded hover:bg-background text-muted-foreground shrink-0">
+                                  <button type="button" title="Preview this folder's live root page" onClick={() => openFolderPreview(folder)} className="p-1 rounded text-muted-foreground shrink-0">
                                     <Eye className="h-3 w-3" />
                                   </button>
                                   <button
@@ -5128,7 +5254,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                                     title="Publish every page in this folder — live instantly"
                                     disabled={projectsTree.publishingFolderId === folder.id}
                                     onClick={() => handlePublishFolder(folder)}
-                                    className="p-1 rounded hover:bg-background text-muted-foreground shrink-0 disabled:opacity-50"
+                                    className="p-1 rounded text-muted-foreground shrink-0 disabled:opacity-50"
                                   >
                                     <Rocket className="h-3 w-3" />
                                   </button>
@@ -5136,37 +5262,46 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                                     type="button"
                                     title="New page in this folder"
                                     onClick={() => { setNewPageFolderId(folder.id); setNewPageOpen(true); }}
-                                    className="p-1 rounded hover:bg-background text-muted-foreground shrink-0"
+                                    className="p-1 rounded text-muted-foreground shrink-0"
                                   >
                                     <Plus className="h-3 w-3" />
                                   </button>
                                   <div className="relative shrink-0">
                                     <button type="button" title="More options" onClick={() => setOpenTreeMenu((id) => (id === folder.id ? null : folder.id))}
-                                      className={`p-1 rounded hover:bg-background text-muted-foreground ${openTreeMenu === folder.id ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}>
+                                      className={`p-1 rounded text-muted-foreground ${openTreeMenu === folder.id ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}>
                                       <MoreVertical className="h-3 w-3" />
                                     </button>
                                     {openTreeMenu === folder.id && (
                                       <>
                                         <div className="fixed inset-0 z-40" onClick={() => setOpenTreeMenu(null)} />
                                         <div className="absolute right-0 top-full mt-1 z-50 min-w-[150px] rounded-md border bg-white shadow-lg py-1 text-xs text-gray-900">
-                                          <button type="button" onClick={() => { projectsTree.startEditFolder(folder.id, folder.name); setOpenTreeMenu(null); }} className="w-full flex items-center gap-2 text-left px-3 py-1.5 hover:bg-muted"><Pencil className="h-3 w-3" /> Edit name</button>
-                                          <button type="button" onClick={() => { projectsTree.toggleFolderCollapsed(folder.id); setOpenTreeMenu(null); }} className="w-full flex items-center gap-2 text-left px-3 py-1.5 hover:bg-muted"><ChevronDown className="h-3 w-3" /> {folderCollapsed ? "Expand" : "Minimize"}</button>
-                                          {!folder.rootPageId && (
-                                            <button type="button" onClick={() => { setConfirmDeleteFolderId(folder.id); setOpenTreeMenu(null); }} className="w-full flex items-center gap-2 text-left px-3 py-1.5 hover:bg-muted text-destructive"><Trash2 className="h-3 w-3" /> Delete</button>
-                                          )}
+                                          <button type="button" onClick={() => { projectsTree.startEditFolder(folder.id, folder.name); setOpenTreeMenu(null); }} className="w-full flex items-center gap-2 text-left px-3 py-1.5"><Pencil className="h-3 w-3" /> Edit name</button>
+                                          <button type="button" onClick={() => { projectsTree.toggleFolderCollapsed(folder.id); setOpenTreeMenu(null); }} className="w-full flex items-center gap-2 text-left px-3 py-1.5"><ChevronDown className="h-3 w-3" /> {folderCollapsed ? "Expand" : "Minimize"}</button>
+                                          <button type="button" onClick={() => { setConfirmDeleteFolderId(folder.id); setOpenTreeMenu(null); }} className="w-full flex items-center gap-2 text-left px-3 py-1.5 text-destructive"><Trash2 className="h-3 w-3" /> Delete</button>
                                         </div>
                                       </>
                                     )}
                                   </div>
                                 </div>
 
-                                {confirmDeleteFolderId === folder.id && (
-                                  <div className="flex items-center gap-1 px-2 py-1 ml-4 text-xs">
-                                    <span className="flex-1 truncate text-destructive">Delete "{folder.name}"{otherSlugs.length > 0 || folder.rootPage ? ` — ${otherSlugs.length + (folder.rootPage ? 1 : 0)} page(s) inside will move to Unassigned` : ""}?</span>
-                                    <button type="button" onClick={async () => { await projectsTree.deleteFolder(folder.id); setConfirmDeleteFolderId(null); }} className="text-[10px] px-1.5 py-0.5 rounded bg-red-600 text-white shrink-0">Yes</button>
-                                    <button type="button" onClick={() => setConfirmDeleteFolderId(null)} className="text-[10px] px-1.5 py-0.5 rounded border shrink-0">No</button>
-                                  </div>
-                                )}
+                                {confirmDeleteFolderId === folder.id && (() => {
+                                  const pageCount = otherSlugs.length + (folder.rootPage ? 1 : 0);
+                                  return (
+                                    <div className="flex flex-col gap-1 px-2 py-1.5 ml-4 text-xs rounded border border-destructive/40 bg-destructive/5">
+                                      <span className="text-destructive font-medium">Delete "{folder.name}"?</span>
+                                      {pageCount > 0 && (
+                                        <span className="text-muted-foreground">{pageCount} page{pageCount === 1 ? "" : "s"} inside will move to Unassigned (draft-only, not deleted).</span>
+                                      )}
+                                      {folder.subdomain && (
+                                        <span className="text-destructive">This folder is connected to {folder.subdomain}.iiinbox.com — deleting it disconnects that subdomain.</span>
+                                      )}
+                                      <div className="flex items-center gap-1.5 mt-0.5">
+                                        <button type="button" onClick={async () => { await projectsTree.deleteFolder(folder.id); setConfirmDeleteFolderId(null); }} className="text-[10px] px-2 py-0.5 rounded bg-red-600 text-white shrink-0">Yes, delete</button>
+                                        <button type="button" onClick={() => setConfirmDeleteFolderId(null)} className="text-[10px] px-2 py-0.5 rounded border shrink-0">Cancel</button>
+                                      </div>
+                                    </div>
+                                  );
+                                })()}
 
                                 {!folderCollapsed && (
                                   <div className="ml-4 flex flex-col gap-0.5">
@@ -5177,7 +5312,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                                           type="button"
                                           onClick={() => router.push(`/admin/pages/${encodeURIComponent(folder.rootPage!.page)}`)}
                                           onDoubleClick={() => projectsTree.startEditFolder(folder.id, folder.name)}
-                                          className={`flex items-center gap-2 text-xs px-2 py-1.5 rounded text-left ${slug === folder.rootPage!.page ? "bg-muted font-medium" : "hover:bg-muted text-muted-foreground"}`}
+                                          className={`flex items-center gap-2 text-xs px-2 py-1.5 rounded text-left ${slug === folder.rootPage!.page ? "bg-muted font-medium" : " text-muted-foreground"}`}
                                         >
                                           <FileText className="h-3.5 w-3.5 shrink-0" /> <span className="truncate">{folder.name}</span>
                                         </button>
@@ -5211,7 +5346,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                           <p className="text-[10px] uppercase tracking-wide text-muted-foreground" title="Draft-only — drag into a folder, then publish that folder, to go live">
                             Unassigned
                           </p>
-                          <button type="button" title="New page" onClick={() => { setNewPageFolderId(null); setNewPageOpen(true); }} className="p-1 rounded hover:bg-muted">
+                          <button type="button" title="New page" onClick={() => { setNewPageFolderId(null); setNewPageOpen(true); }} className="p-1 rounded">
                             <Plus className="h-3.5 w-3.5" />
                           </button>
                         </div>
@@ -5237,7 +5372,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                     <div className="flex flex-col gap-2">
                     <div className="flex items-center justify-between px-1">
                       <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Fonts {fontItems && fontItems.length > 0 ? `(${fontItems.length})` : ""}</p>
-                      <label className="p-1 rounded hover:bg-muted cursor-pointer flex items-center gap-1" title="Upload font (.ttf, .otf, .woff, .woff2)">
+                      <label className="p-1 rounded cursor-pointer flex items-center gap-1" title="Upload font (.ttf, .otf, .woff, .woff2)">
                         {uploadingFont ? <span className="text-[10px] text-muted-foreground">{fontUploadProgress}%</span> : <Plus className="h-3.5 w-3.5" />}
                         <input type="file" accept=".ttf,.otf,.woff,.woff2" className="hidden" onChange={async (e) => {
                           const file = e.target.files?.[0]; if (!file) return;
@@ -5274,7 +5409,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                       <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Assets {assetItems && assetItems.length > 0 ? `(${assetItems.length})` : ""}</p>
                       {/* Uploads always land in the library first — never auto-placed on
                           canvas. Click a thumbnail below to place it (already worked). */}
-                      <label className="p-1 rounded hover:bg-muted cursor-pointer flex items-center gap-1" title="Upload new">
+                      <label className="p-1 rounded cursor-pointer flex items-center gap-1" title="Upload new">
                         {uploading ? <span className="text-[10px] text-muted-foreground">{uploadProgress}%</span> : <Plus className="h-3.5 w-3.5" />}
                         <input type="file" accept="image/*" className="hidden" onChange={async (e) => {
                           const file = e.target.files?.[0]; if (!file) return;
@@ -5369,7 +5504,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                               key={version.id}
                               type="button"
                               onClick={() => restoreVersion(version)}
-                              className="flex items-center gap-2 rounded-md border bg-background px-2 py-1.5 text-left hover:bg-muted text-gray-900"
+                              className="flex items-center gap-2 rounded-md border bg-background px-2 py-1.5 text-left text-gray-900"
                             >
                               <History className="h-3 w-3 text-muted-foreground shrink-0" />
                               <span className="min-w-0 flex-1">
@@ -5393,286 +5528,17 @@ export function PageEditor({ slug, label }: PageEditorProps) {
           <div className="relative flex-1 min-w-0 min-h-[44vh]">
           <div ref={scrollContainerRef} className="absolute inset-0 overflow-auto bg-gray-900 p-3">
             <div className="mx-auto" style={{ width: canvasW * (zoom / 100) }}>
-
-              {/* Zones above the active one — read-only strips (item 3: Header/
-                  Template/Footer must all stay visible while editing any one). */}
-              {activeZone !== "header" && renderZoneStrip("header", "Header")}
-              {activeZone === "footer" && renderZoneStrip("template", "Body")}
-
-              <div className="flex">
-                <div
-                  ref={canvasRef}
-                  className="relative shadow-sm select-none flex-1 min-w-0"
-                  style={{ aspectRatio: `${canvasW} / ${canvasH}`, backgroundColor: canvasBgColor }}
-                  onMouseDown={onCanvasMouseDown}
-                  onDragOver={(e) => {
-                    if (e.dataTransfer.types.includes("application/x-reusable-component")) e.preventDefault();
-                  }}
-                  onDrop={(e) => {
-                    const raw = e.dataTransfer.getData("application/x-reusable-component");
-                    if (!raw) return;
-                    e.preventDefault();
-                    const entry: ReusableComponentEntry = JSON.parse(raw);
-                    const rect = canvasRef.current!.getBoundingClientRect();
-                    const scale = rect.width / canvasW;
-                    const dropX = (e.clientX - rect.left) / scale;
-                    const dropY = (e.clientY - rect.top) / scale;
-                    // Independent copy, not a live-synced instance — same pattern as
-                    // duplicateInPlace() (new id, group fields stripped so it doesn't
-                    // silently join a group it has nothing to do with on this page).
-                    // reusable/reusableName also stripped: only the original library
-                    // entry should be a "source" — a dropped copy staying flagged would
-                    // duplicate it in the sidebar with a second sourcePage.
-                    const copy: PageComponent = {
-                      ...(entry.component as PageComponent),
-                      id: uid(),
-                      x: dropX - entry.component.width / 2,
-                      y: dropY - entry.component.height / 2,
-                      groupId: undefined, groupName: undefined, groupLink: undefined,
-                      reusable: undefined, reusableName: undefined,
-                    };
-                    commitUndoSnapshot(activeZone);
-                    setComponents((prev) => [...prev, copy]);
-                    setSelectedIds([copy.id]);
-                  }}
-                >
-              {loading && <div className="absolute inset-0 flex items-center justify-center text-sm text-muted-foreground">Loading…</div>}
-              {draggingId && (() => {
-                const dragged = components.find((c) => c.id === draggingId);
-                if (!dragged) return null;
-                const guides = computeSpacingGuides(dragged, components.filter((c) => c.id !== draggingId));
-                return guides.length > 0 ? <SpacingGuides guides={guides} canvasW={canvasW} canvasH={canvasH} /> : null;
-              })()}
-              {draggingId && alignmentGuides.length > 0 && (
-                <AlignmentGuides guides={alignmentGuides} canvasW={canvasW} canvasH={canvasH} />
-              )}
-              {components.map((comp) => {
-                const pct = (v: number, total: number) => `${(v / total) * 100}%`;
-                const isSelected = selectedIds.includes(comp.id);
-                const isSoleSelected = isSelected && selectedIds.length === 1;
-                const isHovered = hoveredId === comp.id;
-                const isBtn = comp.type === "button";
-                const isShape = comp.type === "shape";
-                const isCarousel = comp.type === "carousel";
-                const isIcon = comp.type === "icon";
-                const isTaxi = comp.type === "location-input" || comp.type === "map" || comp.type === "datetime-picker" || comp.type === "vehicle-selector" || comp.type === "driver-badge" || comp.type === "fare-display";
-                const isHero = comp.type === "hero-carousel";
-                const isCatCarousel = comp.type === "category-carousel";
-                const isText = comp.type === "text" || comp.type === "header";
-                const btn = isBtn ? resolveButtonStyles(comp, isHovered) : null;
-                const rotation = comp.rotation ?? 0;
-
-                return (
-                  <div key={comp.id}
-                    className={`absolute group ${isSoleSelected ? "ring-2 ring-blue-500" : isSelected ? "ring-1 ring-blue-400" : "hover:ring-1 hover:ring-blue-300"}`}
-                    style={{ left: pct(comp.x, canvasW), top: pct(comp.y, canvasH), width: pct(comp.width, canvasW), height: pct(comp.height, canvasH), borderRadius: isBtn || isShape || isCarousel || isIcon || isTaxi || isHero || isCatCarousel ? 0 : (comp.borderRadius ?? 0), backgroundColor: isBtn || isShape || isCarousel || isIcon || isTaxi || isHero || isCatCarousel ? "transparent" : (comp.bgColor === "transparent" ? "transparent" : (comp.bgColor ?? "transparent")), transform: `rotate(${rotation}deg)`, transformOrigin: "center", cursor: comp.locked ? "not-allowed" : "move",
-                      boxShadow: buildBoxShadow(comp), filter: buildBlurFilter(comp),
-                      // Editor-only convenience dimming — never affects the published page (see PageComponent.hidden).
-                      ...(comp.hidden ? { opacity: 0.35, pointerEvents: "none" } : {}) }}
-                    onMouseDown={(e) => onDragStart(e, comp.id)}
-                    onContextMenu={(e) => handleContextMenu(e, comp)}
-                    onMouseEnter={() => isBtn && setHoveredId(comp.id)}
-                    onMouseLeave={() => isBtn && setHoveredId(null)}
-                  >
-                    {comp.locked && (
-                      <div className="absolute -top-1.5 -left-1.5 z-10 h-4 w-4 rounded-full bg-amber-500 text-white flex items-center justify-center shadow pointer-events-none">
-                        <Lock className="h-2.5 w-2.5" />
-                      </div>
-                    )}
-                    {(comp.type === "text" || comp.type === "header") && (
-                      editingTextId === comp.id ? (
-                        <div
-                          contentEditable
-                          suppressContentEditableWarning
-                          className="w-full h-full flex items-center overflow-auto px-1 outline-none ring-2 ring-blue-500 cursor-text"
-                          style={{ fontSize: `calc(${comp.fontSize ?? 16}px * (${canvasRef.current?.clientWidth ?? canvasW} / ${canvasW}))`, fontFamily: comp.fontFamily ?? "system-ui, -apple-system, sans-serif", lineHeight: comp.lineHeight ?? 1.4, letterSpacing: `${comp.letterSpacing ?? 0}px`, color: comp.fontColor ?? "#111", textAlign: comp.textAlign ?? "left", whiteSpace: "pre-wrap", wordBreak: "break-word" }}
-                          onMouseDown={(e) => e.stopPropagation()}
-                          onClick={(e) => e.stopPropagation()}
-                          ref={(el) => {
-                            if (!el || el.dataset.focused) return;
-                            el.dataset.focused = "1";
-                            el.focus();
-                            const range = document.createRange();
-                            range.selectNodeContents(el);
-                            range.collapse(false);
-                            const sel = window.getSelection();
-                            sel?.removeAllRanges();
-                            sel?.addRange(range);
-                          }}
-                          onBlur={(e) => { updateComp(comp.id, { content: e.currentTarget.textContent ?? "" }); setEditingTextId(null); }}
-                          onKeyDown={(e) => {
-                            e.stopPropagation();
-                            if (e.key === "Escape") { e.currentTarget.blur(); return; }
-                            if (e.key === "Enter" && !e.shiftKey && comp.type === "header") { e.preventDefault(); e.currentTarget.blur(); }
-                          }}
-                        >
-                          {comp.content}
-                        </div>
-                      ) : (
-                        <div className="w-full h-full flex items-center overflow-hidden px-1"
-                          style={{ fontSize: `calc(${comp.fontSize ?? 16}px * (${canvasRef.current?.clientWidth ?? canvasW} / ${canvasW}))`, fontFamily: comp.fontFamily ?? "system-ui, -apple-system, sans-serif", fontWeight: comp.fontWeight ?? (comp.bold ? 700 : 400), fontStyle: comp.italic ? "italic" : "normal", lineHeight: comp.lineHeight ?? 1.4, letterSpacing: `${comp.letterSpacing ?? 0}px`, color: comp.fontColor ?? "#111", opacity: (comp.opacity ?? 100) / 100, textAlign: comp.textAlign ?? "left", textTransform: comp.textTransform ?? "none", textDecoration: textDecorationLine(comp), justifyContent: comp.textAlign === "center" ? "center" : comp.textAlign === "right" ? "flex-end" : "flex-start" }}
-                          onDoubleClick={(e) => { if (comp.locked) return; e.stopPropagation(); setSelectedIds([comp.id]); setEditingTextId(comp.id); }}
-                        >
-                          {renderTextBody(comp)}
-                        </div>
-                      )
-                    )}
-                    {isShape && (
-                      <div className="w-full h-full" style={{ backgroundColor: comp.bgColor ?? "#3b82f6", borderRadius: shapeBorderRadius(comp), clipPath: shapeClipPath(comp.shapeType), opacity: (comp.opacity ?? 100) / 100 }} />
-                    )}
-                    {isCarousel && (
-                      <div className="w-full h-full" style={{ backgroundColor: comp.bgColor === "transparent" ? "transparent" : (comp.bgColor ?? "transparent"), opacity: (comp.opacity ?? 100) / 100 }}>
-                        <CarouselBody comp={comp} editable />
-                      </div>
-                    )}
-                    {isIcon && <IconGlyph comp={comp} />}
-                    {comp.type === "location-input" && <LocationInputBody comp={comp} />}
-                    {comp.type === "map" && <MapBody comp={comp} />}
-                    {comp.type === "datetime-picker" && <DateTimePickerBody comp={comp} />}
-                    {comp.type === "vehicle-selector" && <VehicleSelectorBody comp={comp} />}
-                    {comp.type === "driver-badge" && <DriverBadgeBody comp={comp} />}
-                    {comp.type === "fare-display" && <FareDisplayBody comp={comp} />}
-                    {isHero && <HeroCarouselBody comp={comp} />}
-                    {isCatCarousel && <CategoryCarouselBody comp={comp} canvasW={canvasW} />}
-                    {comp.type === "image" && <ImageBody comp={comp} placeholderClass="text-gray-400" />}
-                    {isBtn && btn && (
-                      <div className="w-full h-full flex items-center justify-center overflow-hidden"
-                        style={{ borderRadius: comp.borderRadius ?? 8, backgroundColor: btn.bg, color: btn.color, border: btn.border, textDecoration: btn.isLink ? "underline" : "none", fontSize: `calc(${comp.fontSize ?? 16}px * (${canvasRef.current?.clientWidth ?? canvasW} / ${canvasW}))`, fontFamily: comp.fontFamily ?? "system-ui, -apple-system, sans-serif", fontWeight: comp.fontWeight ?? 600, transition: "background-color 0.15s, color 0.15s", pointerEvents: "none" }}>
-                        {comp.content ?? "Button"}
-                      </div>
-                    )}
-                    {isSoleSelected && (
-                      <>
-                        <FloatingToolbar
-                          mode="single"
-                          locked={comp.locked}
-                          hidden={comp.hidden}
-                          onDuplicate={() => duplicateComp(comp)}
-                          onDelete={() => deleteComp([comp.id])}
-                          onToggleLock={() => toggleLocked([comp.id])}
-                          onToggleHide={() => toggleHidden([comp.id])}
-                          onBringForward={() => moveComponentOrder(comp.id, "forward")}
-                          onSendBackward={() => moveComponentOrder(comp.id, "backward")}
-                          onBringToFront={() => bringToFront(comp.id)}
-                          onSendToBack={() => sendToBack(comp.id)}
-                        />
-                        {(comp.type === "text" || comp.type === "header") && (
-                          <>
-                            <div
-                              className="absolute z-30 flex items-center gap-1 rounded-md border bg-white px-1 py-1 shadow-sm"
-                              style={{ bottom: -38, left: "50%", transform: "translateX(-50%)" }}
-                              onMouseDown={(e) => e.stopPropagation()}
-                            >
-                              <button
-                                type="button"
-                                title="Rotate"
-                                className="flex h-6 items-center gap-1 rounded px-1.5 text-[11px] hover:bg-muted"
-                                onMouseDown={(e) => onRotateStart(e, comp.id)}
-                              >
-                                <RotateCcw className="h-3.5 w-3.5" /> Rotate
-                              </button>
-                              <button
-                                type="button"
-                                title="Drag"
-                                className="flex h-6 items-center gap-1 rounded px-1.5 text-[11px] hover:bg-muted"
-                                onMouseDown={(e) => onDragStart(e, comp.id)}
-                              >
-                                <Move className="h-3.5 w-3.5" /> Drag
-                              </button>
-                            </div>
-                          </>
-                        )}
-                        {comp.type !== "text" && comp.type !== "header" && (
-                          <div className="absolute cursor-grab z-20 flex flex-col items-center" style={{ top: 0, left: "50%", transform: "translateX(-50%) translateY(-100%)", paddingBottom: 2 }} onMouseDown={(e) => onRotateStart(e, comp.id)}>
-                            <div className="w-2.5 h-2.5 rounded-full bg-purple-500 border-2 border-white shadow" />
-                            <div style={{ width: 1, height: 8, backgroundColor: "#a855f7", opacity: 0.7 }} />
-                          </div>
-                        )}
-                        {/* Resize handles */}
-                        {isShape || isCarousel || isText ? (
-                          <>
-                            <div className="absolute -top-1.5 -left-1.5 w-3 h-3 bg-blue-500 rounded-full border-2 border-white shadow cursor-nwse-resize z-10" onMouseDown={(e) => onResizeStart(e, [comp.id], "tl")} />
-                            <div className="absolute -top-1.5 -right-1.5 w-3 h-3 bg-blue-500 rounded-full border-2 border-white shadow cursor-nesw-resize z-10" onMouseDown={(e) => onResizeStart(e, [comp.id], "tr")} />
-                            <div className="absolute -bottom-1.5 -left-1.5 w-3 h-3 bg-blue-500 rounded-full border-2 border-white shadow cursor-nesw-resize z-10" onMouseDown={(e) => onResizeStart(e, [comp.id], "bl")} />
-                            <div className="absolute -bottom-1.5 -right-1.5 w-3 h-3 bg-blue-500 rounded-full border-2 border-white shadow cursor-nwse-resize z-10" onMouseDown={(e) => onResizeStart(e, [comp.id], "br")} />
-                            {isText && (
-                              // Mid-edge (border) handles — "pull edges to change text box
-                              // width/height" independent of the corner handles above.
-                              <>
-                                <div className="absolute -top-1 left-1/2 -translate-x-1/2 w-4 h-2 bg-blue-500 rounded-sm border-2 border-white shadow cursor-ns-resize z-10" onMouseDown={(e) => onResizeStart(e, [comp.id], "t")} />
-                                <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-4 h-2 bg-blue-500 rounded-sm border-2 border-white shadow cursor-ns-resize z-10" onMouseDown={(e) => onResizeStart(e, [comp.id], "b")} />
-                                <div className="absolute -left-1 top-1/2 -translate-y-1/2 w-2 h-4 bg-blue-500 rounded-sm border-2 border-white shadow cursor-ew-resize z-10" onMouseDown={(e) => onResizeStart(e, [comp.id], "l")} />
-                                <div className="absolute -right-1 top-1/2 -translate-y-1/2 w-2 h-4 bg-blue-500 rounded-sm border-2 border-white shadow cursor-ew-resize z-10" onMouseDown={(e) => onResizeStart(e, [comp.id], "r")} />
-                              </>
-                            )}
-                          </>
-                        ) : (
-                          <div className="absolute bottom-0 right-0 w-3 h-3 bg-blue-500 cursor-se-resize z-10" style={{ borderRadius: "2px 0 2px 0" }} onMouseDown={(e) => onResizeStart(e, [comp.id])} />
-                        )}
-                      </>
-                    )}
-                  </div>
-                );
-              })}
-
-              {/* Multi/group selection bounding box + resize handles */}
-              {selectedComps.length > 1 && (() => {
-                const minX = Math.min(...selectedComps.map((c) => c.x));
-                const minY = Math.min(...selectedComps.map((c) => c.y));
-                const maxX = Math.max(...selectedComps.map((c) => c.x + c.width));
-                const maxY = Math.max(...selectedComps.map((c) => c.y + c.height));
-                const ids = selectedComps.map((c) => c.id);
-                const pct = (v: number, total: number) => `${(v / total) * 100}%`;
-                return (
-                  <div className="absolute border-2 border-blue-500 pointer-events-none z-20"
-                    style={{ left: pct(minX, canvasW), top: pct(minY, canvasH), width: pct(maxX - minX, canvasW), height: pct(maxY - minY, canvasH) }}>
-                    <div className="absolute -top-6 left-0 text-[10px] bg-blue-500 text-white px-1.5 py-0.5 rounded whitespace-nowrap">
-                      {selectionGroupId ? (selectedComps[0].groupName || "Group") : `${ids.length} selected`}
-                    </div>
-                    <div className="pointer-events-auto">
-                      <FloatingToolbar
-                        mode="multi"
-                        canGroup={!selectionGroupId}
-                        canUngroup={!!selectionGroupId}
-                        canDistribute={selectedComps.length >= 3}
-                        locked={selectedComps.every((c) => c.locked)}
-                        onDelete={() => deleteComp(ids)}
-                        onGroup={groupSelected}
-                        onUngroup={ungroupSelected}
-                        onAlign={alignSelected}
-                        onDistribute={distributeSelected}
-                        onToggleLock={() => setLockedForAll(ids, !selectedComps.every((c) => c.locked))}
-                      />
-                    </div>
-                    <div className="absolute -top-1.5 -left-1.5 w-3 h-3 bg-blue-500 rounded-full border-2 border-white shadow cursor-nwse-resize pointer-events-auto" onMouseDown={(e) => onResizeStart(e, ids, "tl")} />
-                    <div className="absolute -top-1.5 -right-1.5 w-3 h-3 bg-blue-500 rounded-full border-2 border-white shadow cursor-nesw-resize pointer-events-auto" onMouseDown={(e) => onResizeStart(e, ids, "tr")} />
-                    <div className="absolute -bottom-1.5 -left-1.5 w-3 h-3 bg-blue-500 rounded-full border-2 border-white shadow cursor-nesw-resize pointer-events-auto" onMouseDown={(e) => onResizeStart(e, ids, "bl")} />
-                    <div className="absolute -bottom-1.5 -right-1.5 w-3 h-3 bg-blue-500 rounded-full border-2 border-white shadow cursor-nwse-resize pointer-events-auto" onMouseDown={(e) => onResizeStart(e, ids, "br")} />
-                  </div>
-                );
-              })()}
-
-              {/* Rubber-band marquee */}
-              {marquee && (marquee.w > 1 || marquee.h > 1) && (
-                <div className="absolute border border-blue-500 bg-blue-500/10 pointer-events-none z-30"
-                  style={{ left: `${(marquee.x / canvasW) * 100}%`, top: `${(marquee.y / canvasH) * 100}%`, width: `${(marquee.w / canvasW) * 100}%`, height: `${(marquee.h / canvasH) * 100}%` }} />
-              )}
-                </div>
-              </div>
-
-              {/* Height drag handle */}
-              <div className="mx-auto mt-0 flex items-center justify-center h-5 cursor-ns-resize group" style={{ width: "100%", maxWidth: canvasW }} onMouseDown={onHeightDragStart}>
-                <div className="w-16 h-1.5 bg-gray-300 group-hover:bg-blue-400 rounded-full transition-colors" />
-              </div>
-              <p className="text-center text-xs text-muted-foreground mt-1 select-none">
-                {canvasW} × {Math.round(canvasH)} px · drag to move · corner to resize · purple to rotate · Del · ⌘C/⌘V
-              </p>
-
-              {/* Zones below the active one — read-only strips, same reasoning as above. */}
-              <div className="mt-2">
-                {activeZone === "header" && renderZoneStrip("template", "Body")}
-                {activeZone !== "footer" && renderZoneStrip("footer", "Footer")}
-              </div>
+              {/* Item 2: header, template, and footer render as ONE seamless,
+                  simultaneously-interactive canvas — no separate zone views,
+                  no click-to-activate strips. Header/footer only appear when
+                  a block of that kind exists (see zoneHasBlock below); every
+                  visible zone is fully draggable/resizable/rotatable in
+                  place, stacked with zero visual gap or border between them. */}
+              {(view === "desktop" ? activeHeaderId.desktop : activeHeaderId.mobile) !== null &&
+                renderZoneCanvas("header")}
+              {renderZoneCanvas("template")}
+              {(view === "desktop" ? activeFooterId.desktop : activeFooterId.mobile) !== null &&
+                renderZoneCanvas("footer")}
             </div>
           </div>
 
@@ -5688,8 +5554,6 @@ export function PageEditor({ slug, label }: PageEditorProps) {
               away from it when open) since this panel sits on the right edge. */}
           <div
             className={`shrink-0 border-t lg:border-t-0 lg:border-l border-gray-700 bg-gray-800 flex flex-col overflow-hidden transition-[width] duration-300 ease-in-out ${rightSidebarVisible ? "w-full lg:w-72 lg:max-w-72 max-h-[48vh] lg:max-h-none" : "w-7"}`}
-            onMouseEnter={() => setRightHoverReveal(true)}
-            onMouseLeave={() => setRightHoverReveal(false)}
           >
             {!rightSidebarVisible ? (
               <button type="button" title="Show panel" onClick={() => setRightSidebarCollapsed(false)}
@@ -5724,8 +5588,8 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                       {selectedComp && (selectedComp.type === "text" || selectedComp.type === "header") ? (
                         <div className="flex flex-col">
                           {renderTypeHeader(selectedComp)}
-                          {renderPropertySection("layout", "Layout", renderCommonFields(selectedComp))}
-                          {renderPropertySection("typography", "Typography", <>
+                          {renderFlatSection("Layout", renderCommonFields(selectedComp))}
+                          {renderFlatSection("Typography", <>
                             {selectedComp.lockedTypography ? (
                               <>
                                 <div className="flex items-start gap-1.5 p-1.5 rounded border border-amber-200 bg-amber-50">
@@ -5738,12 +5602,12 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                                   <label className={sLabel}>Alignment</label>
                                   <div className="grid grid-cols-3 gap-1">
                                     {(["left", "center", "right"] as const).map((a) => (
-                                      <button key={a} type="button" onClick={() => updateComp(selectedComp.id, { textAlign: a })} className={`text-[11px] py-0.5 rounded border ${selectedComp.textAlign === a ? "bg-black text-white" : "hover:bg-muted"}`}>{a[0].toUpperCase() + a.slice(1)}</button>
+                                      <button key={a} type="button" onClick={() => updateComp(selectedComp.id, { textAlign: a })} className={`text-[11px] py-0.5 rounded border ${selectedComp.textAlign === a ? "bg-black text-white" : "hover:bg-muted hover:text-gray-900"}`}>{a[0].toUpperCase() + a.slice(1)}</button>
                                     ))}
                                   </div>
                                 </div>
                                 <button type="button" onClick={() => updateComp(selectedComp.id, { lockedTypography: false })}
-                                  className="flex items-center justify-center gap-1.5 text-[11px] py-1 rounded border border-gray-200 hover:bg-muted">
+                                  className="flex items-center justify-center gap-1.5 text-[11px] py-1 rounded border border-gray-200 hover:bg-muted hover:text-gray-900">
                                   <Unlock className="h-3 w-3" /> Detach from template (unlock typography)
                                 </button>
                               </>
@@ -5775,7 +5639,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                                   <label className={sLabel}>Alignment</label>
                                   <div className="grid grid-cols-3 gap-1">
                                     {([["left", AlignLeft], ["center", AlignCenter], ["right", AlignRight]] as const).map(([a, Icon]) => (
-                                      <button key={a} type="button" onClick={() => updateComp(selectedComp.id, { textAlign: a })} className={`flex items-center justify-center py-1 rounded border ${selectedComp.textAlign === a ? "bg-black text-white" : "hover:bg-muted"}`}>
+                                      <button key={a} type="button" onClick={() => updateComp(selectedComp.id, { textAlign: a })} className={`flex items-center justify-center py-1 rounded border ${selectedComp.textAlign === a ? "bg-black text-white" : "hover:bg-muted hover:text-gray-900"}`}>
                                         <Icon className="h-3 w-3" />
                                       </button>
                                     ))}
@@ -5793,33 +5657,10 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                               </>
                             )}
                           </>)}
-                          {renderPropertySection("responsive", "Responsive", renderResponsiveHint())}
+                          {renderFlatSection("Responsive", renderResponsiveHint())}
                         </div>
                       ) : (
                         <div className="flex flex-col gap-2">
-                          <div>
-                            <button type="button" onClick={() => setShowTextTemplates((v) => !v)}
-                              className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md border border-gray-200 hover:bg-muted text-xs text-left">
-                              <LayoutGrid className="h-3.5 w-3.5 text-muted-foreground shrink-0" /> Text Templates
-                              <ChevronDown className={`h-3 w-3 ml-auto text-muted-foreground transition-transform ${showTextTemplates ? "rotate-180" : ""}`} />
-                            </button>
-                            {showTextTemplates && (
-                              <div className="mt-1.5 flex flex-col gap-1.5">
-                                {TEXT_TEMPLATES.map((tpl) => (
-                                  <button key={tpl.id} type="button" onClick={() => addTextTemplate(tpl.id)}
-                                    className="flex items-center gap-2 p-2 rounded-md border border-gray-200 bg-white hover:border-black transition-colors text-left">
-                                    <div className="w-16 h-12 rounded bg-gray-50 border flex flex-col items-center justify-center gap-0.5 shrink-0 overflow-hidden px-1">
-                                      {renderTextTemplatePreview(tpl.id)}
-                                    </div>
-                                    <div className="min-w-0">
-                                      <p className="text-xs font-semibold truncate">{tpl.label}</p>
-                                      <p className="text-[10px] text-muted-foreground truncate">{tpl.hint}</p>
-                                    </div>
-                                  </button>
-                                ))}
-                              </div>
-                            )}
-                          </div>
                           <div className="grid grid-cols-2 gap-1.5">
                             <button type="button" onClick={() => addComponent("text", { fontFamily: (fontItems ?? [])[0]?.family })}
                               className="flex flex-col items-center justify-center gap-1 h-14 rounded border border-gray-200 bg-white hover:border-black transition-colors">
@@ -5861,7 +5702,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                                     type="button"
                                     title={shapeLabel}
                                     onClick={() => updateComp(selectedComp.id, { shapeType: type })}
-                                    className={`flex items-center justify-center h-7 rounded border ${(selectedComp.shapeType ?? "rectangle") === type ? "bg-black text-white" : "hover:bg-muted text-muted-foreground"}`}
+                                    className={`flex items-center justify-center h-7 rounded border ${(selectedComp.shapeType ?? "rectangle") === type ? "bg-black text-white" : "hover:bg-muted hover:text-gray-900 text-muted-foreground"}`}
                                   >
                                     <ShapeSwatch type={type} />
                                   </button>
@@ -5986,7 +5827,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                                   {([5, 10, 15, 0] as const).map((max) => (
                                     <button key={max} type="button"
                                       onClick={() => updateComp(selectedComp.id, { slideshowMax: max })}
-                                      className={`flex items-center justify-center gap-0.5 text-[10px] py-1 rounded border transition-colors ${(selectedComp.slideshowMax ?? 5) === max ? "bg-black text-white border-black" : "bg-white border-gray-200 hover:bg-muted"}`}>
+                                      className={`flex items-center justify-center gap-0.5 text-[10px] py-1 rounded border transition-colors ${(selectedComp.slideshowMax ?? 5) === max ? "bg-black text-white border-black" : "bg-white border-gray-200 hover:bg-muted hover:text-gray-900"}`}>
                                       {max === 0 ? <InfinityIcon className="h-3 w-3" /> : max}
                                     </button>
                                   ))}
@@ -6036,7 +5877,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                             <div className="grid grid-cols-4 gap-1">
                               {IMAGE_SIZES.map((s) => (
                                 <button key={s.id} type="button" onClick={() => setImageSizePreset(s.id)}
-                                  className={`text-[10px] py-1 rounded border transition-colors ${imageSizePreset === s.id ? "bg-black text-white border-black" : "bg-white border-gray-200 hover:bg-muted"}`}>
+                                  className={`text-[10px] py-1 rounded border transition-colors ${imageSizePreset === s.id ? "bg-black text-white border-black" : "bg-white border-gray-200 hover:bg-muted hover:text-gray-900"}`}>
                                   {s.label}
                                 </button>
                               ))}
@@ -6097,7 +5938,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                               <div className="grid grid-cols-4 gap-1">
                                 {(["solid", "outline", "ghost", "link"] as const).map((s) => (
                                   <button key={s} onClick={() => updateComp(selectedComp.id, { buttonStyle: s })}
-                                    className={`text-[11px] py-0.5 rounded border capitalize ${(selectedComp.buttonStyle ?? "solid") === s ? "bg-black text-white" : "hover:bg-muted"}`}>{s}</button>
+                                    className={`text-[11px] py-0.5 rounded border capitalize ${(selectedComp.buttonStyle ?? "solid") === s ? "bg-black text-white" : "hover:bg-muted hover:text-gray-900"}`}>{s}</button>
                                 ))}
                               </div>
                             </div>
@@ -6170,8 +6011,8 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                                         <Input value={item.link ?? ""} onChange={(e) => updateCarouselItem(selectedComp.id, items, item.id, { link: e.target.value })} placeholder="Link to page" className="h-6 text-xs px-1.5" />
                                       </div>
                                       <div className="flex flex-col shrink-0">
-                                        <button type="button" title="Move earlier" disabled={i === 0} onClick={() => moveCarouselItem(selectedComp.id, items, i, -1)} className="h-4 w-4 flex items-center justify-center disabled:opacity-20 hover:bg-muted rounded"><ChevronLeft className="h-3 w-3" /></button>
-                                        <button type="button" title="Move later" disabled={i === items.length - 1} onClick={() => moveCarouselItem(selectedComp.id, items, i, 1)} className="h-4 w-4 flex items-center justify-center disabled:opacity-20 hover:bg-muted rounded"><ChevronRight className="h-3 w-3" /></button>
+                                        <button type="button" title="Move earlier" disabled={i === 0} onClick={() => moveCarouselItem(selectedComp.id, items, i, -1)} className="h-4 w-4 flex items-center justify-center disabled:opacity-20 hover:bg-muted hover:text-gray-900 rounded"><ChevronLeft className="h-3 w-3" /></button>
+                                        <button type="button" title="Move later" disabled={i === items.length - 1} onClick={() => moveCarouselItem(selectedComp.id, items, i, 1)} className="h-4 w-4 flex items-center justify-center disabled:opacity-20 hover:bg-muted hover:text-gray-900 rounded"><ChevronRight className="h-3 w-3" /></button>
                                       </div>
                                       <button type="button" title="Remove" onClick={() => removeCarouselItem(selectedComp.id, items, item.id)} className="text-destructive shrink-0 hover:bg-destructive/10 rounded p-0.5">
                                         <Trash2 className="h-3.5 w-3.5" />
@@ -6183,12 +6024,12 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                               <div className="grid grid-cols-2 gap-1.5">
                                 <button type="button"
                                   onClick={() => { setShowCategoryPicker((v) => !v); if (!showCategoryPicker) loadCategoryOptions(); }}
-                                  className={`flex items-center justify-center gap-1 h-7 rounded border text-xs transition-colors ${showCategoryPicker ? "bg-black text-white border-black" : "border-gray-200 hover:bg-muted"}`}>
+                                  className={`flex items-center justify-center gap-1 h-7 rounded border text-xs transition-colors ${showCategoryPicker ? "bg-black text-white border-black" : "border-gray-200 hover:bg-muted hover:text-gray-900"}`}>
                                   <Tag className="h-3 w-3" /> From Categories
                                 </button>
                                 <ImagePickerButton
                                   label="Custom item" icon={ImageIcon}
-                                  buttonClassName="flex items-center justify-center gap-1 h-7 rounded border border-gray-200 text-xs hover:bg-muted cursor-pointer w-full"
+                                  buttonClassName="flex items-center justify-center gap-1 h-7 rounded border border-gray-200 text-xs hover:bg-muted hover:text-gray-900 cursor-pointer w-full"
                                   uploading={uploading} uploadProgress={uploadProgress}
                                   assetItems={assetItems} assetsLoading={assetsLoading} loadAssets={loadAssets}
                                   onUpload={uploadToAssets}
@@ -6204,7 +6045,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                                   ) : (
                                     (categoryOptions ?? []).map((cat) => (
                                       <button key={cat.id} type="button" onClick={() => addCategoryItem(selectedComp.id, items, cat)}
-                                        className="flex items-center gap-1.5 text-left text-xs px-1.5 py-1 rounded hover:bg-muted">
+                                        className="flex items-center gap-1.5 text-left text-xs px-1.5 py-1 rounded hover:bg-muted hover:text-gray-900">
                                         {cat.imageUrl ? <img src={cat.imageUrl} alt="" className="w-4 h-4 rounded object-cover shrink-0" /> : <Tag className="h-3 w-3 text-muted-foreground shrink-0" />}
                                         <span className="truncate">{cat.name}</span>
                                       </button>
@@ -6218,11 +6059,11 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                               <label className={sLabel}>Style</label>
                               <div className="grid grid-cols-2 gap-1">
                                 <button type="button" onClick={() => updateComp(selectedComp.id, { carouselStyle: "zoom" })}
-                                  className={`text-[11px] py-1 rounded border ${(selectedComp.carouselStyle ?? "zoom") === "zoom" ? "bg-black text-white" : "hover:bg-muted"}`}>
+                                  className={`text-[11px] py-1 rounded border ${(selectedComp.carouselStyle ?? "zoom") === "zoom" ? "bg-black text-white" : "hover:bg-muted hover:text-gray-900"}`}>
                                   Zoom carousel
                                 </button>
                                 <button type="button" onClick={() => updateComp(selectedComp.id, { carouselStyle: "row" })}
-                                  className={`text-[11px] py-1 rounded border ${selectedComp.carouselStyle === "row" ? "bg-black text-white" : "hover:bg-muted"}`}>
+                                  className={`text-[11px] py-1 rounded border ${selectedComp.carouselStyle === "row" ? "bg-black text-white" : "hover:bg-muted hover:text-gray-900"}`}>
                                   Category row
                                 </button>
                               </div>
@@ -6287,7 +6128,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                             <div>
                               <div className="flex items-center justify-between mb-1">
                                 <label className={sLabel + " mb-0"}>Slides ({slides.length})</label>
-                                <button type="button" onClick={() => addHeroSlide(selectedComp.id, slides)} className="text-[10px] px-1.5 py-0.5 rounded border hover:bg-muted flex items-center gap-1"><Plus className="h-3 w-3" /> Add</button>
+                                <button type="button" onClick={() => addHeroSlide(selectedComp.id, slides)} className="text-[10px] px-1.5 py-0.5 rounded border hover:bg-muted hover:text-gray-900 flex items-center gap-1"><Plus className="h-3 w-3" /> Add</button>
                               </div>
                               <div className="flex flex-col gap-1.5">
                                 {slides.map((slide, i) => (
@@ -6308,8 +6149,8 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                                         <Input value={slide.subtext ?? ""} onChange={(e) => updateHeroSlide(selectedComp.id, slides, slide.id, { subtext: e.target.value })} placeholder="Subtext" className="h-6 text-xs px-1.5" />
                                       </div>
                                       <div className="flex flex-col shrink-0">
-                                        <button type="button" title="Move earlier" disabled={i === 0} onClick={() => moveHeroSlide(selectedComp.id, slides, i, -1)} className="h-4 w-4 flex items-center justify-center disabled:opacity-20 hover:bg-muted rounded"><ChevronLeft className="h-3 w-3" /></button>
-                                        <button type="button" title="Move later" disabled={i === slides.length - 1} onClick={() => moveHeroSlide(selectedComp.id, slides, i, 1)} className="h-4 w-4 flex items-center justify-center disabled:opacity-20 hover:bg-muted rounded"><ChevronRight className="h-3 w-3" /></button>
+                                        <button type="button" title="Move earlier" disabled={i === 0} onClick={() => moveHeroSlide(selectedComp.id, slides, i, -1)} className="h-4 w-4 flex items-center justify-center disabled:opacity-20 hover:bg-muted hover:text-gray-900 rounded"><ChevronLeft className="h-3 w-3" /></button>
+                                        <button type="button" title="Move later" disabled={i === slides.length - 1} onClick={() => moveHeroSlide(selectedComp.id, slides, i, 1)} className="h-4 w-4 flex items-center justify-center disabled:opacity-20 hover:bg-muted hover:text-gray-900 rounded"><ChevronRight className="h-3 w-3" /></button>
                                       </div>
                                       <button type="button" title="Remove" onClick={() => removeHeroSlide(selectedComp.id, slides, slide.id)} className="text-destructive shrink-0 hover:bg-destructive/10 rounded p-0.5">
                                         <Trash2 className="h-3.5 w-3.5" />
@@ -6327,7 +6168,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                             <div className="flex items-center justify-between">
                               <label className={sLabel + " mb-0"}>Autoplay</label>
                               <button type="button" onClick={() => updateComp(selectedComp.id, { heroAutoplay: !(selectedComp.heroAutoplay ?? true) })}
-                                className={`text-[11px] px-2 py-0.5 rounded border ${(selectedComp.heroAutoplay ?? true) ? "bg-black text-white border-black" : "hover:bg-muted"}`}>
+                                className={`text-[11px] px-2 py-0.5 rounded border ${(selectedComp.heroAutoplay ?? true) ? "bg-black text-white border-black" : "hover:bg-muted hover:text-gray-900"}`}>
                                 {(selectedComp.heroAutoplay ?? true) ? "On" : "Off"}
                               </button>
                             </div>
@@ -6342,11 +6183,11 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                             )}
                             <div className="grid grid-cols-2 gap-1.5">
                               <button type="button" onClick={() => updateComp(selectedComp.id, { heroShowArrows: !(selectedComp.heroShowArrows ?? true) })}
-                                className={`text-[11px] py-1 rounded border ${(selectedComp.heroShowArrows ?? true) ? "bg-black text-white border-black" : "hover:bg-muted"}`}>
+                                className={`text-[11px] py-1 rounded border ${(selectedComp.heroShowArrows ?? true) ? "bg-black text-white border-black" : "hover:bg-muted hover:text-gray-900"}`}>
                                 Arrows {(selectedComp.heroShowArrows ?? true) ? "On" : "Off"}
                               </button>
                               <button type="button" onClick={() => updateComp(selectedComp.id, { heroShowDots: !(selectedComp.heroShowDots ?? true) })}
-                                className={`text-[11px] py-1 rounded border ${(selectedComp.heroShowDots ?? true) ? "bg-black text-white border-black" : "hover:bg-muted"}`}>
+                                className={`text-[11px] py-1 rounded border ${(selectedComp.heroShowDots ?? true) ? "bg-black text-white border-black" : "hover:bg-muted hover:text-gray-900"}`}>
                                 Dots {(selectedComp.heroShowDots ?? true) ? "On" : "Off"}
                               </button>
                             </div>
@@ -6414,7 +6255,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                               <div className="grid grid-cols-3 gap-1">
                                 {([["image-first", "Image-first"], ["icon-text", "Icon + text"], ["split", "Split"]] as [CardStyle, string][]).map(([val, label]) => (
                                   <button key={val} type="button" onClick={() => updateComp(selectedComp.id, { catCarouselCardStyle: val })}
-                                    className={`text-[10px] py-1 rounded border ${cardStyle === val ? "bg-black text-white border-black" : "hover:bg-muted"}`}>
+                                    className={`text-[10px] py-1 rounded border ${cardStyle === val ? "bg-black text-white border-black" : "hover:bg-muted hover:text-gray-900"}`}>
                                     {label}
                                   </button>
                                 ))}
@@ -6426,7 +6267,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                                 <div className="grid grid-cols-2 gap-1">
                                   {(["1:1", "3:4"] as CardAspectRatio[]).map((val) => (
                                     <button key={val} type="button" onClick={() => updateComp(selectedComp.id, { catCarouselAspectRatio: val })}
-                                      className={`text-[10px] py-1 rounded border ${(selectedComp.catCarouselAspectRatio ?? "1:1") === val ? "bg-black text-white border-black" : "hover:bg-muted"}`}>
+                                      className={`text-[10px] py-1 rounded border ${(selectedComp.catCarouselAspectRatio ?? "1:1") === val ? "bg-black text-white border-black" : "hover:bg-muted hover:text-gray-900"}`}>
                                       {val}
                                     </button>
                                   ))}
@@ -6439,11 +6280,11 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                             </div>
                             <div className="grid grid-cols-2 gap-1.5">
                               <button type="button" onClick={() => updateComp(selectedComp.id, { catCarouselShowDescriptor: !(selectedComp.catCarouselShowDescriptor ?? false) })}
-                                className={`text-[11px] py-1 rounded border ${(selectedComp.catCarouselShowDescriptor ?? false) ? "bg-black text-white border-black" : "hover:bg-muted"}`}>
+                                className={`text-[11px] py-1 rounded border ${(selectedComp.catCarouselShowDescriptor ?? false) ? "bg-black text-white border-black" : "hover:bg-muted hover:text-gray-900"}`}>
                                 Descriptor {(selectedComp.catCarouselShowDescriptor ?? false) ? "On" : "Off"}
                               </button>
                               <button type="button" onClick={() => updateComp(selectedComp.id, { catCarouselShowBadge: !(selectedComp.catCarouselShowBadge ?? false) })}
-                                className={`text-[11px] py-1 rounded border ${(selectedComp.catCarouselShowBadge ?? false) ? "bg-black text-white border-black" : "hover:bg-muted"}`}>
+                                className={`text-[11px] py-1 rounded border ${(selectedComp.catCarouselShowBadge ?? false) ? "bg-black text-white border-black" : "hover:bg-muted hover:text-gray-900"}`}>
                                 Badge {(selectedComp.catCarouselShowBadge ?? false) ? "On" : "Off"}
                               </button>
                             </div>
@@ -6452,7 +6293,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                               <div className="grid grid-cols-2 gap-1">
                                 {(["single", "double"] as SnapMode[]).map((val) => (
                                   <button key={val} type="button" onClick={() => updateComp(selectedComp.id, { catCarouselSnapMode: val })}
-                                    className={`text-[10px] py-1 rounded border ${(selectedComp.catCarouselSnapMode ?? "single") === val ? "bg-black text-white border-black" : "hover:bg-muted"}`}>
+                                    className={`text-[10px] py-1 rounded border ${(selectedComp.catCarouselSnapMode ?? "single") === val ? "bg-black text-white border-black" : "hover:bg-muted hover:text-gray-900"}`}>
                                     {val === "single" ? "Per card" : "Per 2 cards"}
                                   </button>
                                 ))}
@@ -6477,7 +6318,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                             <div>
                               <div className="flex items-center justify-between mb-1">
                                 <label className={sLabel + " mb-0"}>Categories ({items.length})</label>
-                                <button type="button" onClick={() => addCatCarouselItem(selectedComp.id, items)} className="text-[10px] px-1.5 py-0.5 rounded border hover:bg-muted flex items-center gap-1"><Plus className="h-3 w-3" /> Add</button>
+                                <button type="button" onClick={() => addCatCarouselItem(selectedComp.id, items)} className="text-[10px] px-1.5 py-0.5 rounded border hover:bg-muted hover:text-gray-900 flex items-center gap-1"><Plus className="h-3 w-3" /> Add</button>
                               </div>
                               <div className="flex flex-col gap-1.5">
                                 {items.map((item, i) => (
@@ -6498,8 +6339,8 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                                         <Input value={item.link ?? ""} onChange={(e) => updateCatCarouselItem(selectedComp.id, items, item.id, { link: e.target.value })} placeholder="Link to page" className="h-6 text-xs px-1.5" />
                                       </div>
                                       <div className="flex flex-col shrink-0">
-                                        <button type="button" title="Move earlier" disabled={i === 0} onClick={() => moveCatCarouselItem(selectedComp.id, items, i, -1)} className="h-4 w-4 flex items-center justify-center disabled:opacity-20 hover:bg-muted rounded"><ChevronLeft className="h-3 w-3" /></button>
-                                        <button type="button" title="Move later" disabled={i === items.length - 1} onClick={() => moveCatCarouselItem(selectedComp.id, items, i, 1)} className="h-4 w-4 flex items-center justify-center disabled:opacity-20 hover:bg-muted rounded"><ChevronRight className="h-3 w-3" /></button>
+                                        <button type="button" title="Move earlier" disabled={i === 0} onClick={() => moveCatCarouselItem(selectedComp.id, items, i, -1)} className="h-4 w-4 flex items-center justify-center disabled:opacity-20 hover:bg-muted hover:text-gray-900 rounded"><ChevronLeft className="h-3 w-3" /></button>
+                                        <button type="button" title="Move later" disabled={i === items.length - 1} onClick={() => moveCatCarouselItem(selectedComp.id, items, i, 1)} className="h-4 w-4 flex items-center justify-center disabled:opacity-20 hover:bg-muted hover:text-gray-900 rounded"><ChevronRight className="h-3 w-3" /></button>
                                       </div>
                                       <button type="button" title="Remove" onClick={() => removeCatCarouselItem(selectedComp.id, items, item.id)} className="text-destructive shrink-0 hover:bg-destructive/10 rounded p-0.5">
                                         <Trash2 className="h-3.5 w-3.5" />
@@ -6661,7 +6502,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                               <div>
                                 <div className="flex items-center justify-between mb-1">
                                   <label className={sLabel + " mb-0"}>Markers ({markers.length})</label>
-                                  <button type="button" onClick={() => addMapMarker(selectedComp.id, markers)} className="text-[10px] px-1.5 py-0.5 rounded border hover:bg-muted flex items-center gap-1"><Plus className="h-3 w-3" /> Add</button>
+                                  <button type="button" onClick={() => addMapMarker(selectedComp.id, markers)} className="text-[10px] px-1.5 py-0.5 rounded border hover:bg-muted hover:text-gray-900 flex items-center gap-1"><Plus className="h-3 w-3" /> Add</button>
                                 </div>
                                 <div className="flex flex-col gap-1.5">
                                   {markers.map((m) => (
@@ -6710,7 +6551,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                               <div className="flex gap-1">
                                 {(["today", "tomorrow", "custom"] as DateOption[]).map((opt) => (
                                   <button key={opt} type="button" onClick={() => updateComp(selectedComp.id, { dtDefaultOption: opt })}
-                                    className={`flex-1 text-[11px] px-1.5 py-1 rounded border capitalize ${(selectedComp.dtDefaultOption ?? "today") === opt ? "border-black bg-black text-white" : "hover:bg-muted"}`}>
+                                    className={`flex-1 text-[11px] px-1.5 py-1 rounded border capitalize ${(selectedComp.dtDefaultOption ?? "today") === opt ? "border-black bg-black text-white" : "hover:bg-muted hover:text-gray-900"}`}>
                                     {opt}
                                   </button>
                                 ))}
@@ -6762,7 +6603,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                               <div>
                                 <div className="flex items-center justify-between mb-1">
                                   <label className={sLabel + " mb-0"}>Options ({options.length})</label>
-                                  <button type="button" onClick={() => addVehicleOption(selectedComp.id, options)} className="text-[10px] px-1.5 py-0.5 rounded border hover:bg-muted flex items-center gap-1"><Plus className="h-3 w-3" /> Add</button>
+                                  <button type="button" onClick={() => addVehicleOption(selectedComp.id, options)} className="text-[10px] px-1.5 py-0.5 rounded border hover:bg-muted hover:text-gray-900 flex items-center gap-1"><Plus className="h-3 w-3" /> Add</button>
                                 </div>
                                 <div className="flex flex-col gap-2">
                                   {options.map((opt) => {
@@ -6779,7 +6620,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                                         <div className="flex items-center justify-between">
                                           {renderIconPicker((id) => updateVehicleOption(selectedComp.id, options, opt.id, { iconId: id }), opt.iconId)}
                                           <button type="button" onClick={() => updateComp(selectedComp.id, { selectedVehicleId: opt.id })}
-                                            className={`text-[10px] px-1.5 py-0.5 rounded border shrink-0 ml-1 ${isSelected ? "border-black bg-black text-white" : "hover:bg-muted"}`}>
+                                            className={`text-[10px] px-1.5 py-0.5 rounded border shrink-0 ml-1 ${isSelected ? "border-black bg-black text-white" : "hover:bg-muted hover:text-gray-900"}`}>
                                             {isSelected ? "Default" : "Set default"}
                                           </button>
                                         </div>
@@ -6822,7 +6663,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                               <label className={sLabel}>Photo</label>
                               <ImagePickerButton
                                 label="Choose photo" icon={ImageIcon}
-                                buttonClassName="flex items-center gap-1.5 cursor-pointer px-2 py-1 rounded border text-xs hover:bg-muted w-fit"
+                                buttonClassName="flex items-center gap-1.5 cursor-pointer px-2 py-1 rounded border text-xs hover:bg-muted hover:text-gray-900 w-fit"
                                 uploading={uploading} uploadProgress={uploadProgress}
                                 assetItems={assetItems} assetsLoading={assetsLoading} loadAssets={loadAssets}
                                 onUpload={uploadToAssets}
@@ -6942,7 +6783,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                       )}
                     </button>
                     <div className="flex-1 flex flex-col gap-1">
-                      <button type="button" onClick={() => logoInputRef.current?.click()} className="text-[11px] px-2 py-1 rounded border hover:bg-muted text-left">
+                      <button type="button" onClick={() => logoInputRef.current?.click()} className="text-[11px] px-2 py-1 rounded border hover:bg-muted hover:text-gray-900 text-left">
                         {siteSettings.logoUrl ? "Replace logo" : "Upload logo"}
                       </button>
                       {siteSettings.logoUrl && (
@@ -6967,7 +6808,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                         <div className="grid grid-cols-3 gap-1">
                           {(["left", "center", "right"] as const).map((a) => (
                             <button key={a} type="button" onClick={() => updateSiteSettings({ logoAlign: a })}
-                              className={`text-[11px] py-0.5 rounded border capitalize ${siteSettings.logoAlign === a ? "bg-black text-white" : "hover:bg-muted"}`}>
+                              className={`text-[11px] py-0.5 rounded border capitalize ${siteSettings.logoAlign === a ? "bg-black text-white" : "hover:bg-muted hover:text-gray-900"}`}>
                               {a}
                             </button>
                           ))}
@@ -6996,7 +6837,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                       )}
                     </button>
                     <div className="flex-1 flex flex-col gap-1">
-                      <button type="button" onClick={() => faviconInputRef.current?.click()} className="text-[11px] px-2 py-1 rounded border hover:bg-muted text-left">
+                      <button type="button" onClick={() => faviconInputRef.current?.click()} className="text-[11px] px-2 py-1 rounded border hover:bg-muted hover:text-gray-900 text-left">
                         {siteSettings.faviconUrl ? "Replace favicon" : "Upload favicon"}
                       </button>
                       {siteSettings.faviconUrl && (
@@ -7025,7 +6866,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                         key={r.id}
                         draggable
                         onDragStart={(e) => e.dataTransfer.setData("application/x-reusable-component", JSON.stringify(r))}
-                        className="flex items-center gap-2 px-2.5 py-1.5 rounded-md border border-gray-200 text-xs cursor-grab hover:bg-muted"
+                        className="flex items-center gap-2 px-2.5 py-1.5 rounded-md border border-gray-200 text-xs cursor-grab hover:bg-muted hover:text-gray-900"
                         title={`From "${r.sourcePage}"`}
                       >
                         <ComponentIcon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
@@ -7124,7 +6965,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
             {selectedIds.length > 1 && !selectionGroupId && (
               <button
                 type="button"
-                className="w-full flex items-center gap-2 text-left px-3 py-1.5 hover:bg-muted"
+                className="w-full flex items-center gap-2 text-left px-3 py-1.5 hover:bg-muted hover:text-gray-900"
                 onClick={groupSelected}
               >
                 <GroupIcon className="h-3.5 w-3.5" /> Create Group
@@ -7133,7 +6974,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
             {selectionGroupId && (
               <button
                 type="button"
-                className="w-full flex items-center gap-2 text-left px-3 py-1.5 hover:bg-muted"
+                className="w-full flex items-center gap-2 text-left px-3 py-1.5 hover:bg-muted hover:text-gray-900"
                 onClick={ungroupSelected}
               >
                 <UngroupIcon className="h-3.5 w-3.5" /> Ungroup
@@ -7142,7 +6983,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
             {selectedComp && (
               <button
                 type="button"
-                className="w-full flex items-center gap-2 text-left px-3 py-1.5 hover:bg-muted"
+                className="w-full flex items-center gap-2 text-left px-3 py-1.5 hover:bg-muted hover:text-gray-900"
                 onClick={copySelection}
               >
                 <ClipboardCopy className="h-3.5 w-3.5" /> Copy
@@ -7151,7 +6992,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
             {selectedComp && (
               <button
                 type="button"
-                className="w-full flex items-center gap-2 text-left px-3 py-1.5 hover:bg-muted"
+                className="w-full flex items-center gap-2 text-left px-3 py-1.5 hover:bg-muted hover:text-gray-900"
                 onClick={() => duplicateInPlace(selectedComp)}
               >
                 <Copy className="h-3.5 w-3.5" /> Duplicate
@@ -7160,7 +7001,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
             {selectedComp && (
               <button
                 type="button"
-                className="w-full flex items-center gap-2 text-left px-3 py-1.5 hover:bg-muted"
+                className="w-full flex items-center gap-2 text-left px-3 py-1.5 hover:bg-muted hover:text-gray-900"
                 onClick={() => copyStyle(selectedComp)}
               >
                 <Paintbrush className="h-3.5 w-3.5" /> Copy style
@@ -7169,7 +7010,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
             {selectedComp && copiedStyleRef.current && (
               <button
                 type="button"
-                className="w-full flex items-center gap-2 text-left px-3 py-1.5 hover:bg-muted"
+                className="w-full flex items-center gap-2 text-left px-3 py-1.5 hover:bg-muted hover:text-gray-900"
                 onClick={() => pasteStyle(selectedComp)}
               >
                 <ClipboardPaste className="h-3.5 w-3.5" /> Paste style
@@ -7178,7 +7019,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
             {selectedComp && !selectedComp.reusable && (
               <button
                 type="button"
-                className="w-full flex items-center gap-2 text-left px-3 py-1.5 hover:bg-muted"
+                className="w-full flex items-center gap-2 text-left px-3 py-1.5 hover:bg-muted hover:text-gray-900"
                 onClick={() => {
                   setReusablePrompt({ id: selectedComp.id, name: selectedComp.reusableName ?? selectedComp.name ?? "", x: contextMenu.x, y: contextMenu.y });
                   setContextMenu(null);
@@ -7190,7 +7031,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
             {selectedComp && selectedComp.reusable && (
               <button
                 type="button"
-                className="w-full flex items-center gap-2 text-left px-3 py-1.5 hover:bg-muted"
+                className="w-full flex items-center gap-2 text-left px-3 py-1.5 hover:bg-muted hover:text-gray-900"
                 onClick={() => {
                   updateComp(selectedComp.id, { reusable: false, reusableName: undefined });
                   setReusableRefreshPending(true);
@@ -7203,7 +7044,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
             <button
               type="button"
               disabled={selectedComps.some((c) => c.locked)}
-              className="w-full flex items-center gap-2 text-left px-3 py-1.5 hover:bg-muted text-destructive disabled:opacity-40 disabled:cursor-not-allowed"
+              className="w-full flex items-center gap-2 text-left px-3 py-1.5 hover:bg-muted hover:text-gray-900 text-destructive disabled:opacity-40 disabled:cursor-not-allowed"
               onClick={() => { deleteComp(selectedIds); setContextMenu(null); }}
             >
               <Trash2 className="h-3.5 w-3.5" /> Delete

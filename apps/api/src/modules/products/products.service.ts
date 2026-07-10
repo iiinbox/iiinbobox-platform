@@ -115,7 +115,7 @@ export class ProductsService {
 
   async addImage(user: RequestUser, productId: string, file: Express.Multer.File) {
     await this.findOwned(user, productId);
-    const url = await this.storage.upload(file.buffer, file.mimetype, `products/${productId}`);
+    const { url } = await this.storage.upload(file.buffer, file.mimetype, `products/${productId}`);
     return prisma.product.update({
       where: { id: productId },
       data: { images: { push: url } },

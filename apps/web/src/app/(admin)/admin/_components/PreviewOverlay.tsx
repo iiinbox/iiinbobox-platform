@@ -13,10 +13,17 @@ export interface PreviewZonePayload {
   height: number;
 }
 
-export interface PreviewBlockZonePayload extends PreviewZonePayload {
-  rotation?: number;
-  hideOnScrollUpPx?: number | null;
-  hideOnScrollDownPx?: number | null;
+// One header or footer block — any of 4 sides, see lib/page-template-zones.ts.
+export interface PreviewBlockPayload {
+  id: string;
+  kind: "header" | "footer";
+  dock: "top" | "bottom" | "left" | "right";
+  size: number;
+  rotation: number;
+  bgColor: string;
+  hideOnScrollUpPx: number | null;
+  hideOnScrollDownPx: number | null;
+  components: PageComponent[];
 }
 
 // Shaped exactly like the existing pageConfigPayload / GET /page-config/:page
@@ -24,9 +31,8 @@ export interface PreviewBlockZonePayload extends PreviewZonePayload {
 // so this component can render *any* page (e.g. a folder's root page fetched
 // fresh for a Pages-panel Preview click), not just the one currently open.
 export interface PreviewPageData {
-  header: { desktop: PreviewBlockZonePayload; mobile: PreviewBlockZonePayload };
+  blocks: { desktop: PreviewBlockPayload[]; mobile: PreviewBlockPayload[] };
   template: { desktop: PreviewZonePayload; mobile: PreviewZonePayload };
-  footer: { desktop: PreviewBlockZonePayload; mobile: PreviewBlockZonePayload };
 }
 
 export interface PreviewSiteSettings {
@@ -36,13 +42,13 @@ export interface PreviewSiteSettings {
   logoLink: string;
 }
 
-// Tracks scroll direction to drive two INDEPENDENT hide thresholds (hide
-// after scrolling down past X px vs. hide after scrolling up past Y px from
-// wherever the direction last flipped) — replaces the old single sticky+
-// hideAfterPx pair. Either, both, or neither threshold can be enabled
-// (null = that direction never hides it).
-function useScrollHide(scrollRef: { current: HTMLDivElement | null }, hideDownPx: number | null | undefined, hideUpPx: number | null | undefined) {
-  const [hidden, setHidden] = useState(false);
+// Tracks raw scroll position + direction once (not per-block) — each block
+// independently derives its own hidden/shown state from this via
+// isBlockHidden() below, so an arbitrary number of blocks can each have their
+// own independent hide-on-scroll thresholds without one hook per block
+// (which the rules of hooks wouldn't allow for a dynamic-length block list).
+function useScrollState(scrollRef: { current: HTMLDivElement | null }) {
+  const [state, setState] = useState({ y: 0, direction: "down" as "up" | "down", directionChangeY: 0 });
   const lastY = useRef(0);
   const directionChangeY = useRef(0);
   const direction = useRef<"up" | "down">("down");
@@ -58,31 +64,30 @@ function useScrollHide(scrollRef: { current: HTMLDivElement | null }, hideDownPx
         directionChangeY.current = lastY.current;
       }
       lastY.current = y;
-      if (newDirection === "down" && typeof hideDownPx === "number") {
-        setHidden(y - directionChangeY.current > hideDownPx);
-      } else if (newDirection === "up" && typeof hideUpPx === "number") {
-        setHidden(directionChangeY.current - y > hideUpPx);
-      } else {
-        setHidden(false);
-      }
+      setState({ y, direction: newDirection, directionChangeY: directionChangeY.current });
     }
     el.addEventListener("scroll", onScroll, { passive: true });
     onScroll();
     return () => el.removeEventListener("scroll", onScroll);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hideDownPx, hideUpPx]);
+  }, [scrollRef]);
 
-  return hidden;
+  return state;
+}
+
+function isBlockHidden(scroll: { y: number; direction: "up" | "down"; directionChangeY: number }, hideDownPx: number | null, hideUpPx: number | null): boolean {
+  if (scroll.direction === "down" && typeof hideDownPx === "number") return scroll.y - scroll.directionChangeY > hideDownPx;
+  if (scroll.direction === "up" && typeof hideUpPx === "number") return scroll.directionChangeY - scroll.y > hideUpPx;
+  return false;
 }
 
 // Renders a block (header/footer children) with rotation applied to the
 // block's own outer bar ONLY — the inner wrapper carries an equal-and-
 // opposite counter-rotation so the children inside always stay upright,
 // regardless of what the outer bar's rotation is doing.
-function RotatableBlock({ components, canvasW, canvasH, rotation }: { components: PageComponent[]; canvasW: number; canvasH: number; rotation: number }) {
+function RotatableBlock({ components, canvasW, canvasH, rotation, bgColor }: { components: PageComponent[]; canvasW: number; canvasH: number; rotation: number; bgColor?: string }) {
   if (!rotation) return <PreviewCanvas components={components} canvasW={canvasW} canvasH={canvasH} />;
   return (
-    <div className="relative bg-white shadow-sm mx-auto" style={{ width: "100%", maxWidth: canvasW, aspectRatio: `${canvasW} / ${canvasH}`, transform: `rotate(${rotation}deg)`, transformOrigin: "center" }}>
+    <div className="relative shadow-sm mx-auto" style={{ width: "100%", maxWidth: canvasW, aspectRatio: `${canvasW} / ${canvasH}`, transform: `rotate(${rotation}deg)`, transformOrigin: "center", backgroundColor: bgColor ?? "#ffffff" }}>
       <div className="absolute inset-0" style={{ transform: `rotate(${-rotation}deg)`, transformOrigin: "center" }}>
         <PreviewCanvas components={components} canvasW={canvasW} canvasH={canvasH} />
       </div>
@@ -117,19 +122,64 @@ export function PreviewOverlay({
   const [view, setView] = useState<"desktop" | "mobile">("desktop");
   const scrollRef = useRef<HTMLDivElement>(null);
   const canvasW = view === "desktop" ? DESKTOP_W : MOBILE_W;
-  const headerHidden = useScrollHide(scrollRef, pageData.header[view].hideOnScrollDownPx, pageData.header[view].hideOnScrollUpPx);
-  const footerHidden = useScrollHide(scrollRef, pageData.footer[view].hideOnScrollDownPx, pageData.footer[view].hideOnScrollUpPx);
+  const scroll = useScrollState(scrollRef);
 
-  const zoneHeights = {
-    header: { desktop: pageData.header.desktop.height, mobile: pageData.header.mobile.height },
-    template: { desktop: pageData.template.desktop.height, mobile: pageData.template.mobile.height },
-    footer: { desktop: pageData.footer.desktop.height, mobile: pageData.footer.mobile.height },
-  };
-  const zoneComponents = {
-    header: { desktop: pageData.header.desktop.components, mobile: pageData.header.mobile.components },
-    template: { desktop: pageData.template.desktop.components, mobile: pageData.template.mobile.components },
-    footer: { desktop: pageData.footer.desktop.components, mobile: pageData.footer.mobile.components },
-  };
+  const blocks = pageData.blocks[view];
+  const templateZone = pageData.template[view];
+  const topBlocks = blocks.filter((b) => b.dock === "top");
+  const bottomBlocks = blocks.filter((b) => b.dock === "bottom");
+  const leftBlocks = blocks.filter((b) => b.dock === "left");
+  const rightBlocks = blocks.filter((b) => b.dock === "right");
+  const totalHeight = topBlocks.reduce((s, b) => s + b.size, 0) + templateZone.height + bottomBlocks.reduce((s, b) => s + b.size, 0);
+
+  function renderStack(list: PreviewBlockPayload[], edge: "top" | "bottom" | "left" | "right") {
+    let offset = 0;
+    return list.map((b) => {
+      const hidden = isBlockHidden(scroll, b.hideOnScrollDownPx, b.hideOnScrollUpPx);
+      const isVertical = edge === "left" || edge === "right";
+      // Same rule as the live site (PageRenderer.tsx's DockedBlock): top/left/
+      // right blocks are always sticky; a bottom block only goes sticky when
+      // it actually has a hide-on-scroll threshold set, otherwise it just
+      // sits in normal flow at the natural end of the page.
+      const isSticky = edge !== "bottom" || b.hideOnScrollDownPx != null || b.hideOnScrollUpPx != null;
+      const style: React.CSSProperties = {
+        position: isSticky ? "sticky" : "static",
+        zIndex: 40,
+        backgroundColor: b.bgColor,
+        transition: "transform 0.25s ease",
+        ...(isSticky && edge === "top" ? { top: offset } : {}),
+        ...(isSticky && edge === "bottom" ? { bottom: offset } : {}),
+        ...(edge === "left" ? { left: 0, ...(isSticky ? { top: offset } : {}), float: "left" as const } : {}),
+        ...(edge === "right" ? { right: 0, ...(isSticky ? { top: offset } : {}), float: "right" as const } : {}),
+        transform: isSticky && hidden
+          ? (edge === "top" ? "translateY(-100%)" : edge === "bottom" ? "translateY(100%)" : edge === "left" ? "translateX(-100%)" : "translateX(100%)")
+          : "translate(0,0)",
+      };
+      offset += isVertical ? 0 : b.size;
+      const blockCanvasW = isVertical ? b.size : canvasW;
+      const blockCanvasH = isVertical ? totalHeight : b.size;
+      return (
+        <div key={b.id} style={style} className="relative">
+          <RotatableBlock components={b.components} canvasW={blockCanvasW} canvasH={blockCanvasH} rotation={b.rotation} bgColor={b.bgColor} />
+          {edge === "top" && siteSettings.logoUrl && (
+            <a
+              href={siteSettings.logoLink || "/"}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="absolute z-30 top-1/2"
+              style={{
+                left: siteSettings.logoAlign === "left" ? "2%" : siteSettings.logoAlign === "center" ? "50%" : undefined,
+                right: siteSettings.logoAlign === "right" ? "2%" : undefined,
+                transform: siteSettings.logoAlign === "center" ? "translate(-50%, -50%)" : "translateY(-50%)",
+              }}
+            >
+              <img src={siteSettings.logoUrl} alt="Logo" style={{ width: `${(siteSettings.logoWidth / canvasW) * 100}%`, height: "auto", display: "block" }} />
+            </a>
+          )}
+        </div>
+      );
+    });
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-background">
@@ -138,7 +188,7 @@ export function PreviewOverlay({
           {view === "desktop" ? <Monitor className="h-4 w-4 text-muted-foreground" /> : <Smartphone className="h-4 w-4 text-muted-foreground" />}
           <span className="font-semibold text-sm">{title} · {view === "desktop" ? "Desktop" : "Mobile"}</span>
           <span className="text-xs text-muted-foreground">
-            ({canvasW} × {Math.round(zoneHeights.header[view] + zoneHeights.template[view] + zoneHeights.footer[view])} px)
+            ({canvasW} × {Math.round(totalHeight)} px)
           </span>
         </div>
         <div className="flex items-center gap-1 ml-2">
@@ -161,42 +211,16 @@ export function PreviewOverlay({
       {statusBanner}
       <div ref={scrollRef} className="flex-1 overflow-auto bg-gray-100 p-4">
         <div style={view === "mobile" ? { maxWidth: 375, margin: "0 auto" } : undefined}>
-          {zoneComponents.header[view].length > 0 && (
-            <div style={{ position: "sticky", top: 0, zIndex: 40, transform: headerHidden ? "translateY(-100%)" : "translateY(0)", transition: "transform 0.25s ease" }}>
-              <div className="relative">
-                <RotatableBlock components={zoneComponents.header[view]} canvasW={canvasW} canvasH={zoneHeights.header[view]} rotation={pageData.header[view].rotation ?? 0} />
-                {siteSettings.logoUrl && (
-                  <a
-                    href={siteSettings.logoLink || "/"}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="absolute z-30 top-1/2"
-                    style={{
-                      left: siteSettings.logoAlign === "left" ? "2%" : siteSettings.logoAlign === "center" ? "50%" : undefined,
-                      right: siteSettings.logoAlign === "right" ? "2%" : undefined,
-                      transform: siteSettings.logoAlign === "center" ? "translate(-50%, -50%)" : "translateY(-50%)",
-                    }}
-                  >
-                    <img src={siteSettings.logoUrl} alt="Logo" style={{ width: `${(siteSettings.logoWidth / canvasW) * 100}%`, height: "auto", display: "block" }} />
-                  </a>
-                )}
-              </div>
-            </div>
-          )}
-          <PreviewCanvas components={zoneComponents.template[view]} canvasW={canvasW} canvasH={zoneHeights.template[view]} />
-          {zoneComponents.footer[view].length > 0 && (
-            // Sticky-to-bottom only kicks in when a hide-on-scroll threshold is
-            // actually set — see the matching comment in PageRenderer.tsx's
-            // RenderedPage. Otherwise the footer just sits in normal flow,
-            // matching what this app has always done.
-            pageData.footer[view].hideOnScrollDownPx != null || pageData.footer[view].hideOnScrollUpPx != null ? (
-              <div style={{ position: "sticky", bottom: 0, zIndex: 40, transform: footerHidden ? "translateY(100%)" : "translateY(0)", transition: "transform 0.25s ease" }}>
-                <RotatableBlock components={zoneComponents.footer[view]} canvasW={canvasW} canvasH={zoneHeights.footer[view]} rotation={pageData.footer[view].rotation ?? 0} />
-              </div>
-            ) : (
-              <RotatableBlock components={zoneComponents.footer[view]} canvasW={canvasW} canvasH={zoneHeights.footer[view]} rotation={pageData.footer[view].rotation ?? 0} />
-            )
-          )}
+          {/* Left/right rails float alongside the top/template/bottom column —
+              sticky-positioned so they track the scroll like a fixed sidebar
+              without needing real position:fixed (which would escape this
+              overlay's own scroll container). */}
+          {renderStack(leftBlocks, "left")}
+          {renderStack(rightBlocks, "right")}
+          {renderStack(topBlocks, "top")}
+          <PreviewCanvas components={templateZone.components} canvasW={canvasW} canvasH={templateZone.height} />
+          {renderStack(bottomBlocks, "bottom")}
+          <div style={{ clear: "both" }} />
         </div>
         <p className="text-center text-xs text-muted-foreground mt-3 select-none">{footerNote}</p>
       </div>

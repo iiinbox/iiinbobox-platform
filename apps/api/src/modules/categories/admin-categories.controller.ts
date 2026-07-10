@@ -30,7 +30,7 @@ export class AdminCategoriesController {
   @Post("upload-image")
   @UseInterceptors(FileInterceptor("file"))
   async uploadImage(@UploadedFile() file: Express.Multer.File) {
-    const url = await this.storage.upload(file.buffer, file.mimetype, "categories");
+    const { url } = await this.storage.upload(file.buffer, file.mimetype, "categories");
     return { url };
   }
 

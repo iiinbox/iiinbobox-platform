@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Put, Post, UploadedFile, UseGuards, UseInterceptors } from "@nestjs/common";
+import { BadRequestException, Body, Controller, Delete, Get, Param, Put, Post, UploadedFile, UseGuards, UseInterceptors } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
 import { PageConfigService } from "./page-config.service";
 import { StorageService } from "../storage/storage.service";
@@ -36,6 +36,36 @@ export class PageConfigController {
   async renameAsset(@Body() body: { key: string; name: string }) {
     await this.storage.rename("homepage", body.key, body.name);
     return { ok: true };
+  }
+
+  // Custom fonts (Text component's font-upload system) — public, same trust
+  // tier as getPublished/getFolderBySubdomain below: the live published site
+  // needs this to emit @font-face rules for whatever fonts admin has
+  // uploaded, so it can't sit behind the admin guard. Registered before
+  // @Get(":page") for the same route-order reason as "assets" above.
+  @Get("fonts")
+  listFonts() {
+    return this.storage.listFonts();
+  }
+
+  @Post("upload-font")
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 10 * 1024 * 1024 } }))
+  async uploadFont(@UploadedFile() file: Express.Multer.File) {
+    const ext = (file.originalname.match(/\.(\w+)$/)?.[1] ?? "").toLowerCase();
+    if (!["ttf", "otf", "woff", "woff2"].includes(ext)) {
+      throw new BadRequestException("Only .ttf, .otf, .woff, .woff2 font files are allowed");
+    }
+    const { key, url } = await this.storage.upload(file.buffer, file.mimetype, "fonts", file.originalname);
+    return this.storage.describeFont({ key, url, name: file.originalname });
+  }
+
+  @Delete("fonts")
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  deleteFont(@Body("key") key: string) {
+    return this.storage.remove("fonts", key);
   }
 
   // Item 3: the cached read, hit by the live site. Registered before the
@@ -141,6 +171,15 @@ export class PageConfigController {
     return this.svc.deleteFolder(id);
   }
 
+  // "Connect to" box in the Pages panel — ties a folder to the apex domain
+  // (subdomain: null) or a specific subdomain (subdomain: "seller", etc).
+  @Put("folders/:id/subdomain")
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  setFolderSubdomain(@Param("id") id: string, @Body("subdomain") subdomain: string | null) {
+    return this.svc.setFolderSubdomain(id, subdomain);
+  }
+
   @Post("folders/:id/publish")
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN)
@@ -201,7 +240,7 @@ export class PageConfigController {
   @Roles(UserRole.ADMIN)
   @UseInterceptors(FileInterceptor("file"))
   async uploadImage(@UploadedFile() file: Express.Multer.File) {
-    const url = await this.storage.upload(file.buffer, file.mimetype, "homepage");
+    const { url } = await this.storage.upload(file.buffer, file.mimetype, "homepage");
     return { url };
   }
 }

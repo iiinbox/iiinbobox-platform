@@ -7,7 +7,7 @@ import { HeroCarousel } from "./HeroCarousel";
 import { CategoryCarousel } from "./CategoryCarousel";
 import { StickyHeader } from "./StickyHeader";
 import { getHomeIcon } from "@/lib/homepage-icons";
-import { extractZonesFromTemplate } from "@/lib/page-template-zones";
+import { extractZonesFromTemplate, type HeaderFooterBlock } from "@/lib/page-template-zones";
 
 const API = process.env.API_INTERNAL_URL ?? "http://localhost:4000";
 const MAPS_API_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
@@ -601,9 +601,9 @@ function Canvas({ components, canvasW, canvasH, bgColor, logo, rotation }: { com
               </Wrapper>
             );
           })}
-          {/* Logo — global (see getPublicSettings), overlaid on the header zone's
-              own canvas only (ZoneCanvas passes `logo` for the header call and
-              omits it for template/footer). Independently implemented from the
+          {/* Logo — global (see getPublicSettings), overlaid on a top-docked
+              header block's own canvas only (see RenderedPage/DockedBlock,
+              which only pass `logo` through for dock:"top"). Independently implemented from the
               editor's Preview-overlay version, matching this file's established
               convention of duplicating editor vs. live render logic. */}
           {logo?.logoUrl && (
@@ -625,113 +625,111 @@ function Canvas({ components, canvasW, canvasH, bgColor, logo, rotation }: { com
   );
 }
 
-// Renders one zone's config (Header/Template/Footer share this same shape:
-// { desktop: {components, height}, mobile: {...} }, or the legacy
-// { components: [] } single-array format) — reused 3x below, stacked in
-// Header → Template → Footer order.
-function ZoneCanvas({ config, defaultDesktopH, defaultMobileH, bgColor, logo, rotation = 0 }: {
-  config: any;
-  defaultDesktopH: number;
-  defaultMobileH: number;
+// One header/footer block, fixed to its own dock edge (top/bottom/left/right)
+// — `offset` stacks multiple blocks on the same edge without overlapping.
+// Left/right blocks get a fixed pixel width (their own `size`) and run the
+// full page height; top/bottom blocks span the full canvas width and are
+// `size` px tall — the same convention every other component's dimensions
+// already use elsewhere in this app (numeric px, never percentage strings).
+//
+// Sticky positioning: top/left/right blocks are always sticky (same as the
+// original single-header design — a header/rail is meant to stay put while
+// scrolling). A bottom block only goes sticky when a hide-on-scroll threshold
+// is actually set, same rule the original single-footer had — a non-fixed
+// element can't "hide" mid-scroll, but a plain bottom block with no threshold
+// has no reason to float over content; it just sits in normal flow at the
+// natural end of the page like every other component does.
+function DockedBlock({ block, canvasW, pageHeight, bgColor, logo, offset }: {
+  block: HeaderFooterBlock;
+  canvasW: number;
+  pageHeight: number;
   bgColor?: string;
   logo?: PublicSiteSettings;
-  rotation?: number;
+  offset: number;
 }) {
-  // A global logo must show up even on a page whose header zone otherwise has
-  // zero components (a very plausible case — many pages leave the header
-  // mostly empty) — don't let the "nothing to render" bail-outs below hide it.
-  const hasLogo = Boolean(logo?.logoUrl);
-  if (!config) return hasLogo ? <Canvas components={[]} canvasW={1920} canvasH={defaultDesktopH} bgColor={bgColor} logo={logo} /> : null;
-
-  // Dual-view format: { desktop: { components, height }, mobile: { components, height } }
-  if (config.desktop) {
-    const desktopComps: PageComponent[] = Array.isArray(config.desktop.components) ? config.desktop.components : [];
-    const mobileComps: PageComponent[] = Array.isArray(config.mobile?.components) ? config.mobile.components : [];
-    const desktopH: number = typeof config.desktop.height === "number" ? config.desktop.height : defaultDesktopH;
-    const mobileH: number = typeof config.mobile?.height === "number" ? config.mobile.height : defaultMobileH;
-
-    const hasDesktop = desktopComps.length > 0 || hasLogo;
-    const hasMobile = mobileComps.length > 0 || hasLogo;
-
-    if (!hasDesktop && !hasMobile) return null;
-
-    return (
-      <>
-        {/* Breakpoint at lg (1024px) rather than md (768px) so tablets get the
-            mobile-authored layout too — it scales up more gracefully than
-            shrinking the desktop canvas down to tablet width. */}
-        {hasDesktop && (
-          <div className={hasMobile ? "hidden lg:block" : undefined}>
-            <Canvas components={desktopComps} canvasW={1920} canvasH={desktopH} bgColor={bgColor} logo={logo} rotation={rotation} />
-          </div>
-        )}
-        {hasMobile && (
-          <div className={hasDesktop ? "lg:hidden" : undefined}>
-            <Canvas components={mobileComps} canvasW={375} canvasH={mobileH} bgColor={bgColor} logo={logo} rotation={rotation} />
-          </div>
-        )}
-      </>
-    );
-  }
-
-  // Legacy format: { components: [] }
-  const components: PageComponent[] = Array.isArray(config.components) ? config.components : [];
-  if (components.length === 0 && !hasLogo) return null;
-  return <Canvas components={components} canvasW={1200} canvasH={700} bgColor={bgColor} logo={logo} />;
+  const isVertical = block.dock === "left" || block.dock === "right";
+  const comps = block.components as unknown as PageComponent[];
+  const body = (
+    <div style={isVertical ? { width: block.size } : undefined} className="relative">
+      <Canvas
+        components={comps}
+        canvasW={isVertical ? block.size : canvasW}
+        canvasH={isVertical ? pageHeight : block.size}
+        bgColor={block.bgColor ?? bgColor}
+        logo={block.dock === "top" ? logo : undefined}
+        rotation={block.rotation}
+      />
+    </div>
+  );
+  const isSticky = block.dock !== "bottom" || block.hideOnScrollDownPx != null || block.hideOnScrollUpPx != null;
+  if (!isSticky) return body;
+  return (
+    <StickyHeader hideOnScrollDownPx={block.hideOnScrollDownPx} hideOnScrollUpPx={block.hideOnScrollUpPx} edge={block.dock} offset={offset}>
+      {body}
+    </StickyHeader>
+  );
 }
 
 // Shared by (home)/page.tsx (slug "home") and [slug]/page.tsx (any other
 // published page) — the only per-slug specifics live in getPublishedPageConfig().
-// Header/Footer no longer have their own top-level fields (see
-// lib/page-template-zones.ts) — extractZonesFromTemplate pulls the optional
+// Header/Footer no longer have their own top-level fields, and there can be
+// any number of each, each independently docked to any of the 4 canvas edges
+// (see lib/page-template-zones.ts) — extractZonesFromTemplate pulls every
 // header-block/footer-block back out of template.components for each
 // viewport independently, same as the editor's own load effect does.
 export function RenderedPage({ data, settings }: { data: any; settings?: PublicSiteSettings | null }) {
   const desktopZones = extractZonesFromTemplate(data?.template?.desktop, 900);
   const mobileZones = extractZonesFromTemplate(data?.template?.mobile, 812);
-  const hasHeader = desktopZones.header.blockId !== null || mobileZones.header.blockId !== null;
-  const hasFooter = desktopZones.footer.blockId !== null || mobileZones.footer.blockId !== null;
-  const headerSource = desktopZones.header.blockId ? desktopZones.header : mobileZones.header;
-  const footerSource = desktopZones.footer.blockId ? desktopZones.footer : mobileZones.footer;
-
-  const headerConfig = { desktop: desktopZones.header, mobile: mobileZones.header };
-  const templateConfig = { desktop: desktopZones.template, mobile: mobileZones.template };
-  const footerConfig = { desktop: desktopZones.footer, mobile: mobileZones.footer };
 
   // Page-level, not per-zone (see PageEditor.tsx's canvasBgColor) — same color
-  // behind Header/Template/Footer since there's one control per page, not one
-  // per zone.
+  // behind every zone since there's one control per page, not one per zone.
   const canvasBgColor = typeof data.canvasBgColor === "string" ? data.canvasBgColor : "#ffffff";
-  // Logo is global (see getPublicSettings) and only ever overlaid on the
-  // header zone, never template/footer.
-  const headerZone = <ZoneCanvas config={headerConfig} defaultDesktopH={200} defaultMobileH={150} bgColor={canvasBgColor} logo={settings ?? undefined} rotation={headerSource.rotation} />;
-  const footerZone = <ZoneCanvas config={footerConfig} defaultDesktopH={300} defaultMobileH={220} bgColor={canvasBgColor} rotation={footerSource.rotation} />;
 
-  // Only the header is pinned-while-scrolling by default — same convention
-  // as every conventional site nav, and what this app has always done.
-  // Footer stays in normal document flow (appears once, at the natural end
-  // of the page) UNLESS a hide-on-scroll threshold is explicitly set for it,
-  // in which case sticky-to-bottom is what makes that threshold meaningful
-  // at all (a non-fixed element can't "hide" mid-scroll — it just scrolls
-  // off naturally). Without this, every page's footer would float over
-  // content for the page's entire scroll length, which nothing here ever
-  // asked for and the original app never did.
-  const footerIsSticky = hasFooter && (footerSource.hideOnScrollDownPx != null || footerSource.hideOnScrollUpPx != null);
+  function renderViewport(zones: typeof desktopZones, canvasW: number) {
+    const top = zones.blocks.filter((b) => b.dock === "top");
+    const bottom = zones.blocks.filter((b) => b.dock === "bottom");
+    const left = zones.blocks.filter((b) => b.dock === "left");
+    const right = zones.blocks.filter((b) => b.dock === "right");
+    const topInset = top.reduce((s, b) => s + b.size, 0);
+    const bottomInset = bottom.reduce((s, b) => s + b.size, 0);
+    const pageHeight = topInset + zones.template.height + bottomInset;
+
+    let offset = 0;
+    const topEls = top.map((b) => { const el = <DockedBlock key={b.id} block={b} canvasW={canvasW} pageHeight={pageHeight} bgColor={canvasBgColor} logo={settings ?? undefined} offset={offset} />; offset += b.size; return el; });
+    offset = 0;
+    const bottomEls = bottom.map((b) => { const el = <DockedBlock key={b.id} block={b} canvasW={canvasW} pageHeight={pageHeight} bgColor={canvasBgColor} offset={offset} />; offset += b.size; return el; });
+    offset = 0;
+    const leftEls = left.map((b) => { const el = <DockedBlock key={b.id} block={b} canvasW={canvasW} pageHeight={pageHeight} bgColor={canvasBgColor} offset={offset} />; offset += 0; return el; });
+    offset = 0;
+    const rightEls = right.map((b) => { const el = <DockedBlock key={b.id} block={b} canvasW={canvasW} pageHeight={pageHeight} bgColor={canvasBgColor} offset={offset} />; offset += 0; return el; });
+
+    return (
+      <>
+        {leftEls}
+        {rightEls}
+        {topEls}
+        <Canvas components={zones.template.components as unknown as PageComponent[]} canvasW={canvasW} canvasH={zones.template.height} bgColor={canvasBgColor} />
+        {bottomEls}
+        <div style={{ clear: "both" }} />
+      </>
+    );
+  }
+
+  const hasDesktopContent = desktopZones.blocks.length > 0 || desktopZones.template.components.length > 0 || Boolean(settings?.logoUrl);
+  const hasMobileContent = mobileZones.blocks.length > 0 || mobileZones.template.components.length > 0 || Boolean(settings?.logoUrl);
+
   return (
     <>
-      {hasHeader ? (
-        <StickyHeader hideOnScrollDownPx={headerSource.hideOnScrollDownPx} hideOnScrollUpPx={headerSource.hideOnScrollUpPx} edge="top">
-          {headerZone}
-        </StickyHeader>
-      ) : null}
-      <ZoneCanvas config={templateConfig} defaultDesktopH={900} defaultMobileH={812} bgColor={canvasBgColor} />
-      {hasFooter ? (
-        footerIsSticky ? (
-          <StickyHeader hideOnScrollDownPx={footerSource.hideOnScrollDownPx} hideOnScrollUpPx={footerSource.hideOnScrollUpPx} edge="bottom">
-            {footerZone}
-          </StickyHeader>
-        ) : footerZone
-      ) : null}
+      {hasDesktopContent && (
+        <div className={hasMobileContent ? "hidden lg:block" : undefined}>
+          {renderViewport(desktopZones, 1920)}
+        </div>
+      )}
+      {hasMobileContent && (
+        <div className={hasDesktopContent ? "lg:hidden" : undefined}>
+          {renderViewport(mobileZones, 375)}
+        </div>
+      )}
     </>
   );
 }

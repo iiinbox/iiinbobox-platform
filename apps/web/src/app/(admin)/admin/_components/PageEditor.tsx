@@ -7,18 +7,18 @@ import { Input } from "@/components/ui/input";
 import {
   Trash2, Image as ImageIcon, Images, Type, Check, Copy,
   Monitor, Smartphone, Eye, Pencil, RotateCcw, MousePointerClick, Move, ChevronDown, ChevronUp, Square,
-  Group as GroupIcon, Ungroup as UngroupIcon, Link2, Ruler,
+  Group as GroupIcon, Ungroup as UngroupIcon, Link2,
   ChevronLeft, ChevronRight, Infinity as InfinityIcon, Timer,
-  GalleryHorizontal, Tag, Component as ComponentIcon, Grid3x3, GripVertical, Layers,
+  GalleryHorizontal, Tag, Component as ComponentIcon, GripVertical, Layers,
   BarChart3, Users, Activity, Cloud, Rocket, Palette, Radio, History, RotateCw,
-  Lock, Unlock, EyeOff, AlignLeft, AlignCenter, AlignRight, AlignJustify,
+  Lock, Unlock, EyeOff, AlignLeft, AlignCenter, AlignRight,
   AlignVerticalJustifyStart, AlignVerticalJustifyCenter, AlignVerticalJustifyEnd,
   AlignHorizontalDistributeCenter, AlignVerticalDistributeCenter,
   ArrowUpToLine, ArrowDownToLine, Undo2, Redo2, Minus, Plus, Maximize,
-  FileText, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, X, LogOut,
+  FileText, X, LogOut,
   MapPin, Map as MapIcon, CalendarClock, CarFront, BadgeCheck, Receipt, Calendar, Clock, Navigation, Star,
-  MoreVertical, GalleryHorizontalEnd, Paintbrush, ClipboardPaste, Search, LayoutGrid,
-  List, ListOrdered, Indent, Outdent, ExternalLink, AlertTriangle, Settings,
+  MoreVertical, GalleryHorizontalEnd, Paintbrush, ClipboardPaste, ClipboardCopy, Search, LayoutGrid,
+  List, Settings,
   Folder as FolderIcon, FolderPlus,
 } from "lucide-react";
 import { HOME_ICONS, HOME_ICON_CATEGORIES, getHomeIcon } from "@/lib/homepage-icons";
@@ -26,7 +26,7 @@ import { usePagesList } from "../_lib/usePagesList";
 import { useProjectsTree, type ProjectFolder } from "../_lib/useProjectsTree";
 import { NewPageDialog } from "./NewPageDialog";
 import { PreviewOverlay, type PreviewPageData } from "./PreviewOverlay";
-import { extractZonesFromTemplate, buildTemplateZone } from "@/lib/page-template-zones";
+import { extractZonesFromTemplate, buildTemplateZone, type Dock, type HeaderFooterBlock } from "@/lib/page-template-zones";
 
 export type ComponentType = "text" | "header" | "shape" | "image" | "button" | "carousel" | "icon"
   | "location-input" | "map" | "datetime-picker" | "vehicle-selector" | "driver-badge" | "fare-display"
@@ -40,12 +40,33 @@ type ViewMode = "desktop" | "mobile";
 // Template is this page's own unique content. Not to be confused with the
 // unrelated PageComponent `type: "header"` (a heading/text component type).
 type Zone = "header" | "template" | "footer";
+// One header or footer block's editor-side metadata — mirrors
+// lib/page-template-zones.ts's HeaderFooterBlock, but with real PageComponent
+// children (richer than the shared ZoneComponent shape) since this is what
+// actually flows through addComponent/updateComp/etc. Multiple blocks of each
+// kind can exist per page per viewport; only one header and one footer are
+// "active" (edited on the header/footer zone-canvas) at a time — see
+// activeHeaderId/activeFooterId and setActiveBlock().
+interface BlockMeta {
+  id: string;
+  kind: "header" | "footer";
+  dock: Dock;
+  size: number;
+  rotation: 0 | 90 | 180 | 270;
+  bgColor: string;
+  hideOnScrollUpPx: number | null;
+  hideOnScrollDownPx: number | null;
+  components: PageComponent[];
+}
 type ButtonStyle = "solid" | "outline" | "ghost" | "link";
 type ButtonActionType = "url" | "buy" | "search" | "custom";
 type TextStyle = "heading" | "subheading" | "body";
 type TextEffect = "none" | "glow" | "outline" | "background" | "hollow" | "neon" | "glitch";
 type ShapeType = "square" | "rectangle" | "circle" | "ellipse" | "triangle" | "diamond" | "hexagon" | "star";
-type ResizeCorner = "tl" | "tr" | "bl" | "br";
+// "t"/"b"/"l"/"r" are mid-edge handles (Text/Header only) — resize just one
+// axis (width-only for l/r, height-only for t/b) by dragging the box border
+// itself rather than a corner, matching a conventional text-box resize UX.
+type ResizeCorner = "tl" | "tr" | "bl" | "br" | "t" | "b" | "l" | "r";
 type ImageMode = "single" | "slideshow";
 type ImageSizePreset = "square" | "portrait" | "landscape" | "wide";
 type SyncStatus = "idle" | "dirty" | "syncing" | "synced" | "error";
@@ -315,13 +336,6 @@ const FONT_FAMILIES = [
   ].map((font) => ({ label: font, value: `'${font}', system-ui, -apple-system, sans-serif` })),
 ];
 
-const FONT_WEIGHTS = [
-  { label: "Thin", value: 100 }, { label: "Light", value: 300 },
-  { label: "Regular", value: 400 }, { label: "Medium", value: 500 },
-  { label: "Semibold", value: 600 }, { label: "Bold", value: 700 },
-  { label: "Extrabold", value: 800 }, { label: "Black", value: 900 },
-];
-
 const BUTTON_ACTIONS: { label: string; value: ButtonActionType }[] = [
   { label: "Link to URL", value: "url" },
   { label: "Buy (product slug)", value: "buy" },
@@ -395,12 +409,6 @@ function tokenFontSize(token: TextToken, canvasW: number): number {
   return canvasW <= MOBILE_W ? spec.fontSizeMobile : spec.fontSizeDesktop;
 }
 
-// Approved font families for token-driven text — capped at 3 (vs. the ~100-entry
-// FONT_FAMILIES list used by Button/Shape text) so token-based typography stays
-// visually consistent site-wide. Inter is first/default, matching the primary
-// font-stack requirement.
-const APPROVED_FONT_FAMILIES = ["Inter", "Poppins", "Georgia"].map((name) => FONT_FAMILIES.find((f) => f.label === name)!);
-
 // Migration for pre-token saved pages (item 7): existing text/header components
 // have concrete fontSize/fontWeight but no textToken. Rather than mutating
 // stored data on load — which would risk a visual diff on someone else's saved
@@ -422,66 +430,6 @@ function effectiveTextToken(comp: PageComponent): TextToken {
   return comp.textToken ?? nearestTextToken(comp);
 }
 
-// Size presets (item 1): steps around the current token's base size rather
-// than a free px slider. "Medium" is the token's own size; the others scale
-// off it, then get clamped by the mobile body-size floor below.
-const SIZE_PRESETS = [
-  { id: "small", label: "S", mult: 0.8 },
-  { id: "medium", label: "M", mult: 1 },
-  { id: "large", label: "L", mult: 1.25 },
-  { id: "xl", label: "XL", mult: 1.5 },
-] as const;
-const MIN_MOBILE_BODY_SIZE = 14;
-// Headings/buttons/label/caption/legal all have their own deliberate scale
-// (label/caption/legal are intentionally small print); the 14px mobile floor
-// is only meant to protect plain body copy from becoming unreadably small.
-function isBodyToken(token: TextToken): boolean {
-  return token === "body-l" || token === "body-m" || token === "body-s";
-}
-function applySizePreset(comp: PageComponent, mult: number, canvasW: number): number {
-  const token = effectiveTextToken(comp);
-  const base = comp.textToken ? tokenFontSize(token, canvasW) : (comp.fontSize ?? tokenFontSize(token, canvasW));
-  let size = Math.round(base * mult);
-  if (canvasW <= MOBILE_W && isBodyToken(token)) size = Math.max(MIN_MOBILE_BODY_SIZE, size);
-  return size;
-}
-
-const LINE_HEIGHT_PRESETS = [
-  { id: "tight", label: "Tight", value: 1.1 },
-  { id: "normal", label: "Normal", value: 1.5 },
-  { id: "relaxed", label: "Relaxed", value: 1.8 },
-] as const;
-const LETTER_SPACING_PRESETS = [
-  { id: "tight", label: "Tight", value: -0.5 },
-  { id: "normal", label: "Normal", value: 0 },
-  { id: "wide", label: "Wide", value: 1 },
-] as const;
-
-// Brand palette (item 1): a small curated set of on-brand text-color presets
-// shown alongside the full hex picker (still in Appearance) for one-click use.
-const BRAND_TEXT_COLORS = ["#0f172a", "#334155", "#64748b", "#ffffff", "#2563eb", "#16a34a", "#dc2626", "#eab308"];
-
-// WCAG 2.x relative luminance / contrast ratio (item 4) — used to warn when
-// text color is hard to read against its background. Standard sRGB formula.
-function relativeLuminance(hex: string): number {
-  const c = hex.replace("#", "");
-  const full = c.length === 3 ? c.split("").map((ch) => ch + ch).join("") : c;
-  const [r, g, b] = [0, 2, 4].map((i) => parseInt(full.slice(i, i + 2), 16) / 255);
-  const lin = (v: number) => (v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4));
-  return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
-}
-function contrastRatio(hexA: string, hexB: string): number {
-  const lA = relativeLuminance(hexA) + 0.05;
-  const lB = relativeLuminance(hexB) + 0.05;
-  return lA > lB ? lA / lB : lB / lA;
-}
-// Text/Header components can have a transparent background; we can't know
-// the real backdrop then, so we check against white as the common canvas
-// default — a useful heuristic warning rather than a guarantee.
-function textContrastRatio(comp: PageComponent): number {
-  const bg = comp.bgColor && comp.bgColor !== "transparent" ? comp.bgColor : "#ffffff";
-  return contrastRatio(comp.fontColor ?? "#000000", bg);
-}
 
 function textDecorationLine(comp: PageComponent): string {
   const parts: string[] = [];
@@ -520,21 +468,6 @@ function renderTextBody(comp: PageComponent) {
     </span>
   );
 }
-
-// Quick-add presets in the Text accordion's empty state — now just thin
-// wrappers over the typography tokens (rather than their own hardcoded font
-// values) so every entry point into a new Text component stays consistent
-// with the token system. See textTokenPatch()/TEXT_TOKENS.
-interface TextPreset { id: string; label: string; sample: string; token: TextToken; fontColor: string }
-
-const TEXT_PRESETS: TextPreset[] = [
-  { id: "display",    label: "Display",    sample: "Display",    token: "heading-xl", fontColor: "#0f172a" },
-  { id: "header",     label: "Header",     sample: "Header",     token: "heading-l",  fontColor: "#0f172a" },
-  { id: "subheading",  label: "Subheading", sample: "Subheading", token: "heading-m",  fontColor: "#334155" },
-  { id: "body",        label: "Body",       sample: "Body text",  token: "body-m",     fontColor: "#334155" },
-  { id: "caption",     label: "Caption",    sample: "Caption",    token: "caption",    fontColor: "#64748b" },
-  { id: "label",       label: "Label",      sample: "Label",      token: "label",      fontColor: "#0f172a" },
-];
 
 interface ButtonPreset { id: string; label: string; patch: Partial<PageComponent> }
 
@@ -1225,90 +1158,6 @@ function FareDisplayBody({ comp }: { comp: PageComponent }) {
   );
 }
 
-// ── Margin guides + spacing rulers (rulers live outside the canvas border) ──
-
-const RULER_SIZE = 20;
-
-function rulerStep(canvasSize: number) {
-  if (canvasSize > 1200) return 100;
-  if (canvasSize > 500) return 50;
-  return 25;
-}
-
-function TopRuler({ canvasW }: { canvasW: number }) {
-  const step = rulerStep(canvasW);
-  const ticks: number[] = [];
-  for (let x = 0; x <= canvasW; x += step) ticks.push(x);
-  return (
-    <div className="absolute inset-0 bg-blue-50 border-b border-blue-200 select-none">
-      {ticks.map((x) => (
-        <div key={x} className="absolute top-0 h-full" style={{ left: `${(x / canvasW) * 100}%` }}>
-          <div className="w-px h-2 bg-blue-400" />
-          <span className="text-[8px] text-blue-500 leading-none pl-0.5 whitespace-nowrap">{x}</span>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function LeftRuler({ canvasH }: { canvasH: number }) {
-  const step = rulerStep(canvasH);
-  const ticks: number[] = [];
-  for (let y = 0; y <= canvasH; y += step) ticks.push(y);
-  return (
-    <div className="absolute inset-0 bg-blue-50 border-r border-blue-200 select-none">
-      {ticks.map((y) => (
-        <div key={y} className="absolute left-0 w-full" style={{ top: `${(y / canvasH) * 100}%` }}>
-          <div className="h-px w-2 bg-blue-400 ml-auto" />
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function MarginGuides({ canvasW, canvasH }: { canvasW: number; canvasH: number }) {
-  const marginX = Math.round(canvasW * 0.04);
-  const marginY = Math.round(canvasH * 0.04);
-  return (
-    <div className="absolute inset-0 pointer-events-none z-10 select-none">
-      {/* Margin guide box */}
-      <div className="absolute border border-dashed border-pink-400/70"
-        style={{ left: `${(marginX / canvasW) * 100}%`, top: `${(marginY / canvasH) * 100}%`, right: `${(marginX / canvasW) * 100}%`, bottom: `${(marginY / canvasH) * 100}%` }} />
-      {/* Center cross-hair guides */}
-      <div className="absolute top-0 bottom-0 border-l border-dashed border-purple-300/70" style={{ left: "50%" }} />
-      <div className="absolute left-0 right-0 border-t border-dashed border-purple-300/70" style={{ top: "50%" }} />
-    </div>
-  );
-}
-
-// ── Grid overlay (graph paper) — editor-only, never rendered on the live page ──
-// Pure-CSS repeating background so it stays cheap regardless of grid density.
-// The canvas is always scaled uniformly (width and height share one scale factor,
-// since aspect-ratio locks them together), so a background-size percentage of
-// gridSize/canvasW and gridSize/canvasH always paints a true square on screen.
-
-function GridOverlay({ canvasW, canvasH, gridSize }: { canvasW: number; canvasH: number; gridSize: number }) {
-  const minorX = (gridSize / canvasW) * 100;
-  const minorY = (gridSize / canvasH) * 100;
-  const majorSize = gridSize * 5;
-  const majorX = (majorSize / canvasW) * 100;
-  const majorY = (majorSize / canvasH) * 100;
-  return (
-    <div
-      className="absolute inset-0 pointer-events-none select-none"
-      style={{
-        backgroundImage: [
-          `linear-gradient(to right, rgba(59,130,246,0.3) 1px, transparent 1px)`,
-          `linear-gradient(to bottom, rgba(59,130,246,0.3) 1px, transparent 1px)`,
-          `linear-gradient(to right, rgba(59,130,246,0.12) 1px, transparent 1px)`,
-          `linear-gradient(to bottom, rgba(59,130,246,0.12) 1px, transparent 1px)`,
-        ].join(", "),
-        backgroundSize: `${majorX}% ${majorY}%, ${majorX}% ${majorY}%, ${minorX}% ${minorY}%, ${minorX}% ${minorY}%`,
-      }}
-    />
-  );
-}
-
 // ── Spacing guides — shown only while actively dragging a single component ──
 // Finds, in each of the 4 directions, the nearest other component whose box
 // overlaps the dragged component on the perpendicular axis (i.e. an actual
@@ -1595,8 +1444,13 @@ function layerIcon(comp: PageComponent) {
 
 function defaults(type: ComponentType, canvasW: number): Partial<PageComponent> {
   switch (type) {
-    case "header": return { width: Math.round(canvasW * 0.35), height: 70, content: "Heading", textStyle: "heading", fontColor: "#111111", bgColor: "transparent", italic: false, textAlign: "center", textEffect: "none", effectStrength: 30, opacity: 100, rotation: 0, ...textTokenPatch("heading-xl", canvasW) };
-    case "text":   return { width: Math.round(canvasW * 0.28), height: 96, content: "Edit text", textStyle: "body", fontColor: "#111111", bgColor: "transparent", italic: false, textAlign: "left", textEffect: "none", effectStrength: 30, opacity: 100, rotation: 0, ...textTokenPatch("body-m", canvasW) };
+    // Text/Header rebuild: fontFamily is deliberately left unset here — there
+    // is no default/system font anymore, only admin-uploaded custom fonts
+    // (see FontAssetItem/loadFonts). addComponent()'s "+ Add Text"/"+ Add
+    // Heading" callers patch in the first uploaded font's family when one
+    // exists; until then it falls back to the browser default at render time.
+    case "header": return { width: Math.round(canvasW * 0.35), height: 70, content: "Heading", fontSize: 32, fontColor: "#111111", bgColor: "transparent", textAlign: "center", letterSpacing: 0, lineHeight: 1.2, opacity: 100, rotation: 0 };
+    case "text":   return { width: Math.round(canvasW * 0.28), height: 96, content: "Edit text", fontSize: 16, fontColor: "#111111", bgColor: "transparent", textAlign: "left", letterSpacing: 0, lineHeight: 1.4, opacity: 100, rotation: 0 };
     case "shape":  return { width: Math.round(canvasW * 0.12), height: 120, bgColor: "#3b82f6", borderRadius: 8, opacity: 100, shapeType: "rectangle", rotation: 0 };
     case "image":  return { width: Math.round(canvasW * 0.18), height: 180, bgColor: "#e5e7eb", borderRadius: 4, rotation: 0 };
     case "button": return { width: Math.round(canvasW * 0.1), height: 56, content: "Click me", fontSize: 16, fontFamily: "system-ui, -apple-system, sans-serif", fontWeight: 600, fontColor: "#ffffff", bgColor: "#3b82f6", borderRadius: 8, buttonStyle: "solid", borderColor: "#3b82f6", hoverBgColor: "#2563eb", hoverFontColor: "#ffffff", buttonAction: { type: "url", value: "" }, rotation: 0 };
@@ -1642,10 +1496,10 @@ function defaults(type: ComponentType, canvasW: number): Partial<PageComponent> 
       catCarouselTitleColor: "#111111", catCarouselSubtitleColor: "#6b7280",
     };
     // header-block/footer-block are never created through this generic
-    // addComponent(type) factory — they're created via the "+ Add Header"/
-    // "+ Add Footer" buttons, which build the block directly (see
-    // hasHeaderBlock/hasFooterBlock and buildTemplateZone). This case only
-    // exists to keep the switch exhaustive.
+    // addComponent(type) factory — they're created via addBlock() (the
+    // "+ Add Header"/"+ Add Footer" buttons), which builds the BlockMeta
+    // directly (see buildTemplateZone). This case only exists to keep the
+    // switch exhaustive.
     case "header-block":
     case "footer-block":
       return { width: canvasW, height: 60, rotation: 0 };
@@ -1981,6 +1835,25 @@ function ColorPicker({ label, value, onChange }: { label: string; value: string;
   );
 }
 
+// ── Number input + stepper (Text size / letter spacing / line height) ─────────
+function renderStepperInput(value: number, step: number, min: number, max: number, onChange: (v: number) => void) {
+  const clamp = (v: number) => Math.min(max, Math.max(min, v));
+  const round = (v: number) => Math.round(v / step) * step;
+  return (
+    <div className="flex items-center gap-1">
+      <button type="button" onClick={() => onChange(clamp(round(value - step)))} className="h-6 w-6 shrink-0 flex items-center justify-center rounded border hover:bg-muted">
+        <Minus className="h-3 w-3" />
+      </button>
+      <Input type="number" step={step} min={min} max={max} value={value}
+        onChange={(e) => { const v = +e.target.value; if (Number.isFinite(v)) onChange(clamp(v)); }}
+        className="h-6 text-xs px-1 text-center" />
+      <button type="button" onClick={() => onChange(clamp(round(value + step)))} className="h-6 w-6 shrink-0 flex items-center justify-center rounded border hover:bg-muted">
+        <Plus className="h-3 w-3" />
+      </button>
+    </div>
+  );
+}
+
 // ── Font picker with real per-font preview (native <select> can't render this reliably) ──
 
 function FontSelect({ value, onChange, options = FONT_FAMILIES }: { value: string; onChange: (v: string) => void; options?: typeof FONT_FAMILIES }) {
@@ -2036,6 +1909,12 @@ function FontSelect({ value, onChange, options = FONT_FAMILIES }: { value: strin
 // the just-uploaded file. A real upload progress bar (not just "Uploading…"
 // text) is shown while the request is in flight.
 interface AssetItem { key: string; url: string; name: string | null; size: number; lastModified: string | null }
+
+// Custom uploaded font (see apps/web/src/lib/fonts.ts) — `family` is the CSS
+// font-family value a Text/Header component's `fontFamily` field stores;
+// `format` feeds the @font-face src's format() hint, injected globally by
+// the root layout so this value just works wherever it's used.
+export interface FontAssetItem { key: string; url: string; name: string; family: string; format: string; size?: number; lastModified?: string | null }
 
 function ImagePickerButton({
   label, uploading, uploadProgress, assetItems, assetsLoading, loadAssets,
@@ -2204,6 +2083,8 @@ export function PreviewCanvas({ components, canvasW, canvasH }: { components: Pa
 interface PageEditorProps { slug: string; label?: string }
 
 const VIEW_STORAGE_KEY = "iiinbox-editor-view";
+const LEFT_SIDEBAR_HIDDEN_KEY = "iiinbox-editor-left-hidden";
+const RIGHT_SIDEBAR_HIDDEN_KEY = "iiinbox-editor-right-hidden";
 
 export function PageEditor({ slug, label }: PageEditorProps) {
   const router = useRouter();
@@ -2234,34 +2115,23 @@ export function PageEditor({ slug, label }: PageEditorProps) {
   const [activeZone, setActiveZone] = useState<Zone>("template");
   const [headerDesktopComponents, setHeaderDesktopComponents] = useState<PageComponent[]>([]);
   const [headerMobileComponents, setHeaderMobileComponents] = useState<PageComponent[]>([]);
-  const [headerDesktopHeight, setHeaderDesktopHeight] = useState(DEFAULT_HEADER_DESKTOP_H);
-  const [headerMobileHeight, setHeaderMobileHeight] = useState(DEFAULT_HEADER_MOBILE_H);
-  // Header/Footer are now optional "blocks" living inside the template's own
-  // component array (see lib/page-template-zones.ts) rather than
-  // always-present separate zones — hasHeaderBlock/hasFooterBlock track
-  // whether one currently exists on this page at all ("+ Add Header"/"+ Add
-  // Footer" flip these on; nothing forces every page to have either).
-  // Sticky positioning is implicit whenever a header/footer block exists;
-  // hideOnScrollUpPx/hideOnScrollDownPx (both nullable = never hides) replace
-  // the old single sticky+hideAfterPx pair with two independent thresholds.
-  const [hasHeaderBlock, setHasHeaderBlock] = useState(false);
-  // Stable per-viewport component ids for the header/footer block itself
-  // (not its children) — captured on load, reused on save so re-saving
-  // doesn't spuriously regenerate the block's own id every time. Plain refs
-  // since they're bookkeeping, not something the UI ever displays.
-  const headerBlockIdRef = useRef<{ desktop: string | null; mobile: string | null }>({ desktop: null, mobile: null });
-  const footerBlockIdRef = useRef<{ desktop: string | null; mobile: string | null }>({ desktop: null, mobile: null });
-  const [headerRotation, setHeaderRotation] = useState<0 | 90 | 180 | 270>(0);
-  const [headerHideOnScrollUpPx, setHeaderHideOnScrollUpPx] = useState<number | null>(null);
-  const [headerHideOnScrollDownPx, setHeaderHideOnScrollDownPx] = useState<number | null>(1400);
-  const [hasFooterBlock, setHasFooterBlock] = useState(false);
-  const [footerRotation, setFooterRotation] = useState<0 | 90 | 180 | 270>(0);
-  const [footerHideOnScrollUpPx, setFooterHideOnScrollUpPx] = useState<number | null>(null);
-  const [footerHideOnScrollDownPx, setFooterHideOnScrollDownPx] = useState<number | null>(null);
+  // Multiple headers/footers, any of 4 sides (see lib/page-template-zones.ts
+  // and the BlockMeta type above). blocksDesktop/blocksMobile hold every
+  // block's metadata (dock/size/rotation/colour/scroll thresholds) — but only
+  // the ACTIVE header block's and ACTIVE footer block's own components are
+  // "live" in header/footerDesktop/MobileComponents; everything else's
+  // components sit dormant in its own BlockMeta.components until selected.
+  // Switching which block is active (setActiveBlock below) saves the outgoing
+  // block's live components back into its BlockMeta entry and loads the
+  // incoming one — the same "save current, load new" pattern already used
+  // for view/page switching elsewhere in this file.
+  const [blocksDesktop, setBlocksDesktop] = useState<BlockMeta[]>([]);
+  const [blocksMobile, setBlocksMobile] = useState<BlockMeta[]>([]);
+  const [activeHeaderId, setActiveHeaderId] = useState<{ desktop: string | null; mobile: string | null }>({ desktop: null, mobile: null });
+  const [activeFooterId, setActiveFooterId] = useState<{ desktop: string | null; mobile: string | null }>({ desktop: null, mobile: null });
   const [footerSettingsOpen, setFooterSettingsOpen] = useState(false);
-  const [headerHideUpPxDraft, setHeaderHideUpPxDraft] = useState<string | null>(null);
-  const [footerHideDownPxDraft, setFooterHideDownPxDraft] = useState<string | null>(null);
-  const [footerHideUpPxDraft, setFooterHideUpPxDraft] = useState<string | null>(null);
+  const [blockHideUpPxDraft, setBlockHideUpPxDraft] = useState<string | null>(null);
+  const [blockHideDownPxDraft, setBlockHideDownPxDraft] = useState<string | null>(null);
   // Canvas Background — page-level (not per-zone), stored alongside name/header/
   // template/footer in the same config row, so it's naturally per-page and
   // round-trips through the existing save/load path with no schema change.
@@ -2345,11 +2215,8 @@ export function PageEditor({ slug, label }: PageEditorProps) {
   // to the fallback and the canvas visibly "unsized" mid-edit. Both now buffer
   // the raw text locally and only commit (with proper clamping) on blur/Enter.
   const [zoneHeightDrafts, setZoneHeightDrafts] = useState<Partial<Record<Zone, string>>>({});
-  const [headerHideDownPxDraft, setHeaderHideDownPxDraft] = useState<string | null>(null);
   const [footerDesktopComponents, setFooterDesktopComponents] = useState<PageComponent[]>([]);
   const [footerMobileComponents, setFooterMobileComponents] = useState<PageComponent[]>([]);
-  const [footerDesktopHeight, setFooterDesktopHeight] = useState(DEFAULT_FOOTER_DESKTOP_H);
-  const [footerMobileHeight, setFooterMobileHeight] = useState(DEFAULT_FOOTER_MOBILE_H);
   const [pageLabel, setPageLabel] = useState(label ?? "");
   const [editingName, setEditingName] = useState(false);
   const [nameInput, setNameInput] = useState(label ?? "");
@@ -2359,6 +2226,11 @@ export function PageEditor({ slug, label }: PageEditorProps) {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [marquee, setMarquee] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
+  // Double-click-to-edit-inline for Text/Header — content editing now lives
+  // entirely on the canvas (see new Typography panel, which dropped its old
+  // "Edit text" textarea). Only one component can be in inline-edit mode at
+  // a time; entering it deliberately doesn't touch selection/drag state.
+  const [editingTextId, setEditingTextId] = useState<string | null>(null);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -2372,9 +2244,6 @@ export function PageEditor({ slug, label }: PageEditorProps) {
   const [uploadProgress, setUploadProgress] = useState(0);
   // Preview is now folder-level only (see openFolderPreview/previewFolder
   // above) — no more in-editor "preview the page I'm currently on" toggle.
-  const [showGuides, setShowGuides] = useState(false);
-  const [showGrid, setShowGrid] = useState(false);
-  const [gridSize, setGridSize] = useState(50);
   const [openTool, setOpenTool] = useState<ComponentType | null>(null);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [alignmentGuides, setAlignmentGuides] = useState<AlignmentGuideLine[]>([]);
@@ -2388,8 +2257,43 @@ export function PageEditor({ slug, label }: PageEditorProps) {
   // ── Design-tool redesign: additive UI state (inert until wired into JSX) ──
   const [zoom, setZoom] = useState(100);
   const [activeLeftTab, setActiveLeftTab] = useState<"project" | "assets" | "history">("project");
+  // Auto-hide sidebars — collapsed (pinned hidden, persisted) vs. hoverReveal
+  // (transient "peek" while the mouse is over the thin edge strip, never
+  // persisted). Visible = !collapsed || hoverReveal — see the wrapper divs
+  // in the JSX below for the width transition + hover handlers.
   const [leftSidebarCollapsed, setLeftSidebarCollapsed] = useState(false);
   const [rightSidebarCollapsed, setRightSidebarCollapsed] = useState(false);
+  const [leftHoverReveal, setLeftHoverReveal] = useState(false);
+  const [rightHoverReveal, setRightHoverReveal] = useState(false);
+  useEffect(() => {
+    try {
+      setLeftSidebarCollapsed(localStorage.getItem(LEFT_SIDEBAR_HIDDEN_KEY) === "1");
+      setRightSidebarCollapsed(localStorage.getItem(RIGHT_SIDEBAR_HIDDEN_KEY) === "1");
+    } catch {}
+  }, []);
+  // Skip each persist-effect's very first invocation — on mount it runs
+  // with the stale `false` default (this same commit's restore-effect above
+  // has already scheduled the real value via setState, but that update
+  // hasn't landed yet when this effect's closure captured its value), so
+  // writing here would silently clobber whatever was actually in
+  // localStorage before the restore ever gets to apply it. Skipping the
+  // first run just means "don't write during mount" — every write after
+  // that (whether it's the restore's own re-render or a real user toggle)
+  // reflects the current, correct value.
+  const leftPersistSkipFirst = useRef(true);
+  const rightPersistSkipFirst = useRef(true);
+  useEffect(() => {
+    if (leftPersistSkipFirst.current) { leftPersistSkipFirst.current = false; return; }
+    try { localStorage.setItem(LEFT_SIDEBAR_HIDDEN_KEY, leftSidebarCollapsed ? "1" : "0"); } catch {}
+  }, [leftSidebarCollapsed]);
+  useEffect(() => {
+    if (rightPersistSkipFirst.current) { rightPersistSkipFirst.current = false; return; }
+    try { localStorage.setItem(RIGHT_SIDEBAR_HIDDEN_KEY, rightSidebarCollapsed ? "1" : "0"); } catch {}
+  }, [rightSidebarCollapsed]);
+  function hideLeftSidebar() { setLeftSidebarCollapsed(true); setLeftHoverReveal(false); }
+  function hideRightSidebar() { setRightSidebarCollapsed(true); setRightHoverReveal(false); }
+  const leftSidebarVisible = !leftSidebarCollapsed || leftHoverReveal;
+  const rightSidebarVisible = !rightSidebarCollapsed || rightHoverReveal;
   const [openPropertySections, setOpenPropertySections] = useState<Record<PropertySection, boolean>>({
     layout: true, appearance: true, typography: true, responsive: true, effects: true, advanced: false,
   });
@@ -2422,9 +2326,8 @@ export function PageEditor({ slug, label }: PageEditorProps) {
       const desktopZones = extractZonesFromTemplate(d?.template?.desktop, DEFAULT_DESKTOP_H);
       const mobileZones = extractZonesFromTemplate(d?.template?.mobile, DEFAULT_MOBILE_H);
       setPreviewPageData({
-        header: { desktop: desktopZones.header, mobile: mobileZones.header },
+        blocks: { desktop: desktopZones.blocks, mobile: mobileZones.blocks },
         template: { desktop: desktopZones.template, mobile: mobileZones.template },
-        footer: { desktop: desktopZones.footer, mobile: mobileZones.footer },
       } as PreviewPageData);
     } finally {
       setPreviewLoading(false);
@@ -2468,6 +2371,12 @@ export function PageEditor({ slug, label }: PageEditorProps) {
   // open, or null. Same single-open-at-a-time pattern as openRowMenu in the
   // Layers tree above.
   const [openTreeMenu, setOpenTreeMenu] = useState<string | null>(null);
+  // Folder "Connect to" box (item 6) — which folder's domain/subdomain
+  // dropdown is open, plus the draft text for creating a brand-new subdomain
+  // from within it.
+  const [connectMenuFolderId, setConnectMenuFolderId] = useState<string | null>(null);
+  const [newSubdomainInput, setNewSubdomainInput] = useState("");
+  const [connectError, setConnectError] = useState<string | null>(null);
   const [confirmDeleteFolderId, setConfirmDeleteFolderId] = useState<string | null>(null);
   const [confirmDeleteProjectId, setConfirmDeleteProjectId] = useState<string | null>(null);
   const [newFolderProjectId, setNewFolderProjectId] = useState<string | null>(null);
@@ -2480,6 +2389,14 @@ export function PageEditor({ slug, label }: PageEditorProps) {
   const [assetsLoading, setAssetsLoading] = useState(false);
   const [renamingAssetKey, setRenamingAssetKey] = useState<string | null>(null);
   const [renameAssetInput, setRenameAssetInput] = useState("");
+  // Custom fonts (Text component's font-upload system) — loaded eagerly on
+  // mount (unlike assetItems, which loads lazily when the Upload tab opens)
+  // since the Text properties panel's font dropdown can be opened before the
+  // Upload tab ever has been.
+  const [fontItems, setFontItems] = useState<FontAssetItem[] | null>(null);
+  const [fontsLoading, setFontsLoading] = useState(false);
+  const [uploadingFont, setUploadingFont] = useState(false);
+  const [fontUploadProgress, setFontUploadProgress] = useState(0);
   // Metadata-only rename (see StorageService.rename) — the key/URL never
   // changes, so this can't break any page that already placed this image.
   async function commitAssetRename(key: string) {
@@ -2507,6 +2424,8 @@ export function PageEditor({ slug, label }: PageEditorProps) {
       .catch(() => {});
   }, []);
   useEffect(() => { refreshReusableComponents(); }, [refreshReusableComponents]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { loadFonts(); }, []);
   // Marking a component reusable only updates local editor state immediately —
   // the actual PUT that persists it happens on the debounced autosave (~4s
   // later, see the syncStatus effect below). Refetching the sidebar list right
@@ -2548,19 +2467,104 @@ export function PageEditor({ slug, label }: PageEditorProps) {
   // page" reason.
   const isPinnedPage = projectsTree.projects.some((p) => p.folders.some((f) => f.rootPage?.page === slug));
 
+  // Block helpers — header/footer "height" is now the ACTIVE block's own
+  // `size` field inside blocksDesktop/blocksMobile (dock-relative thickness:
+  // height for top/bottom, width for left/right), not standalone state.
+  function activeBlockSize(kind: "header" | "footer", vp: ViewMode): number {
+    const blocks = vp === "desktop" ? blocksDesktop : blocksMobile;
+    const activeId = (kind === "header" ? activeHeaderId : activeFooterId)[vp];
+    const found = blocks.find((b) => b.id === activeId);
+    if (found) return found.size;
+    return kind === "header"
+      ? (vp === "desktop" ? DEFAULT_HEADER_DESKTOP_H : DEFAULT_HEADER_MOBILE_H)
+      : (vp === "desktop" ? DEFAULT_FOOTER_DESKTOP_H : DEFAULT_FOOTER_MOBILE_H);
+  }
+  function setActiveBlockSize(kind: "header" | "footer", vp: ViewMode, v: React.SetStateAction<number>) {
+    const setBlocks = vp === "desktop" ? setBlocksDesktop : setBlocksMobile;
+    const activeId = (kind === "header" ? activeHeaderId : activeFooterId)[vp];
+    setBlocks((prev) => prev.map((b) => (b.id === activeId ? { ...b, size: typeof v === "function" ? (v as (p: number) => number)(b.size) : v } : b)));
+  }
+  // Switches which block (of the given kind) is "active" — i.e. which one's
+  // components are loaded into the header/footer zone-canvas for editing.
+  // Saves the outgoing block's live components back into its own BlockMeta
+  // entry first, then loads the incoming block's saved components — the same
+  // "save current, load new" pattern view/page switching already uses
+  // elsewhere in this file, just applied to a header/footer slot instead.
+  function setActiveBlock(kind: "header" | "footer", vp: ViewMode, blockId: string | null) {
+    const blocks = vp === "desktop" ? blocksDesktop : blocksMobile;
+    const setBlocks = vp === "desktop" ? setBlocksDesktop : setBlocksMobile;
+    const liveComponents = kind === "header"
+      ? (vp === "desktop" ? headerDesktopComponents : headerMobileComponents)
+      : (vp === "desktop" ? footerDesktopComponents : footerMobileComponents);
+    const outgoingId = (kind === "header" ? activeHeaderId : activeFooterId)[vp];
+    setBlocks((prev) => prev.map((b) => (b.id === outgoingId ? { ...b, components: liveComponents } : b)));
+    const incoming = blocks.find((b) => b.id === blockId);
+    const setLive = kind === "header"
+      ? (vp === "desktop" ? setHeaderDesktopComponents : setHeaderMobileComponents)
+      : (vp === "desktop" ? setFooterDesktopComponents : setFooterMobileComponents);
+    setLive(incoming ? incoming.components : []);
+    (kind === "header" ? setActiveHeaderId : setActiveFooterId)((prev) => ({ ...prev, [vp]: blockId }));
+  }
+  // Reads/patches the block currently active for `kind` on the CURRENT view
+  // — used by the settings panel (dock/size/rotation/colour/hideOnScroll).
+  function activeBlock(kind: "header" | "footer"): BlockMeta | undefined {
+    const blocks = view === "desktop" ? blocksDesktop : blocksMobile;
+    const activeId = (kind === "header" ? activeHeaderId : activeFooterId)[view];
+    return blocks.find((b) => b.id === activeId);
+  }
+  function updateActiveBlock(kind: "header" | "footer", patch: Partial<BlockMeta>) {
+    const setBlocks = view === "desktop" ? setBlocksDesktop : setBlocksMobile;
+    const activeId = (kind === "header" ? activeHeaderId : activeFooterId)[view];
+    setBlocks((prev) => prev.map((b) => (b.id === activeId ? { ...b, ...patch } : b)));
+  }
+  function addBlock(kind: "header" | "footer") {
+    const id = uid();
+    const block: BlockMeta = {
+      id, kind, dock: kind === "header" ? "top" : "bottom",
+      size: kind === "header" ? (view === "desktop" ? DEFAULT_HEADER_DESKTOP_H : DEFAULT_HEADER_MOBILE_H) : (view === "desktop" ? DEFAULT_FOOTER_DESKTOP_H : DEFAULT_FOOTER_MOBILE_H),
+      rotation: 0, bgColor: "#ffffff",
+      hideOnScrollUpPx: null, hideOnScrollDownPx: kind === "header" ? 1400 : null,
+      components: [],
+    };
+    // Deliberately viewport-scoped (not mirrored to the other view) — see
+    // item 5, Desktop/Mobile are fully independent, and adding a block while
+    // looking at one should never silently create one on the other.
+    const setBlocks = view === "desktop" ? setBlocksDesktop : setBlocksMobile;
+    setBlocks((prev) => [...prev, block]);
+    setActiveBlock(kind, view, id);
+  }
+  function removeBlock(kind: "header" | "footer", blockId: string) {
+    const blocks = view === "desktop" ? blocksDesktop : blocksMobile;
+    const setBlocks = view === "desktop" ? setBlocksDesktop : setBlocksMobile;
+    const remaining = blocks.filter((b) => b.id !== blockId);
+    setBlocks(remaining);
+    const isActive = (kind === "header" ? activeHeaderId : activeFooterId)[view] === blockId;
+    if (isActive) {
+      const next = remaining.find((b) => b.kind === kind) ?? null;
+      const setLive = kind === "header"
+        ? (view === "desktop" ? setHeaderDesktopComponents : setHeaderMobileComponents)
+        : (view === "desktop" ? setFooterDesktopComponents : setFooterMobileComponents);
+      setLive(next ? next.components : []);
+      (kind === "header" ? setActiveHeaderId : setActiveFooterId)((prev) => ({ ...prev, [view]: next?.id ?? null }));
+    }
+  }
+
   // Zone lookup — the single place that resolves "which zone's arrays are we
   // editing right now" for the rest of this component. Kept as three flat
   // per-zone-per-view array pairs (not a `zone` field on PageComponent) so
   // every existing mutator below keeps operating on one complete flat array.
+  // "header"/"footer" here mean "whichever header/footer block is currently
+  // active" (see activeHeaderId/activeFooterId) — a page can have many more
+  // blocks than that, but only one of each kind is ever the live edit target.
   const zoneComponents: Record<Zone, Record<ViewMode, PageComponent[]>> = {
     header:   { desktop: headerDesktopComponents,   mobile: headerMobileComponents },
     template: { desktop: templateDesktopComponents, mobile: templateMobileComponents },
     footer:   { desktop: footerDesktopComponents,   mobile: footerMobileComponents },
   };
   const zoneHeights: Record<Zone, Record<ViewMode, number>> = {
-    header:   { desktop: headerDesktopHeight,   mobile: headerMobileHeight },
+    header:   { desktop: activeBlockSize("header", "desktop"), mobile: activeBlockSize("header", "mobile") },
     template: { desktop: templateDesktopHeight, mobile: templateMobileHeight },
-    footer:   { desktop: footerDesktopHeight,   mobile: footerMobileHeight },
+    footer:   { desktop: activeBlockSize("footer", "desktop"), mobile: activeBlockSize("footer", "mobile") },
   };
   const zoneSetters: Record<Zone, {
     setDesktop: (v: React.SetStateAction<PageComponent[]>) => void;
@@ -2568,9 +2572,9 @@ export function PageEditor({ slug, label }: PageEditorProps) {
     setDesktopHeight: (v: React.SetStateAction<number>) => void;
     setMobileHeight: (v: React.SetStateAction<number>) => void;
   }> = {
-    header:   { setDesktop: setHeaderDesktopComponents,   setMobile: setHeaderMobileComponents,   setDesktopHeight: setHeaderDesktopHeight,   setMobileHeight: setHeaderMobileHeight },
+    header:   { setDesktop: setHeaderDesktopComponents,   setMobile: setHeaderMobileComponents,   setDesktopHeight: (v) => setActiveBlockSize("header", "desktop", v), setMobileHeight: (v) => setActiveBlockSize("header", "mobile", v) },
     template: { setDesktop: setTemplateDesktopComponents, setMobile: setTemplateMobileComponents, setDesktopHeight: setTemplateDesktopHeight, setMobileHeight: setTemplateMobileHeight },
-    footer:   { setDesktop: setFooterDesktopComponents,   setMobile: setFooterMobileComponents,   setDesktopHeight: setFooterDesktopHeight,   setMobileHeight: setFooterMobileHeight },
+    footer:   { setDesktop: setFooterDesktopComponents,   setMobile: setFooterMobileComponents,   setDesktopHeight: (v) => setActiveBlockSize("footer", "desktop", v), setMobileHeight: (v) => setActiveBlockSize("footer", "mobile", v) },
   };
 
   const canvasW = view === "desktop" ? DESKTOP_W : MOBILE_W;
@@ -2589,10 +2593,6 @@ export function PageEditor({ slug, label }: PageEditorProps) {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const logoInputRef = useRef<HTMLInputElement>(null);
   const faviconInputRef = useRef<HTMLInputElement>(null);
-  // Read inside the global drag mousemove listener (attached once, so it needs
-  // refs rather than closed-over state to stay current — same pattern as canvasWRef).
-  const snapToGridRef  = useRef(false);
-  const gridSizeRef    = useRef(50);
 
   // Always-current refs
   const updateCompRef   = useRef<(id: string, patch: Partial<PageComponent>, targetZone?: Zone) => void>(() => {});
@@ -2669,8 +2669,6 @@ export function PageEditor({ slug, label }: PageEditorProps) {
   selectedIdsRef.current  = selectedIds;
   viewRef.current         = view;
   activeZoneRef.current   = activeZone;
-  snapToGridRef.current   = showGrid;
-  gridSizeRef.current     = gridSize;
   compsRef.current        = {
     header: { desktop: headerDesktopComponents, mobile: headerMobileComponents },
     template: { desktop: templateDesktopComponents, mobile: templateMobileComponents },
@@ -2705,15 +2703,17 @@ export function PageEditor({ slug, label }: PageEditorProps) {
   // "always shrink to fit, never require scrolling just to see the whole canvas,"
   // while still leaving `zoom` as a real, user-adjustable level via the zoom controls.
   useEffect(() => {
-    // Collapsing/expanding is an instant layout change (no CSS transition), but a
-    // rAF still ensures we measure clientWidth after the browser has committed it.
-    const raf = requestAnimationFrame(() => {
+    // Switching Desktop/Mobile is an instant layout change (rAF is enough to
+    // measure after the browser commits it), but collapsing/expanding a
+    // sidebar now animates its width over ~300ms (see the auto-hide wrapper
+    // divs below) — measuring via rAF here would read the pre-transition
+    // width and fit to the WRONG size. Wait out the transition instead.
+    const timer = window.setTimeout(() => {
       const containerW = scrollContainerRef.current?.clientWidth;
       if (!containerW) return;
-      const naturalW = showGuides ? canvasW + RULER_SIZE : canvasW;
-      setZoom(Math.max(25, Math.min(100, Math.floor((containerW - 24) / naturalW * 100))));
-    });
-    return () => cancelAnimationFrame(raf);
+      setZoom(Math.max(25, Math.min(100, Math.floor((containerW - 24) / canvasW * 100))));
+    }, 320);
+    return () => window.clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view, leftSidebarCollapsed, rightSidebarCollapsed]);
 
@@ -2803,29 +2803,25 @@ export function PageEditor({ slug, label }: PageEditorProps) {
         setTemplateMobileComponents(mobileZones.template.components.map((c) => ({ ...c, ...clampToCanvas(c.x, c.y, c.width, c.height, MOBILE_W, mobileZones.template.height, c.rotation ?? 0) })) as PageComponent[]);
         setTemplateMobileHeight(mobileZones.template.height);
 
-        const headerSource = desktopZones.header.blockId ? desktopZones.header : mobileZones.header;
-        const hasHeader = Boolean(desktopZones.header.blockId || mobileZones.header.blockId);
-        setHasHeaderBlock(hasHeader);
-        headerBlockIdRef.current = { desktop: desktopZones.header.blockId, mobile: mobileZones.header.blockId };
-        setHeaderDesktopComponents(desktopZones.header.components as PageComponent[]);
-        setHeaderDesktopHeight(desktopZones.header.height || DEFAULT_HEADER_DESKTOP_H);
-        setHeaderMobileComponents(mobileZones.header.components as PageComponent[]);
-        setHeaderMobileHeight(mobileZones.header.height || DEFAULT_HEADER_MOBILE_H);
-        setHeaderRotation((hasHeader ? headerSource.rotation : 0) as 0 | 90 | 180 | 270);
-        setHeaderHideOnScrollUpPx(hasHeader ? headerSource.hideOnScrollUpPx : null);
-        setHeaderHideOnScrollDownPx(hasHeader ? headerSource.hideOnScrollDownPx : 1400);
-
-        const footerSource = desktopZones.footer.blockId ? desktopZones.footer : mobileZones.footer;
-        const hasFooter = Boolean(desktopZones.footer.blockId || mobileZones.footer.blockId);
-        setHasFooterBlock(hasFooter);
-        footerBlockIdRef.current = { desktop: desktopZones.footer.blockId, mobile: mobileZones.footer.blockId };
-        setFooterDesktopComponents(desktopZones.footer.components as PageComponent[]);
-        setFooterDesktopHeight(desktopZones.footer.height || DEFAULT_FOOTER_DESKTOP_H);
-        setFooterMobileComponents(mobileZones.footer.components as PageComponent[]);
-        setFooterMobileHeight(mobileZones.footer.height || DEFAULT_FOOTER_MOBILE_H);
-        setFooterRotation((hasFooter ? footerSource.rotation : 0) as 0 | 90 | 180 | 270);
-        setFooterHideOnScrollUpPx(hasFooter ? footerSource.hideOnScrollUpPx : null);
-        setFooterHideOnScrollDownPx(hasFooter ? footerSource.hideOnScrollDownPx : null);
+        const toBlockMeta = (b: HeaderFooterBlock): BlockMeta => ({
+          id: b.id, kind: b.kind, dock: b.dock, size: b.size, rotation: b.rotation as 0 | 90 | 180 | 270,
+          bgColor: b.bgColor, hideOnScrollUpPx: b.hideOnScrollUpPx, hideOnScrollDownPx: b.hideOnScrollDownPx,
+          components: b.components as PageComponent[],
+        });
+        const newBlocksDesktop = desktopZones.blocks.map(toBlockMeta);
+        const newBlocksMobile = mobileZones.blocks.map(toBlockMeta);
+        setBlocksDesktop(newBlocksDesktop);
+        setBlocksMobile(newBlocksMobile);
+        const firstHeaderD = newBlocksDesktop.find((b) => b.kind === "header") ?? null;
+        const firstFooterD = newBlocksDesktop.find((b) => b.kind === "footer") ?? null;
+        const firstHeaderM = newBlocksMobile.find((b) => b.kind === "header") ?? null;
+        const firstFooterM = newBlocksMobile.find((b) => b.kind === "footer") ?? null;
+        setActiveHeaderId({ desktop: firstHeaderD?.id ?? null, mobile: firstHeaderM?.id ?? null });
+        setActiveFooterId({ desktop: firstFooterD?.id ?? null, mobile: firstFooterM?.id ?? null });
+        setHeaderDesktopComponents(firstHeaderD?.components ?? []);
+        setHeaderMobileComponents(firstHeaderM?.components ?? []);
+        setFooterDesktopComponents(firstFooterD?.components ?? []);
+        setFooterMobileComponents(firstFooterM?.components ?? []);
 
         setCanvasBgColor(typeof d?.canvasBgColor === "string" ? d.canvasBgColor : "#ffffff");
         if (d?.name) setPageLabel(d.name);
@@ -2937,29 +2933,6 @@ export function PageEditor({ slug, label }: PageEditorProps) {
   }
 
   // Item 2: mirror newly-added component(s) into the OTHER view, same id(s),
-  // same relative position/size — scaled uniformly (aspect-preserving) by the
-  // canvas-width ratio for x/width/height, and by the canvas-height ratio for y
-  // (page lengths aren't width-proportional, so vertical placement needs its
-  // own scale to land in the same relative spot down the page). This runs once,
-  // at add time; from then on each view's array is fully independent, so
-  // editing one (position, size, color, content, anything) never touches the
-  // other. Shared by placeAndAddComponent/addMarketWidget/addTextTemplate below.
-  function mirrorToOtherView(zone: Zone, comps: PageComponent[]) {
-    const otherView: ViewMode = view === "desktop" ? "mobile" : "desktop";
-    commitUndoSnapshot(zone, otherView);
-    const zh = zoneHeights[zone][view];
-    const otherCanvasW = otherView === "desktop" ? DESKTOP_W : MOBILE_W;
-    const otherZh = zoneHeights[zone][otherView];
-    const scale = otherCanvasW / canvasW;
-    const yScale = otherZh / zh;
-    const mirrored = comps.map((c) => {
-      const raw = { ...c, x: c.x * scale, y: c.y * yScale, width: c.width * scale, height: c.height * scale };
-      return { ...raw, ...clampToCanvas(raw.x, raw.y, raw.width, raw.height, otherCanvasW, otherZh, raw.rotation ?? 0) };
-    });
-    const otherSetter = otherView === "desktop" ? zoneSetters[zone].setDesktop : zoneSetters[zone].setMobile;
-    otherSetter((prev) => [...prev, ...mirrored]);
-  }
-
   // Shared by every add*() below. Placement uses getVisibleCenter() (DOM-measured,
   // scroll-aware) only when adding into the currently-visible zone; a zone switched
   // to via a non-active zone's "+" button hasn't necessarily painted its canvas yet,
@@ -2975,7 +2948,6 @@ export function PageEditor({ slug, label }: PageEditorProps) {
     const comp = { ...base, ...clampToCanvas(center.x - base.width / 2, center.y - base.height / 2, base.width, base.height, canvasW, zh, base.rotation ?? 0) };
     const setter = zone === activeZone ? setComponents : (view === "desktop" ? zoneSetters[zone].setDesktop : zoneSetters[zone].setMobile);
     setter((prev) => [...prev, comp]);
-    mirrorToOtherView(zone, [comp]);
     setSelectedIds([comp.id]);
     if (zone !== activeZone) setActiveZone(zone);
     return comp;
@@ -3063,7 +3035,6 @@ export function PageEditor({ slug, label }: PageEditorProps) {
     }));
     const setter = zone === activeZone ? setComponents : (view === "desktop" ? zoneSetters[zone].setDesktop : zoneSetters[zone].setMobile);
     setter((prev) => [...prev, ...widget]);
-    mirrorToOtherView(zone, widget);
     setSelectedIds(widget.map((c) => c.id));
     if (zone !== activeZone) setActiveZone(zone);
   }
@@ -3078,7 +3049,6 @@ export function PageEditor({ slug, label }: PageEditorProps) {
     }));
     const setter = zone === activeZone ? setComponents : (view === "desktop" ? zoneSetters[zone].setDesktop : zoneSetters[zone].setMobile);
     setter((prev) => [...prev, ...group]);
-    mirrorToOtherView(zone, group);
     setSelectedIds(group.map((c) => c.id));
     if (zone !== activeZone) setActiveZone(zone);
   }
@@ -3272,6 +3242,54 @@ export function PageEditor({ slug, label }: PageEditorProps) {
       setAssetsLoading(false);
     }
   }
+  async function loadFonts() {
+    setFontsLoading(true);
+    try {
+      const res = await fetch("/api/page-config/fonts");
+      const data = await res.json();
+      setFontItems(Array.isArray(data) ? data : []);
+    } catch {
+      setFontItems([]);
+    } finally {
+      setFontsLoading(false);
+    }
+  }
+  function uploadFontWithProgress(file: File, onProgress: (pct: number) => void): Promise<FontAssetItem | null> {
+    return new Promise((resolve) => {
+      const fd = new FormData(); fd.append("file", file);
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", "/api/page-config/upload-font");
+      xhr.upload.onprogress = (e) => { if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100)); };
+      xhr.onload = () => {
+        if (xhr.status < 200 || xhr.status >= 300) { resolve(null); return; }
+        try { resolve(JSON.parse(xhr.responseText)); } catch { resolve(null); }
+      };
+      xhr.onerror = () => resolve(null);
+      xhr.send(fd);
+    });
+  }
+  async function uploadFont(file: File) {
+    const ext = file.name.split(".").pop()?.toLowerCase();
+    if (!ext || !["ttf", "otf", "woff", "woff2"].includes(ext)) {
+      alert("Only .ttf, .otf, .woff, .woff2 font files are allowed.");
+      return;
+    }
+    setUploadingFont(true); setFontUploadProgress(0);
+    try {
+      const result = await uploadFontWithProgress(file, setFontUploadProgress);
+      if (result) setFontItems((prev) => [result, ...(prev ?? [])]);
+    } finally { setUploadingFont(false); setFontUploadProgress(0); }
+  }
+  async function deleteFont(key: string) {
+    setFontItems((prev) => (prev ? prev.filter((f) => f.key !== key) : prev));
+    try {
+      await fetch("/api/page-config/fonts", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key }),
+      });
+    } catch {}
+  }
   function duplicateComp(comp: PageComponent) {
     pasteCompRef.current([comp]);
   }
@@ -3401,6 +3419,14 @@ export function PageEditor({ slug, label }: PageEditorProps) {
     const targetType = selectedComps[0].type;
     if (!selectedComps.every((c) => c.type === targetType)) return;
     selectedComps.forEach((c) => updateComp(c.id, patch));
+  }
+  // Copies the current selection to the same clipboardRef the Ctrl/Cmd+C
+  // keyboard shortcut already writes to — the context menu's "Copy" is just
+  // a discoverable entry point onto existing paste machinery (Ctrl/Cmd+V).
+  function copySelection() {
+    const list = compsRef.current[activeZoneRef.current][viewRef.current === "desktop" ? "desktop" : "mobile"];
+    clipboardRef.current = list.filter((c) => selectedIdsRef.current.includes(c.id));
+    setContextMenu(null);
   }
   function copyStyle(comp: PageComponent) {
     const style: Partial<PageComponent> = {};
@@ -3534,29 +3560,23 @@ export function PageEditor({ slug, label }: PageEditorProps) {
         const { ids, startX, startY, origins } = dragRef.current;
         const dx = (e.clientX - startX) / scale;
         const dy = (e.clientY - startY) / scale;
-        // Grid snap (when enabled) is a coarse pre-snap — rounding the raw
-        // position/delta to the grid first — with alignment-guide snapping
-        // (below) still free to fine-tune against nearby components afterward.
-        const gs = gridSizeRef.current;
-        const gridRound = (v: number) => (snapToGridRef.current ? Math.round(v / gs) * gs : v);
         if (ids.length === 1) {
           // Snap-to-guide only applies to a single moving box — a rigid multi-select
           // group keeps its raw delta (bounding-box-level snapping is a fast-follow).
           const id = ids[0];
           const o = origins.get(id);
           if (o) {
-            const rawX = gridRound(o.x + dx), rawY = gridRound(o.y + dy);
+            const rawX = o.x + dx, rawY = o.y + dy;
             const others = compsRef.current[activeZoneRef.current][viewRef.current === "desktop" ? "desktop" : "mobile"].filter((c) => c.id !== id && !c.hidden);
             const { x, y, guides } = snapPosition(rawX, rawY, o.width, o.height, others, canvasWRef.current, canvasHRef.current);
             updateCompRef.current(id, { x, y });
             setAlignmentGuides(guides);
           }
         } else {
-          const gdx = gridRound(dx), gdy = gridRound(dy);
           ids.forEach((id) => {
             const o = origins.get(id);
             if (!o) return;
-            updateCompRef.current(id, { x: o.x + gdx, y: o.y + gdy });
+            updateCompRef.current(id, { x: o.x + dx, y: o.y + dy });
           });
         }
       }
@@ -3565,24 +3585,34 @@ export function PageEditor({ slug, label }: PageEditorProps) {
         const dx = (e.clientX - startX) / scale;
         const dy = (e.clientY - startY) / scale;
         const { x: bx, y: by, width: bw, height: bh } = bbox;
+        // Mid-edge handles (Text/Header) resize a single axis only — no aspect
+        // lock applied to them, since locking aspect on a one-axis drag would
+        // silently also move the other axis, defeating the point of an
+        // edge-only handle.
+        const isEdgeOnly = corner === "t" || corner === "b" || corner === "l" || corner === "r";
         let newBW = bw, newBH = bh;
         if (corner === "br") { newBW = bw + dx; newBH = bh + dy; }
         else if (corner === "bl") { newBW = bw - dx; newBH = bh + dy; }
         else if (corner === "tr") { newBW = bw + dx; newBH = bh - dy; }
-        else { newBW = bw - dx; newBH = bh - dy; }
-        if (aspectLockedRef.current && ids.length === 1) {
+        else if (corner === "tl") { newBW = bw - dx; newBH = bh - dy; }
+        else if (corner === "r") { newBW = bw + dx; }
+        else if (corner === "l") { newBW = bw - dx; }
+        else if (corner === "b") { newBH = bh + dy; }
+        else if (corner === "t") { newBH = bh - dy; }
+        if (aspectLockedRef.current && ids.length === 1 && !isEdgeOnly) {
           const ratio = bw / bh;
           if (Math.abs(dx) > Math.abs(dy)) newBH = newBW / ratio;
           else newBW = newBH * ratio;
         }
         newBW = Math.max(20, newBW);
         newBH = Math.max(20, newBH);
-        // Re-derive the box origin from whichever corner is anchored (opposite the one being
-        // dragged), so an aspect-lock override (which can change width/height independent of
-        // the raw dx/dy) still keeps the correct corner pinned instead of drifting.
+        // Re-derive the box origin from whichever corner/edge is anchored
+        // (opposite the one being dragged), so an aspect-lock override (which
+        // can change width/height independent of the raw dx/dy) still keeps
+        // the correct side pinned instead of drifting.
         let newBX = bx, newBY = by;
-        if (corner === "bl" || corner === "tl") newBX = bx + bw - newBW;
-        if (corner === "tr" || corner === "tl") newBY = by + bh - newBH;
+        if (corner === "bl" || corner === "tl" || corner === "l") newBX = bx + bw - newBW;
+        if (corner === "tr" || corner === "tl" || corner === "t") newBY = by + bh - newBH;
         const sx = newBW / bw;
         const sy = newBH / bh;
         ids.forEach((id) => {
@@ -3797,43 +3827,40 @@ export function PageEditor({ slug, label }: PageEditorProps) {
   // scoped to Template only (see captureVersion below) — editing just the header
   // shouldn't create a new Template restore point.
   const templateConfigSignature = JSON.stringify(templateConfigPayload);
-  // Reconstructs the single template.components array for saving — inverse
-  // of the extractZonesFromTemplate call in the load effect above. Desktop
-  // and mobile blocks get their OWN stable ids (headerBlockIdRef/
-  // footerBlockIdRef, captured on load) so re-saving doesn't spuriously
-  // regenerate the block's own component id every time, even though its
-  // settings (rotation, hideOnScroll) are shared editor state applied
-  // identically to both viewports.
-  //
-  // hasHeaderBlock/hasFooterBlock is a single flag shared across both
-  // viewports (the "+ Add Header" button turns it on for both at once), but
-  // a page migrated from the old separate-fields shape can genuinely have a
-  // block on ONE viewport only (e.g. the grandfathered home page has header
-  // content on mobile but never had any on desktop). Gating each viewport's
-  // hasHeader/hasFooter on that viewport's own stable blockId (not just the
-  // shared flag) keeps desktop header-less in that case, instead of
-  // synthesizing an empty desktop header-block with a fresh random id on
-  // every single render (which it would otherwise do, since there'd be no
-  // stable id to reuse) — that was a real bug caught in testing: it made
-  // pageConfigSignature change every render, permanently "dirty".
+  // Reconstructs the single template.components array for saving — inverse of
+  // the extractZonesFromTemplate call in the load effect above. blocksForSave
+  // overlays the currently-ACTIVE header/footer block's live, being-edited
+  // components (headerDesktopComponents/footerDesktopComponents etc.) onto
+  // the otherwise-dormant blocksDesktop/blocksMobile metadata array, so every
+  // block — active or not — is fully up to date at save time.
+  function blocksForSave(vp: ViewMode): HeaderFooterBlock[] {
+    const blocks = vp === "desktop" ? blocksDesktop : blocksMobile;
+    const activeH = (vp === "desktop" ? activeHeaderId.desktop : activeHeaderId.mobile);
+    const activeF = (vp === "desktop" ? activeFooterId.desktop : activeFooterId.mobile);
+    const liveHeader = vp === "desktop" ? headerDesktopComponents : headerMobileComponents;
+    const liveFooter = vp === "desktop" ? footerDesktopComponents : footerMobileComponents;
+    return blocks.map((b) => {
+      if (b.id === activeH) return { ...b, components: liveHeader };
+      if (b.id === activeF) return { ...b, components: liveFooter };
+      return b;
+    });
+  }
+  const blocksDesktopForSave = blocksForSave("desktop");
+  const blocksMobileForSave = blocksForSave("mobile");
   const builtDesktopTemplate = buildTemplateZone({
-    hasHeader: hasHeaderBlock && headerBlockIdRef.current.desktop !== null,
-    header: { components: headerDesktopComponents, height: headerDesktopHeight, rotation: headerRotation, hideOnScrollUpPx: headerHideOnScrollUpPx, hideOnScrollDownPx: headerHideOnScrollDownPx, blockId: headerBlockIdRef.current.desktop },
-    hasFooter: hasFooterBlock && footerBlockIdRef.current.desktop !== null,
-    footer: { components: footerDesktopComponents, height: footerDesktopHeight, rotation: footerRotation, hideOnScrollUpPx: footerHideOnScrollUpPx, hideOnScrollDownPx: footerHideOnScrollDownPx, blockId: footerBlockIdRef.current.desktop },
+    blocks: blocksDesktopForSave,
     templateComponents: templateDesktopComponents,
     templateHeight: templateDesktopHeight,
     canvasWidth: DESKTOP_W,
+    canvasHeightHint: templateDesktopHeight + blocksDesktopForSave.filter((b) => b.dock === "top" || b.dock === "bottom").reduce((s, b) => s + b.size, 0),
     newId: uid,
   });
   const builtMobileTemplate = buildTemplateZone({
-    hasHeader: hasHeaderBlock && headerBlockIdRef.current.mobile !== null,
-    header: { components: headerMobileComponents, height: headerMobileHeight, rotation: headerRotation, hideOnScrollUpPx: headerHideOnScrollUpPx, hideOnScrollDownPx: headerHideOnScrollDownPx, blockId: headerBlockIdRef.current.mobile },
-    hasFooter: hasFooterBlock && footerBlockIdRef.current.mobile !== null,
-    footer: { components: footerMobileComponents, height: footerMobileHeight, rotation: footerRotation, hideOnScrollUpPx: footerHideOnScrollUpPx, hideOnScrollDownPx: footerHideOnScrollDownPx, blockId: footerBlockIdRef.current.mobile },
+    blocks: blocksMobileForSave,
     templateComponents: templateMobileComponents,
     templateHeight: templateMobileHeight,
     canvasWidth: MOBILE_W,
+    canvasHeightHint: templateMobileHeight + blocksMobileForSave.filter((b) => b.dock === "top" || b.dock === "bottom").reduce((s, b) => s + b.size, 0),
     newId: uid,
   });
   const pageConfigPayload = {
@@ -4030,22 +4057,17 @@ export function PageEditor({ slug, label }: PageEditorProps) {
     );
   }
 
-  // Shared by the header and footer gear-icon settings panels — two
-  // independent hide-on-scroll thresholds (either, both, or neither can be
-  // enabled) plus rotation presets. Rotation only ever spins the block's own
-  // outer bar; see the rotation-without-rotating-children handling in
-  // PreviewCanvas/PreviewOverlay and the live PageRenderer.
+  // Shared by the header and footer gear-icon settings panels. Operates on
+  // whichever block of `kind` is currently active (see activeBlock/
+  // updateActiveBlock) — dock side, size (thickness along the dock axis),
+  // background colour, two independent hide-on-scroll thresholds, and
+  // rotation of the bar itself (contents stay upright — see the
+  // rotation-without-rotating-children handling in PreviewCanvas/
+  // PreviewOverlay and the live PageRenderer).
   function renderBlockSettings(kind: "header" | "footer") {
-    const rotation = kind === "header" ? headerRotation : footerRotation;
-    const setRotation = kind === "header" ? setHeaderRotation : setFooterRotation;
-    const hideUpPx = kind === "header" ? headerHideOnScrollUpPx : footerHideOnScrollUpPx;
-    const setHideUpPx = kind === "header" ? setHeaderHideOnScrollUpPx : setFooterHideOnScrollUpPx;
-    const hideDownPx = kind === "header" ? headerHideOnScrollDownPx : footerHideOnScrollDownPx;
-    const setHideDownPx = kind === "header" ? setHeaderHideOnScrollDownPx : setFooterHideOnScrollDownPx;
-    const hideUpDraft = kind === "header" ? headerHideUpPxDraft : footerHideUpPxDraft;
-    const setHideUpDraft = kind === "header" ? setHeaderHideUpPxDraft : setFooterHideUpPxDraft;
-    const hideDownDraft = kind === "header" ? headerHideDownPxDraft : footerHideDownPxDraft;
-    const setHideDownDraft = kind === "header" ? setHeaderHideDownPxDraft : setFooterHideDownPxDraft;
+    const block = activeBlock(kind);
+    if (!block) return null;
+    const patch = (p: Partial<BlockMeta>) => updateActiveBlock(kind, p);
 
     function renderPxField(label: string, value: number | null, draft: string | null, setDraft: (v: string | null) => void, setValue: (v: number | null) => void) {
       const enabled = value !== null;
@@ -4075,20 +4097,61 @@ export function PageEditor({ slug, label }: PageEditorProps) {
 
     return (
       <div className="mx-1 mb-1 p-2 rounded-md border bg-muted/30 flex flex-col gap-2">
-        {renderPxField("Hide on scroll down (px)", hideDownPx, hideDownDraft, setHideDownDraft, setHideDownPx)}
-        {renderPxField("Hide on scroll up (px)", hideUpPx, hideUpDraft, setHideUpDraft, setHideUpPx)}
+        <div>
+          <label className="text-[10px] text-muted-foreground block mb-1 uppercase tracking-wide">Position</label>
+          <div className="grid grid-cols-4 gap-1">
+            {(["top", "bottom", "left", "right"] as const).map((d) => (
+              <button key={d} type="button" onClick={() => patch({ dock: d })}
+                className={`h-6 text-[10px] rounded border capitalize ${block.dock === d ? "bg-black text-white border-black" : "border-gray-200 hover:bg-muted"}`}>
+                {d}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div>
+          <label className="text-[10px] text-muted-foreground block mb-1 uppercase tracking-wide">
+            Size ({block.dock === "left" || block.dock === "right" ? "width" : "height"})
+          </label>
+          {renderStepperInput(block.size, 10, 20, 2000, (v) => patch({ size: v }))}
+        </div>
+        <ColorPicker label="Background colour" value={block.bgColor} onChange={(v) => patch({ bgColor: v })} />
+        {renderPxField("Hide on scroll down (px)", block.hideOnScrollDownPx, blockHideDownPxDraft, setBlockHideDownPxDraft, (v) => patch({ hideOnScrollDownPx: v }))}
+        {renderPxField("Hide on scroll up (px)", block.hideOnScrollUpPx, blockHideUpPxDraft, setBlockHideUpPxDraft, (v) => patch({ hideOnScrollUpPx: v }))}
         <div>
           <label className="text-[10px] text-muted-foreground block mb-1 uppercase tracking-wide">Rotation</label>
           <div className="flex items-center gap-1">
             {([0, 90, 180, 270] as const).map((deg) => (
-              <button key={deg} type="button" onClick={() => setRotation(deg)}
-                className={`flex-1 h-6 text-[10px] rounded border ${rotation === deg ? "bg-black text-white border-black" : "border-gray-200 hover:bg-muted"}`}>
+              <button key={deg} type="button" onClick={() => patch({ rotation: deg })}
+                className={`flex-1 h-6 text-[10px] rounded border ${block.rotation === deg ? "bg-black text-white border-black" : "border-gray-200 hover:bg-muted"}`}>
                 {deg}°
               </button>
             ))}
           </div>
           <p className="text-[9px] text-muted-foreground mt-1">Only the bar rotates — its contents stay upright.</p>
         </div>
+      </div>
+    );
+  }
+  // Small pill row for switching which block (of a kind) is active when more
+  // than one exists — "Header 1 · Header 2 · +". Hidden entirely (renders
+  // null) when there's at most one, so single-header/footer pages look
+  // exactly as before.
+  function renderBlockSelector(kind: "header" | "footer") {
+    const blocks = (view === "desktop" ? blocksDesktop : blocksMobile).filter((b) => b.kind === kind);
+    if (blocks.length === 0) return null;
+    const activeId = (kind === "header" ? activeHeaderId : activeFooterId)[view];
+    return (
+      <div className="flex items-center gap-1 px-1 pb-1 flex-wrap">
+        {blocks.map((b, i) => (
+          <button key={b.id} type="button" onClick={() => setActiveBlock(kind, view, b.id)}
+            className={`text-[10px] px-1.5 py-0.5 rounded border ${b.id === activeId ? "bg-black text-white border-black" : "border-gray-200 hover:bg-muted"}`}>
+            {kind === "header" ? "Header" : "Footer"} {i + 1}
+          </button>
+        ))}
+        <button type="button" title={`Add another ${kind}`} onClick={() => addBlock(kind)}
+          className="flex items-center justify-center h-5 w-5 rounded border border-dashed border-gray-300 hover:bg-muted text-muted-foreground">
+          <Plus className="h-3 w-3" />
+        </button>
       </div>
     );
   }
@@ -4337,6 +4400,94 @@ export function PageEditor({ slug, label }: PageEditorProps) {
     );
   }
 
+  // Every subdomain currently claimed by ANY folder, project-wide — not just
+  // the ones from the original Seller/Rider setup. Numbered by order of
+  // first appearance across the tree so "Subdomain 1"/"Subdomain 2" stay
+  // stable and new ones a folder connects to just keep counting up (item 6:
+  // "When new subdomains are created, they appear in this list as subdomain
+  // 3, 4, etc.").
+  function connectableSubdomains(): { label: string; value: string }[] {
+    const seen = new Set<string>();
+    const list: { label: string; value: string }[] = [];
+    let n = 0;
+    for (const p of projectsTree.projects) {
+      for (const f of p.folders) {
+        if (f.subdomain && !seen.has(f.subdomain)) {
+          seen.add(f.subdomain);
+          n += 1;
+          list.push({ label: `Subdomain ${n} (${f.subdomain}.iiinbox.com)`, value: f.subdomain });
+        }
+      }
+    }
+    return list;
+  }
+
+  // "Connect to" box (item 6) — a folder's domain/subdomain assignment.
+  // Pages inside a folder connected to a subdomain become reachable at that
+  // subdomain's root (see middleware.ts's dynamic subdomain resolution,
+  // already fully general-purpose); "Domain (iiinbox.com)" just means "no
+  // dedicated subdomain" (subdomain: null) — the folder's pages are still
+  // reachable via their normal /slug route on the apex domain either way,
+  // this only controls the extra subdomain-root shortcut.
+  function renderConnectBox(folder: ProjectFolder) {
+    const isOpen = connectMenuFolderId === folder.id;
+    const current = folder.subdomain
+      ? connectableSubdomains().find((s) => s.value === folder.subdomain)?.label ?? `${folder.subdomain}.iiinbox.com`
+      : "Domain (iiinbox.com)";
+    async function choose(subdomain: string | null) {
+      setConnectError(null);
+      const result = await projectsTree.setFolderSubdomain(folder.id, subdomain);
+      if (!result.ok) setConnectError(result.error ?? "Failed to connect");
+      else setConnectMenuFolderId(null);
+    }
+    return (
+      <div className="relative mb-1">
+        <button
+          type="button"
+          onClick={() => { setConnectMenuFolderId(isOpen ? null : folder.id); setConnectError(null); setNewSubdomainInput(""); }}
+          className="w-full flex items-center justify-between gap-2 px-2 py-2 rounded-md border border-gray-300 bg-white hover:border-black transition-colors text-left"
+        >
+          <span className="min-w-0">
+            <span className="block text-[9px] uppercase tracking-wide text-muted-foreground">Connect to</span>
+            <span className="block text-xs font-medium truncate text-gray-900">{current}</span>
+          </span>
+          <ChevronDown className={`h-3.5 w-3.5 text-muted-foreground shrink-0 transition-transform ${isOpen ? "rotate-180" : ""}`} />
+        </button>
+        {isOpen && (
+          <>
+            <div className="fixed inset-0 z-40" onClick={() => setConnectMenuFolderId(null)} />
+            <div className="absolute left-0 right-0 top-full mt-1 z-50 rounded-md border bg-white shadow-lg p-1.5 flex flex-col gap-0.5 text-gray-900">
+              <button type="button" onClick={() => choose(null)}
+                className={`text-left text-xs px-2 py-1.5 rounded hover:bg-muted ${!folder.subdomain ? "bg-muted font-medium" : ""}`}>
+                Domain (iiinbox.com)
+              </button>
+              {connectableSubdomains().map((s) => (
+                <button key={s.value} type="button" onClick={() => choose(s.value)}
+                  className={`text-left text-xs px-2 py-1.5 rounded hover:bg-muted ${folder.subdomain === s.value ? "bg-muted font-medium" : ""}`}>
+                  {s.label}
+                </button>
+              ))}
+              <div className="h-px bg-border my-0.5" />
+              <div className="flex items-center gap-1 px-1">
+                <input
+                  value={newSubdomainInput}
+                  onChange={(e) => setNewSubdomainInput(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""))}
+                  placeholder="new-subdomain"
+                  className="flex-1 min-w-0 h-6 text-xs border rounded px-1.5 bg-background text-gray-900"
+                />
+                <button type="button" disabled={!newSubdomainInput.trim()} onClick={() => choose(newSubdomainInput.trim())}
+                  className="text-[11px] px-2 py-1 rounded bg-black text-white disabled:opacity-40 shrink-0">
+                  Connect
+                </button>
+              </div>
+              {connectError && <p className="text-[10px] text-destructive px-1">{connectError}</p>}
+            </div>
+          </>
+        )}
+      </div>
+    );
+  }
+
   // Layers tree for whichever page is currently open in the editor —
   // nested under that page's row in the Project tab (see the tree JSX
   // below), not a standalone tab anymore. Only the active page's
@@ -4364,22 +4515,20 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                       const zoneIsExpanded = query ? true : expandedZones[zone];
                       // Header/Footer are optional now — no strip at all until "+ Add
                       // Header"/"+ Add Footer" is clicked (Template always exists; it's
-                      // the one mandatory zone every page has).
-                      if ((zone === "header" && !hasHeaderBlock) || (zone === "footer" && !hasFooterBlock)) {
+                      // the one mandatory zone every page has). A page can have any
+                      // number of each (see addBlock/renderBlockSelector) — this empty
+                      // state only shows before the FIRST one exists.
+                      const zoneHasAnyBlock = zone === "header"
+                        ? (view === "desktop" ? activeHeaderId.desktop : activeHeaderId.mobile) !== null
+                        : zone === "footer"
+                        ? (view === "desktop" ? activeFooterId.desktop : activeFooterId.mobile) !== null
+                        : true;
+                      if ((zone === "header" || zone === "footer") && !zoneHasAnyBlock) {
                         return (
                           <div key={zone} className="flex flex-col gap-0.5">
                             <button
                               type="button"
-                              onClick={() => {
-                                // Assign the block's own id right away (not deferred to
-                                // buildTemplateZone) — generating it lazily there would mint a
-                                // fresh id on every render since pageConfigPayload is a plain
-                                // computed value, which would make pageConfigSignature change
-                                // every render even with no real edits and spam the dirty/
-                                // autosave state.
-                                if (zone === "header") { headerBlockIdRef.current = { desktop: uid(), mobile: uid() }; setHasHeaderBlock(true); }
-                                else { footerBlockIdRef.current = { desktop: uid(), mobile: uid() }; setHasFooterBlock(true); }
-                              }}
+                              onClick={() => addBlock(zone)}
                               className="flex items-center gap-1.5 px-1 py-1.5 text-xs text-blue-600 hover:bg-blue-50 rounded-md"
                             >
                               <Plus className="h-3.5 w-3.5" /> Add {zoneLabel}
@@ -4400,25 +4549,25 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                             </span>
                             {zone === "header" && (
                               <>
-                                <button type="button" title="Header scroll + rotation settings" onClick={() => setHeaderSettingsOpen((v) => !v)}
+                                <button type="button" title="Header position/size/colour/scroll settings" onClick={() => setHeaderSettingsOpen((v) => !v)}
                                   className={`p-1 rounded hover:bg-muted shrink-0 ${headerSettingsOpen ? "bg-muted text-foreground" : "text-muted-foreground"}`}>
                                   <Settings className="h-3.5 w-3.5" />
                                 </button>
-                                <button type="button" title="Remove header" onClick={() => setHasHeaderBlock(false)}
+                                <button type="button" title="Remove this header" onClick={() => { const id = (view === "desktop" ? activeHeaderId.desktop : activeHeaderId.mobile); if (id) removeBlock("header", id); }}
                                   className="p-1 rounded hover:bg-muted shrink-0 text-muted-foreground hover:text-destructive">
-                                  <Trash2 className="h-3.5 w-3.5" />
+                                  <X className="h-3.5 w-3.5" />
                                 </button>
                               </>
                             )}
                             {zone === "footer" && (
                               <>
-                                <button type="button" title="Footer scroll + rotation settings" onClick={() => setFooterSettingsOpen((v) => !v)}
+                                <button type="button" title="Footer position/size/colour/scroll settings" onClick={() => setFooterSettingsOpen((v) => !v)}
                                   className={`p-1 rounded hover:bg-muted shrink-0 ${footerSettingsOpen ? "bg-muted text-foreground" : "text-muted-foreground"}`}>
                                   <Settings className="h-3.5 w-3.5" />
                                 </button>
-                                <button type="button" title="Remove footer" onClick={() => setHasFooterBlock(false)}
+                                <button type="button" title="Remove this footer" onClick={() => { const id = (view === "desktop" ? activeFooterId.desktop : activeFooterId.mobile); if (id) removeBlock("footer", id); }}
                                   className="p-1 rounded hover:bg-muted shrink-0 text-muted-foreground hover:text-destructive">
-                                  <Trash2 className="h-3.5 w-3.5" />
+                                  <X className="h-3.5 w-3.5" />
                                 </button>
                               </>
                             )}
@@ -4460,10 +4609,17 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                             </div>
                           </div>
 
-                          {/* Header/Footer scroll + rotation settings — both live on the live
-                              site and in Preview. Sticky positioning is implicit whenever a
-                              header/footer block exists; the two px thresholds are independent
-                              (either, both, or neither can be enabled). */}
+                          {/* Which header/footer block (Header 1 / Header 2 / …) is
+                              currently active, when more than one exists — plus a "+"
+                              to add another. */}
+                          {zone === "header" && renderBlockSelector("header")}
+                          {zone === "footer" && renderBlockSelector("footer")}
+
+                          {/* Header/Footer position/size/colour/scroll/rotation settings —
+                              all live on the live site and in Preview. Fixed positioning
+                              is implicit whenever a header/footer block exists; the two
+                              scroll-hide px thresholds are independent (either, both, or
+                              neither can be enabled). */}
                           {zone === "header" && headerSettingsOpen && renderBlockSettings("header")}
                           {zone === "footer" && footerSettingsOpen && renderBlockSettings("footer")}
 
@@ -4544,7 +4700,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                                           {openRowMenu === comp.id && (
                                             <>
                                               <div className="fixed inset-0 z-40" onClick={(e) => { e.stopPropagation(); setOpenRowMenu(null); }} />
-                                              <div className="absolute right-0 top-full mt-1 z-50 min-w-[150px] rounded-md border bg-white shadow-lg py-1 text-xs" onClick={(e) => e.stopPropagation()}>
+                                              <div className="absolute right-0 top-full mt-1 z-50 min-w-[150px] rounded-md border bg-white shadow-lg py-1 text-xs text-gray-900" onClick={(e) => e.stopPropagation()}>
                                                 <button type="button" onClick={() => { setActiveZone(zone); duplicateInPlace(comp, zone); setOpenRowMenu(null); }} className="w-full flex items-center gap-2 text-left px-3 py-1.5 hover:bg-muted"><Copy className="h-3 w-3" /> Duplicate</button>
                                                 <button type="button" onClick={() => { setActiveZone(zone); toggleHidden([comp.id], zone); setOpenRowMenu(null); }} className="w-full flex items-center gap-2 text-left px-3 py-1.5 hover:bg-muted">
                                                   {comp.hidden ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />} {comp.hidden ? "Show" : "Hide"}
@@ -4658,158 +4814,117 @@ export function PageEditor({ slug, label }: PageEditorProps) {
       {/* Main editor */}
       <div className="flex flex-col h-full min-h-0">
 
-        {/* Top bar — dark chrome, matches the redesign's "Figma/Webflow quality" brief.
-            Canvas + panels intentionally stay light for form-field legibility (see the
-            plan note on scoping the dark theme to just this bar + the left sidebar's
-            tab strip, rather than re-theming every existing input across the app). */}
-        <div className="flex flex-wrap items-center gap-2 shrink-0 mb-3 rounded-lg px-3 py-2.5"
-          style={{ backgroundColor: "#1a1a2e" }}>
+        {/* Top bar — gray chrome (matches the left/right sidebars and bottom
+            bar for one consistent "gray toolbar, white canvas" look). Desktop/
+            Mobile sits in its own centered column regardless of how wide the
+            left (name) / right (tools) columns are. No brand/logo — Logout
+            moved to the bottom bar (see below); everything else here is
+            unchanged, just restyled for a light background. */}
+        <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 shrink-0 mb-3 rounded-lg px-3 py-2.5 bg-gray-800 border border-gray-700">
 
-          {/* Brand */}
-          <div className="flex items-center gap-1.5 text-indigo-300 pr-2 mr-1 border-r border-white/10">
-            <ComponentIcon className="h-4 w-4" />
-            <span className="text-xs font-bold uppercase tracking-wider hidden sm:inline">iiinbox</span>
+          {/* Left: page name + inline sync indicator */}
+          <div className="flex items-center gap-2 min-w-0">
+            {editingName ? (
+              <input
+                ref={nameInputRef}
+                value={nameInput}
+                onChange={(e) => setNameInput(e.target.value)}
+                onBlur={commitRename}
+                onKeyDown={(e) => { if (e.key === "Enter") commitRename(); if (e.key === "Escape") setEditingName(false); }}
+                className="text-xl font-semibold bg-transparent border-b border-gray-500 outline-none w-48 text-gray-100"
+              />
+            ) : (
+              <button onClick={startRename} className="flex items-center gap-1.5 group min-w-0">
+                <h1 className="text-lg sm:text-xl font-semibold text-gray-100 truncate">{displayLabel}</h1>
+                <Pencil className="h-3.5 w-3.5 text-gray-500 opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
+              </button>
+            )}
+
+            {/* Autosave runs invisibly in the background (see the debounced save()
+                effect above) — no Save/Preview/Publish buttons here. Publish
+                lives on the folder (Pages panel) and on the project (next to
+                the project name) — never here, so there's exactly one publish
+                action per scope instead of a third page-scoped one that could
+                disagree with either. */}
+            <span className={`text-xs ml-1 hidden md:flex items-center gap-1 shrink-0 ${syncStatus === "error" ? "text-red-400" : syncStatus === "dirty" || syncStatus === "syncing" ? "text-gray-400" : "text-green-400"}`}>
+              <Cloud className={`h-3.5 w-3.5 ${syncStatus === "syncing" ? "animate-pulse" : ""}`} /> {syncLabel}
+            </span>
           </div>
 
-          {/* Inline-editable page name */}
-          {editingName ? (
-            <input
-              ref={nameInputRef}
-              value={nameInput}
-              onChange={(e) => setNameInput(e.target.value)}
-              onBlur={commitRename}
-              onKeyDown={(e) => { if (e.key === "Enter") commitRename(); if (e.key === "Escape") setEditingName(false); }}
-              className="text-xl font-semibold bg-transparent border-b border-white/40 outline-none w-48 text-white"
-            />
-          ) : (
-            <button onClick={startRename} className="flex items-center gap-1.5 group">
-              <h1 className="text-lg sm:text-xl font-semibold text-white">{displayLabel}</h1>
-              <Pencil className="h-3.5 w-3.5 text-white/50 opacity-0 group-hover:opacity-100 transition-opacity" />
+          {/* Center: Desktop/Mobile toggle */}
+          <div className="flex items-center rounded-lg border border-gray-600 bg-gray-700 overflow-hidden">
+            <button onClick={() => { setSelectedIds([]); setView("desktop"); }}
+              className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 text-sm transition-colors ${view === "desktop" ? "text-white" : "text-gray-300 hover:bg-gray-600"}`}
+              style={view === "desktop" ? { backgroundColor: "#6366f1" } : undefined}>
+              <Monitor className="h-3.5 w-3.5" /><span className="hidden sm:inline">Desktop</span>
             </button>
-          )}
+            <button onClick={() => { setSelectedIds([]); setView("mobile"); }}
+              className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 text-sm transition-colors ${view === "mobile" ? "text-white" : "text-gray-300 hover:bg-gray-600"}`}
+              style={view === "mobile" ? { backgroundColor: "#6366f1" } : undefined}>
+              <Smartphone className="h-3.5 w-3.5" /><span className="hidden sm:inline">Mobile</span>
+            </button>
+          </div>
 
-          {/* Autosave runs invisibly in the background (see the debounced save()
-              effect above) — no Save/Preview/Publish buttons here. Publish
-              lives on the folder (Pages panel) and on the project (next to
-              the project name) — never here, so there's exactly one publish
-              action per scope instead of a third page-scoped one that could
-              disagree with either. */}
-          <span className={`text-xs ml-1 flex items-center gap-1 ${syncStatus === "error" ? "text-red-400" : syncStatus === "dirty" || syncStatus === "syncing" ? "text-white/50" : "text-green-400"}`}>
-            <Cloud className={`h-3.5 w-3.5 ${syncStatus === "syncing" ? "animate-pulse" : ""}`} /> {syncLabel}
-          </span>
-
-          <div className="ml-auto flex flex-wrap items-center gap-2">
-            {/* Desktop/Mobile toggle */}
-            <div className="flex items-center rounded-lg border border-white/15 overflow-hidden">
-              <button onClick={() => { setSelectedIds([]); setView("desktop"); }}
-                className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 text-sm transition-colors ${view === "desktop" ? "text-white" : "text-white/60 hover:bg-white/10"}`}
-                style={view === "desktop" ? { backgroundColor: "#6366f1" } : undefined}>
-                <Monitor className="h-3.5 w-3.5" /><span className="hidden sm:inline">Desktop</span>
-              </button>
-              <button onClick={() => { setSelectedIds([]); setView("mobile"); }}
-                className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 text-sm transition-colors ${view === "mobile" ? "text-white" : "text-white/60 hover:bg-white/10"}`}
-                style={view === "mobile" ? { backgroundColor: "#6366f1" } : undefined}>
-                <Smartphone className="h-3.5 w-3.5" /><span className="hidden sm:inline">Mobile</span>
-              </button>
-            </div>
-
+          {/* Right: undo/redo, delete page */}
+          <div className="flex flex-wrap items-center gap-2 justify-end">
             {/* Undo/redo — per-zone-per-view snapshot stacks, independent of Version Control */}
-            <div className="flex items-center rounded-lg border border-white/15 overflow-hidden">
+            <div className="flex items-center rounded-lg border border-gray-600 bg-gray-700 overflow-hidden">
               <button type="button" title="Undo (⌘Z)" disabled={!undoAvailable[zoneViewKey(activeZone, view)]} onClick={undo}
-                className="flex items-center justify-center h-8 w-8 disabled:opacity-30 disabled:cursor-not-allowed hover:bg-white/10 text-white/80">
+                className="flex items-center justify-center h-8 w-8 disabled:opacity-30 disabled:cursor-not-allowed hover:bg-gray-600 text-gray-300">
                 <Undo2 className="h-3.5 w-3.5" />
               </button>
               <button type="button" title="Redo (⌘⇧Z)" disabled={!redoAvailable[zoneViewKey(activeZone, view)]} onClick={redo}
-                className="flex items-center justify-center h-8 w-8 disabled:opacity-30 disabled:cursor-not-allowed hover:bg-white/10 text-white/80 border-l border-white/15">
+                className="flex items-center justify-center h-8 w-8 disabled:opacity-30 disabled:cursor-not-allowed hover:bg-gray-600 text-gray-300 border-l border-gray-600">
                 <Redo2 className="h-3.5 w-3.5" />
               </button>
             </div>
 
-            {/* Margin guides / ruler toggle */}
-            <button
-              type="button"
-              onClick={() => setShowGuides((v) => !v)}
-              title="Show/hide margin guides and spacing rulers"
-              className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg border text-sm transition-colors ${showGuides ? "text-white border-transparent" : "text-white/70 border-white/15 hover:bg-white/10"}`}
-              style={showGuides ? { backgroundColor: "#6366f1" } : undefined}
-            >
-              <Ruler className="h-3.5 w-3.5" /><span className="hidden sm:inline">Guides</span>
-            </button>
-
-            {/* Grid overlay + snap toggle — editor-only alignment aid, never published.
-                While on, components snap to this grid size while dragging (see
-                gridRound() in the drag mousemove handler). */}
-            <div className="flex items-center gap-1.5">
-              <button
-                type="button"
-                onClick={() => setShowGrid((v) => !v)}
-                title="Show grid + snap components to it while dragging (editor only — never appears on the published page)"
-                className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg border text-sm transition-colors ${showGrid ? "text-white border-transparent" : "text-white/70 border-white/15 hover:bg-white/10"}`}
-                style={showGrid ? { backgroundColor: "#6366f1" } : undefined}
-              >
-                <Grid3x3 className="h-3.5 w-3.5" /><span className="hidden sm:inline">Snap to Grid</span>
-              </button>
-              {showGrid && (
-                <div className="flex items-center gap-1 rounded-lg border border-white/15 px-2 py-1.5">
-                  <label className="text-[10px] text-white/60 uppercase tracking-wide">Size</label>
-                  <button type="button" onClick={() => setGridSize(8)}
-                    className={`h-5 px-1.5 text-[10px] rounded border ${gridSize === 8 ? "bg-white text-black border-white" : "border-white/20 text-white/70 hover:bg-white/10"}`}>8px</button>
-                  <button type="button" onClick={() => setGridSize(16)}
-                    className={`h-5 px-1.5 text-[10px] rounded border ${gridSize === 16 ? "bg-white text-black border-white" : "border-white/20 text-white/70 hover:bg-white/10"}`}>16px</button>
-                  <input
-                    type="number" min="5" max="500" step="5" value={gridSize}
-                    onChange={(e) => setGridSize(Math.max(5, +e.target.value || 5))}
-                    className="w-12 h-5 text-xs border rounded px-1 bg-white/10 text-white"
-                  />
-                </div>
-              )}
-            </div>
-
             {/* Delete page — not shown for pinned pages (Home/Seller/Rider Dashboard) */}
             {!isPinnedPage && !confirmDelete && (
-              <Button variant="outline" size="sm" className="gap-1.5 bg-transparent text-red-300 hover:bg-red-500/10 border-red-400/30"
+              <Button variant="outline" size="sm" className="gap-1.5 bg-gray-700 text-red-400 hover:bg-red-950 border-red-800"
                 onClick={() => setConfirmDelete(true)}>
                 <Trash2 className="h-3.5 w-3.5" /> Delete Page
               </Button>
             )}
             {!isPinnedPage && confirmDelete && (
-              <div className="flex items-center gap-2 rounded-lg border border-red-400/40 bg-red-500/10 px-3 py-1.5">
+              <div className="flex items-center gap-2 rounded-lg border border-red-800 bg-red-950 px-3 py-1.5">
                 <span className="text-xs text-red-300 font-medium">Delete "{displayLabel}"?</span>
                 <button onClick={deletePage} disabled={deleting}
                   className="text-xs px-2 py-0.5 rounded bg-destructive text-white disabled:opacity-50">
                   {deleting ? "Deleting…" : "Yes, delete"}
                 </button>
-                <button onClick={() => setConfirmDelete(false)} className="text-xs px-2 py-0.5 rounded border border-white/20 text-white/80 hover:bg-white/10">
+                <button onClick={() => setConfirmDelete(false)} className="text-xs px-2 py-0.5 rounded border border-gray-600 bg-gray-700 text-gray-300 hover:bg-gray-600">
                   Cancel
                 </button>
               </div>
             )}
-
-            <div className="w-px h-6 bg-white/15" />
-
-            {/* Logout */}
-            <button
-              onClick={logout}
-              disabled={loggingOut}
-              className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm text-white/70 hover:bg-white/10 hover:text-white transition-colors disabled:opacity-50"
-            >
-              <LogOut className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">{loggingOut ? "Logging out…" : "Logout"}</span>
-            </button>
           </div>
         </div>
 
         {/* Canvas + right panel */}
         <div className="flex flex-col lg:flex-row flex-1 min-h-0 border rounded-lg overflow-hidden">
 
-          {/* Left sidebar — Project / Upload / History tabs. Tab strip is dark
-              (matches the top bar); tab body content stays light for form legibility.
-              Project merges the old separate Pages and Layers tabs into one tree
-              (Project → Folders → Pages → Layers of whichever page is open) —
-              see renderLayersPanel above. Upload is the old Assets tab, renamed. */}
-          <div className={`shrink-0 border-r bg-background flex flex-col overflow-hidden ${leftSidebarCollapsed ? "w-10" : "w-full lg:w-60"}`}>
-            <div className="flex items-center shrink-0" style={{ backgroundColor: "#1a1a2e" }}>
-              {!leftSidebarCollapsed && (
+          {/* Left sidebar — Project / Upload / History tabs, gray chrome,
+              auto-hide. Collapsed = pinned hidden (persisted, see
+              LEFT_SIDEBAR_HIDDEN_KEY); hoverReveal = transient "peek" while
+              the mouse is over the thin edge strip, cleared on mouse-leave so
+              it re-hides automatically unless explicitly pinned open (click
+              the arrow, not just hover). Width animates via CSS transition —
+              see the auto-fit-zoom effect above, which now waits out this
+              same 300ms before re-measuring the canvas. */}
+          <div
+            className={`shrink-0 border-r border-gray-700 bg-gray-800 flex flex-col overflow-hidden transition-[width] duration-300 ease-in-out ${leftSidebarVisible ? "w-full lg:w-60" : "w-7"}`}
+            onMouseEnter={() => setLeftHoverReveal(true)}
+            onMouseLeave={() => setLeftHoverReveal(false)}
+          >
+            {!leftSidebarVisible ? (
+              <button type="button" title="Show panel" onClick={() => setLeftSidebarCollapsed(false)}
+                className="flex-1 flex items-center justify-center hover:bg-gray-700 text-gray-400">
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            ) : (
+              <>
+            <div className="flex items-center shrink-0 bg-gray-900">
                 <div className="flex-1 flex items-center">
                   {([
                     { id: "project" as const, label: "Project", icon: FileText },
@@ -4818,22 +4933,20 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                   ]).map((tab) => (
                     <button key={tab.id} type="button" title={tab.label}
                       onClick={() => { setActiveLeftTab(tab.id); if (tab.id === "assets") loadAssets(); }}
-                      className={`flex-1 flex flex-col items-center gap-0.5 py-1.5 text-[10px] border-b-2 transition-colors ${activeLeftTab === tab.id ? "text-white font-medium" : "border-transparent text-white/50 hover:bg-white/10"}`}
+                      className={`flex-1 flex flex-col items-center gap-0.5 py-1.5 text-[10px] border-b-2 transition-colors ${activeLeftTab === tab.id ? "text-gray-100 font-medium" : "border-transparent text-gray-500 hover:bg-gray-700/60"}`}
                       style={activeLeftTab === tab.id ? { borderBottomColor: "#6366f1" } : undefined}>
                       <tab.icon className="h-3.5 w-3.5" />
                       {tab.label}
                     </button>
                   ))}
                 </div>
-              )}
-              <button type="button" title={leftSidebarCollapsed ? "Expand" : "Collapse"} onClick={() => setLeftSidebarCollapsed((v) => !v)}
-                className="shrink-0 p-2 hover:bg-white/10 text-white/60">
-                {leftSidebarCollapsed ? <PanelLeftOpen className="h-3.5 w-3.5" /> : <PanelLeftClose className="h-3.5 w-3.5" />}
+              <button type="button" title="Hide panel" onClick={hideLeftSidebar}
+                className="shrink-0 p-2 hover:bg-gray-700 text-gray-400">
+                <ChevronLeft className="h-3.5 w-3.5" />
               </button>
             </div>
 
-            {!leftSidebarCollapsed && (
-              <div className="flex-1 overflow-y-auto p-2">
+              <div className="flex-1 overflow-y-auto p-2 text-gray-200">
                 {/* Pages */}
                 {activeLeftTab === "project" && (() => {
                   const assignedSlugs = new Set(
@@ -4895,7 +5008,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                                 onKeyDown={(e) => { if (e.key === "Enter") projectsTree.commitEditProject(project.id); if (e.key === "Escape") projectsTree.setEditingProjectId(null); }}
                                 onBlur={() => projectsTree.commitEditProject(project.id)}
                                 autoFocus
-                                className="text-xs font-semibold border rounded px-1.5 py-0.5 flex-1 min-w-0 bg-background"
+                                className="text-xs font-semibold border rounded px-1.5 py-0.5 flex-1 min-w-0 bg-background text-gray-900"
                               />
                             ) : (
                               <button
@@ -4933,7 +5046,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                               {openTreeMenu === project.id && (
                                 <>
                                   <div className="fixed inset-0 z-40" onClick={() => setOpenTreeMenu(null)} />
-                                  <div className="absolute right-0 top-full mt-1 z-50 min-w-[150px] rounded-md border bg-white shadow-lg py-1 text-xs">
+                                  <div className="absolute right-0 top-full mt-1 z-50 min-w-[150px] rounded-md border bg-white shadow-lg py-1 text-xs text-gray-900">
                                     <button type="button" onClick={() => { projectsTree.startEditProject(project.id, project.name); setOpenTreeMenu(null); }} className="w-full flex items-center gap-2 text-left px-3 py-1.5 hover:bg-muted"><Pencil className="h-3 w-3" /> Edit name</button>
                                     <button type="button" onClick={() => { projectsTree.toggleProjectCollapsed(project.id); setOpenTreeMenu(null); }} className="w-full flex items-center gap-2 text-left px-3 py-1.5 hover:bg-muted"><ChevronDown className="h-3 w-3" /> {isCollapsed ? "Expand" : "Minimize"}</button>
                                     <button type="button" onClick={() => { projectsTree.duplicateProject(project.id); setOpenTreeMenu(null); }} className="w-full flex items-center gap-2 text-left px-3 py-1.5 hover:bg-muted"><Copy className="h-3 w-3" /> Duplicate project</button>
@@ -4963,7 +5076,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                                   if (e.key === "Escape") setNewFolderProjectId(null);
                                 }}
                                 onBlur={async () => { const n = newFolderNameInput.trim(); setNewFolderProjectId(null); if (n) await projectsTree.createFolder(project.id, n); }}
-                                className="text-xs border rounded px-1.5 py-1 bg-background w-full"
+                                className="text-xs border rounded px-1.5 py-1 bg-background w-full text-gray-900"
                               />
                             </div>
                           )}
@@ -4993,7 +5106,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                                       onKeyDown={(e) => { if (e.key === "Enter") projectsTree.commitEditFolder(folder.id); if (e.key === "Escape") projectsTree.setEditingFolderId(null); }}
                                       onBlur={() => projectsTree.commitEditFolder(folder.id)}
                                       autoFocus
-                                      className="text-xs border rounded px-1.5 py-0.5 flex-1 min-w-0 bg-background"
+                                      className="text-xs border rounded px-1.5 py-0.5 flex-1 min-w-0 bg-background text-gray-900"
                                     />
                                   ) : (
                                     <button
@@ -5035,7 +5148,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                                     {openTreeMenu === folder.id && (
                                       <>
                                         <div className="fixed inset-0 z-40" onClick={() => setOpenTreeMenu(null)} />
-                                        <div className="absolute right-0 top-full mt-1 z-50 min-w-[150px] rounded-md border bg-white shadow-lg py-1 text-xs">
+                                        <div className="absolute right-0 top-full mt-1 z-50 min-w-[150px] rounded-md border bg-white shadow-lg py-1 text-xs text-gray-900">
                                           <button type="button" onClick={() => { projectsTree.startEditFolder(folder.id, folder.name); setOpenTreeMenu(null); }} className="w-full flex items-center gap-2 text-left px-3 py-1.5 hover:bg-muted"><Pencil className="h-3 w-3" /> Edit name</button>
                                           <button type="button" onClick={() => { projectsTree.toggleFolderCollapsed(folder.id); setOpenTreeMenu(null); }} className="w-full flex items-center gap-2 text-left px-3 py-1.5 hover:bg-muted"><ChevronDown className="h-3 w-3" /> {folderCollapsed ? "Expand" : "Minimize"}</button>
                                           {!folder.rootPageId && (
@@ -5057,6 +5170,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
 
                                 {!folderCollapsed && (
                                   <div className="ml-4 flex flex-col gap-0.5">
+                                    {renderConnectBox(folder)}
                                     {folder.rootPage && (
                                       <>
                                         <button
@@ -5119,7 +5233,43 @@ export function PageEditor({ slug, label }: PageEditorProps) {
 
                 {/* Assets */}
                 {activeLeftTab === "assets" && (
-                  <div className="flex flex-col gap-2">
+                  <div className="flex flex-col gap-4">
+                    <div className="flex flex-col gap-2">
+                    <div className="flex items-center justify-between px-1">
+                      <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Fonts {fontItems && fontItems.length > 0 ? `(${fontItems.length})` : ""}</p>
+                      <label className="p-1 rounded hover:bg-muted cursor-pointer flex items-center gap-1" title="Upload font (.ttf, .otf, .woff, .woff2)">
+                        {uploadingFont ? <span className="text-[10px] text-muted-foreground">{fontUploadProgress}%</span> : <Plus className="h-3.5 w-3.5" />}
+                        <input type="file" accept=".ttf,.otf,.woff,.woff2" className="hidden" onChange={async (e) => {
+                          const file = e.target.files?.[0]; if (!file) return;
+                          await uploadFont(file);
+                          e.target.value = "";
+                        }} />
+                      </label>
+                    </div>
+                    {uploadingFont && (
+                      <div className="h-1 w-full rounded-full bg-muted overflow-hidden">
+                        <div className="h-full bg-blue-500 transition-all" style={{ width: `${fontUploadProgress}%` }} />
+                      </div>
+                    )}
+                    {fontsLoading ? (
+                      <p className="text-[11px] text-muted-foreground text-center py-3">Loading…</p>
+                    ) : (fontItems ?? []).length === 0 ? (
+                      <p className="text-[11px] text-muted-foreground text-center py-3">No fonts uploaded yet — upload from the IBOX FONT folder to use them on Text components.</p>
+                    ) : (
+                      <div className="flex flex-col gap-1">
+                        {(fontItems ?? []).map((f) => (
+                          <div key={f.key} className="group flex items-center justify-between gap-2 rounded border px-2 py-1.5 hover:border-black transition-colors">
+                            <span className="truncate text-xs" style={{ fontFamily: `"${f.family}"` }} title={f.name}>{f.name}</span>
+                            <button type="button" title="Delete font" onClick={() => deleteFont(f.key)}
+                              className="shrink-0 p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-destructive/10 text-destructive transition-opacity">
+                              <Trash2 className="h-3 w-3" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    </div>
+                    <div className="flex flex-col gap-2">
                     <div className="flex items-center justify-between px-1">
                       <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Assets {assetItems && assetItems.length > 0 ? `(${assetItems.length})` : ""}</p>
                       {/* Uploads always land in the library first — never auto-placed on
@@ -5164,7 +5314,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                                 onClick={(e) => e.stopPropagation()}
                                 onKeyDown={(e) => { if (e.key === "Enter") commitAssetRename(a.key); if (e.key === "Escape") setRenamingAssetKey(null); }}
                                 onBlur={() => commitAssetRename(a.key)}
-                                className="absolute bottom-0 inset-x-0 text-[10px] px-1 py-0.5 bg-white border-t"
+                                className="absolute bottom-0 inset-x-0 text-[10px] px-1 py-0.5 bg-white border-t text-gray-900"
                               />
                             ) : a.name ? (
                               <p className="absolute bottom-0 inset-x-0 text-[10px] px-1 py-0.5 bg-black/60 text-white truncate pointer-events-none">{a.name}</p>
@@ -5173,6 +5323,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                         ))}
                       </div>
                     )}
+                    </div>
                   </div>
                 )}
 
@@ -5189,7 +5340,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                       </div>
                       <div className="grid grid-cols-3 gap-1.5">
                         {["Draft", "Preview", "Publish"].map((step, i) => (
-                          <div key={step} className={`rounded-md border px-1.5 py-1 text-center ${i === 0 && syncStatus === "dirty" ? "bg-amber-50 border-amber-200" : i === 2 && syncStatus === "synced" ? "bg-green-50 border-green-200" : "bg-background"}`}>
+                          <div key={step} className={`rounded-md border px-1.5 py-1 text-center text-gray-900 ${i === 0 && syncStatus === "dirty" ? "bg-amber-50 border-amber-200" : i === 2 && syncStatus === "synced" ? "bg-green-50 border-green-200" : "bg-background"}`}>
                             <p className="text-[10px] font-semibold">{step}</p>
                           </div>
                         ))}
@@ -5218,7 +5369,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                               key={version.id}
                               type="button"
                               onClick={() => restoreVersion(version)}
-                              className="flex items-center gap-2 rounded-md border bg-background px-2 py-1.5 text-left hover:bg-muted"
+                              className="flex items-center gap-2 rounded-md border bg-background px-2 py-1.5 text-left hover:bg-muted text-gray-900"
                             >
                               <History className="h-3 w-3 text-muted-foreground shrink-0" />
                               <span className="min-w-0 flex-1">
@@ -5233,24 +5384,15 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                   </div>
                 )}
               </div>
+              </>
             )}
           </div>
 
           {/* Canvas (scrollable) — wrapped in a positioning parent so ZoomControls can float
               fixed at its bottom-right corner regardless of internal scroll position. */}
           <div className="relative flex-1 min-w-0 min-h-[44vh]">
-          <div ref={scrollContainerRef} className="absolute inset-0 overflow-auto bg-gray-100 p-3">
-            <div className="mx-auto" style={{ width: (showGuides ? canvasW + RULER_SIZE : canvasW) * (zoom / 100) }}>
-
-              {/* Top ruler — outside the canvas border */}
-              {showGuides && (
-                <div className="flex">
-                  <div style={{ width: RULER_SIZE, height: RULER_SIZE }} className="shrink-0 bg-blue-50 border-b border-r border-blue-200" />
-                  <div className="relative flex-1 min-w-0" style={{ height: RULER_SIZE }}>
-                    <TopRuler canvasW={canvasW} />
-                  </div>
-                </div>
-              )}
+          <div ref={scrollContainerRef} className="absolute inset-0 overflow-auto bg-gray-900 p-3">
+            <div className="mx-auto" style={{ width: canvasW * (zoom / 100) }}>
 
               {/* Zones above the active one — read-only strips (item 3: Header/
                   Template/Footer must all stay visible while editing any one). */}
@@ -5258,13 +5400,6 @@ export function PageEditor({ slug, label }: PageEditorProps) {
               {activeZone === "footer" && renderZoneStrip("template", "Body")}
 
               <div className="flex">
-                {/* Left ruler — outside the canvas border */}
-                {showGuides && (
-                  <div className="relative shrink-0" style={{ width: RULER_SIZE }}>
-                    <LeftRuler canvasH={canvasH} />
-                  </div>
-                )}
-
                 <div
                   ref={canvasRef}
                   className="relative shadow-sm select-none flex-1 min-w-0"
@@ -5302,7 +5437,6 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                   }}
                 >
               {loading && <div className="absolute inset-0 flex items-center justify-center text-sm text-muted-foreground">Loading…</div>}
-              {showGrid && <GridOverlay canvasW={canvasW} canvasH={canvasH} gridSize={gridSize} />}
               {draggingId && (() => {
                 const dragged = components.find((c) => c.id === draggingId);
                 if (!dragged) return null;
@@ -5324,6 +5458,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                 const isTaxi = comp.type === "location-input" || comp.type === "map" || comp.type === "datetime-picker" || comp.type === "vehicle-selector" || comp.type === "driver-badge" || comp.type === "fare-display";
                 const isHero = comp.type === "hero-carousel";
                 const isCatCarousel = comp.type === "category-carousel";
+                const isText = comp.type === "text" || comp.type === "header";
                 const btn = isBtn ? resolveButtonStyles(comp, isHovered) : null;
                 const rotation = comp.rotation ?? 0;
 
@@ -5345,10 +5480,42 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                       </div>
                     )}
                     {(comp.type === "text" || comp.type === "header") && (
-                      <div className="w-full h-full flex items-center overflow-hidden px-1"
-                        style={{ fontSize: `calc(${comp.fontSize ?? 16}px * (${canvasRef.current?.clientWidth ?? canvasW} / ${canvasW}))`, fontFamily: comp.fontFamily ?? "system-ui, -apple-system, sans-serif", fontWeight: comp.fontWeight ?? (comp.bold ? 700 : 400), fontStyle: comp.italic ? "italic" : "normal", lineHeight: comp.lineHeight ?? 1.4, letterSpacing: `${comp.letterSpacing ?? 0}px`, color: comp.fontColor ?? "#111", opacity: (comp.opacity ?? 100) / 100, textAlign: comp.textAlign ?? "left", textTransform: comp.textTransform ?? "none", textDecoration: textDecorationLine(comp), justifyContent: comp.textAlign === "center" ? "center" : comp.textAlign === "right" ? "flex-end" : "flex-start" }}>
-                        {renderTextBody(comp)}
-                      </div>
+                      editingTextId === comp.id ? (
+                        <div
+                          contentEditable
+                          suppressContentEditableWarning
+                          className="w-full h-full flex items-center overflow-auto px-1 outline-none ring-2 ring-blue-500 cursor-text"
+                          style={{ fontSize: `calc(${comp.fontSize ?? 16}px * (${canvasRef.current?.clientWidth ?? canvasW} / ${canvasW}))`, fontFamily: comp.fontFamily ?? "system-ui, -apple-system, sans-serif", lineHeight: comp.lineHeight ?? 1.4, letterSpacing: `${comp.letterSpacing ?? 0}px`, color: comp.fontColor ?? "#111", textAlign: comp.textAlign ?? "left", whiteSpace: "pre-wrap", wordBreak: "break-word" }}
+                          onMouseDown={(e) => e.stopPropagation()}
+                          onClick={(e) => e.stopPropagation()}
+                          ref={(el) => {
+                            if (!el || el.dataset.focused) return;
+                            el.dataset.focused = "1";
+                            el.focus();
+                            const range = document.createRange();
+                            range.selectNodeContents(el);
+                            range.collapse(false);
+                            const sel = window.getSelection();
+                            sel?.removeAllRanges();
+                            sel?.addRange(range);
+                          }}
+                          onBlur={(e) => { updateComp(comp.id, { content: e.currentTarget.textContent ?? "" }); setEditingTextId(null); }}
+                          onKeyDown={(e) => {
+                            e.stopPropagation();
+                            if (e.key === "Escape") { e.currentTarget.blur(); return; }
+                            if (e.key === "Enter" && !e.shiftKey && comp.type === "header") { e.preventDefault(); e.currentTarget.blur(); }
+                          }}
+                        >
+                          {comp.content}
+                        </div>
+                      ) : (
+                        <div className="w-full h-full flex items-center overflow-hidden px-1"
+                          style={{ fontSize: `calc(${comp.fontSize ?? 16}px * (${canvasRef.current?.clientWidth ?? canvasW} / ${canvasW}))`, fontFamily: comp.fontFamily ?? "system-ui, -apple-system, sans-serif", fontWeight: comp.fontWeight ?? (comp.bold ? 700 : 400), fontStyle: comp.italic ? "italic" : "normal", lineHeight: comp.lineHeight ?? 1.4, letterSpacing: `${comp.letterSpacing ?? 0}px`, color: comp.fontColor ?? "#111", opacity: (comp.opacity ?? 100) / 100, textAlign: comp.textAlign ?? "left", textTransform: comp.textTransform ?? "none", textDecoration: textDecorationLine(comp), justifyContent: comp.textAlign === "center" ? "center" : comp.textAlign === "right" ? "flex-end" : "flex-start" }}
+                          onDoubleClick={(e) => { if (comp.locked) return; e.stopPropagation(); setSelectedIds([comp.id]); setEditingTextId(comp.id); }}
+                        >
+                          {renderTextBody(comp)}
+                        </div>
+                      )
                     )}
                     {isShape && (
                       <div className="w-full h-full" style={{ backgroundColor: comp.bgColor ?? "#3b82f6", borderRadius: shapeBorderRadius(comp), clipPath: shapeClipPath(comp.shapeType), opacity: (comp.opacity ?? 100) / 100 }} />
@@ -5422,12 +5589,22 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                           </div>
                         )}
                         {/* Resize handles */}
-                        {isShape || isCarousel ? (
+                        {isShape || isCarousel || isText ? (
                           <>
                             <div className="absolute -top-1.5 -left-1.5 w-3 h-3 bg-blue-500 rounded-full border-2 border-white shadow cursor-nwse-resize z-10" onMouseDown={(e) => onResizeStart(e, [comp.id], "tl")} />
                             <div className="absolute -top-1.5 -right-1.5 w-3 h-3 bg-blue-500 rounded-full border-2 border-white shadow cursor-nesw-resize z-10" onMouseDown={(e) => onResizeStart(e, [comp.id], "tr")} />
                             <div className="absolute -bottom-1.5 -left-1.5 w-3 h-3 bg-blue-500 rounded-full border-2 border-white shadow cursor-nesw-resize z-10" onMouseDown={(e) => onResizeStart(e, [comp.id], "bl")} />
                             <div className="absolute -bottom-1.5 -right-1.5 w-3 h-3 bg-blue-500 rounded-full border-2 border-white shadow cursor-nwse-resize z-10" onMouseDown={(e) => onResizeStart(e, [comp.id], "br")} />
+                            {isText && (
+                              // Mid-edge (border) handles — "pull edges to change text box
+                              // width/height" independent of the corner handles above.
+                              <>
+                                <div className="absolute -top-1 left-1/2 -translate-x-1/2 w-4 h-2 bg-blue-500 rounded-sm border-2 border-white shadow cursor-ns-resize z-10" onMouseDown={(e) => onResizeStart(e, [comp.id], "t")} />
+                                <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-4 h-2 bg-blue-500 rounded-sm border-2 border-white shadow cursor-ns-resize z-10" onMouseDown={(e) => onResizeStart(e, [comp.id], "b")} />
+                                <div className="absolute -left-1 top-1/2 -translate-y-1/2 w-2 h-4 bg-blue-500 rounded-sm border-2 border-white shadow cursor-ew-resize z-10" onMouseDown={(e) => onResizeStart(e, [comp.id], "l")} />
+                                <div className="absolute -right-1 top-1/2 -translate-y-1/2 w-2 h-4 bg-blue-500 rounded-sm border-2 border-white shadow cursor-ew-resize z-10" onMouseDown={(e) => onResizeStart(e, [comp.id], "r")} />
+                              </>
+                            )}
                           </>
                         ) : (
                           <div className="absolute bottom-0 right-0 w-3 h-3 bg-blue-500 cursor-se-resize z-10" style={{ borderRadius: "2px 0 2px 0" }} onMouseDown={(e) => onResizeStart(e, [comp.id])} />
@@ -5437,9 +5614,6 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                   </div>
                 );
               })}
-
-              {/* Margin guides */}
-              {showGuides && <MarginGuides canvasW={canvasW} canvasH={canvasH} />}
 
               {/* Multi/group selection bounding box + resize handles */}
               {selectedComps.length > 1 && (() => {
@@ -5502,50 +5676,38 @@ export function PageEditor({ slug, label }: PageEditorProps) {
             </div>
           </div>
 
-          {/* Zoom controls — floats fixed at the canvas viewport's bottom-right corner,
-              independent of scroll position (see the relative/absolute wrapper above). */}
-          <div className="absolute bottom-3 right-3 flex items-center gap-0.5 rounded-lg border bg-background shadow-sm px-1 py-1 z-10">
-            <button type="button" title="Zoom out" onClick={() => setZoom((z) => Math.max(25, z - 10))}
-              className="flex h-6 w-6 items-center justify-center rounded hover:bg-muted">
-              <Minus className="h-3 w-3" />
-            </button>
-            <button type="button" title="Reset to 100%" onClick={() => setZoom(100)}
-              className="h-6 px-1.5 text-[11px] rounded hover:bg-muted tabular-nums">
-              {zoom}%
-            </button>
-            <button type="button" title="Zoom in" onClick={() => setZoom((z) => Math.min(300, z + 10))}
-              className="flex h-6 w-6 items-center justify-center rounded hover:bg-muted">
-              <Plus className="h-3 w-3" />
-            </button>
-            <div className="w-px h-4 bg-border mx-0.5" />
-            <button type="button" title="Fit to screen"
-              onClick={() => {
-                const containerW = scrollContainerRef.current?.clientWidth ?? canvasW;
-                const naturalW = (showGuides ? canvasW + RULER_SIZE : canvasW);
-                setZoom(Math.max(25, Math.min(300, Math.floor((containerW - 24) / naturalW * 100))));
-              }}
-              className="flex items-center gap-1 h-6 px-1.5 text-[11px] rounded hover:bg-muted"
-            >
-              <Maximize className="h-3 w-3" /> Fit
-            </button>
           </div>
-          </div>
+          {/* Zoom controls moved to the bottom bar (see below) — kept out of
+              the canvas corner so the canvas gets the full space freed up
+              when both sidebars are hidden, per the layout redesign. */}
 
           {/* ── Right panel (fixed, locked alongside canvas) ── */}
-          <div className={`shrink-0 border-t lg:border-t-0 lg:border-l bg-background flex flex-col overflow-hidden ${rightSidebarCollapsed ? "w-10" : "w-full lg:w-72 lg:max-w-72 max-h-[48vh] lg:max-h-none"}`}>
-            <div className="flex items-center shrink-0" style={{ backgroundColor: "#1a1a2e" }}>
-              {!rightSidebarCollapsed && (
-                <p className="flex-1 px-3 py-1.5 text-[10px] uppercase tracking-wide text-white/60">Properties</p>
-              )}
-              <button type="button" title={rightSidebarCollapsed ? "Expand" : "Collapse"} onClick={() => setRightSidebarCollapsed((v) => !v)}
-                className="shrink-0 p-2 hover:bg-white/10 text-white/60">
-                {rightSidebarCollapsed ? <PanelRightOpen className="h-3.5 w-3.5" /> : <PanelRightClose className="h-3.5 w-3.5" />}
+          {/* Same gray, auto-hide treatment as the left sidebar — see its
+              comment above for the collapsed/hoverReveal semantics. Mirrored
+              arrow direction (chevrons point at the canvas when closed,
+              away from it when open) since this panel sits on the right edge. */}
+          <div
+            className={`shrink-0 border-t lg:border-t-0 lg:border-l border-gray-700 bg-gray-800 flex flex-col overflow-hidden transition-[width] duration-300 ease-in-out ${rightSidebarVisible ? "w-full lg:w-72 lg:max-w-72 max-h-[48vh] lg:max-h-none" : "w-7"}`}
+            onMouseEnter={() => setRightHoverReveal(true)}
+            onMouseLeave={() => setRightHoverReveal(false)}
+          >
+            {!rightSidebarVisible ? (
+              <button type="button" title="Show panel" onClick={() => setRightSidebarCollapsed(false)}
+                className="flex-1 flex items-center justify-center hover:bg-gray-700 text-gray-400">
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+            ) : (
+              <>
+            <div className="flex items-center shrink-0 bg-gray-900">
+                <p className="flex-1 px-3 py-1.5 text-[10px] uppercase tracking-wide text-gray-400">Properties</p>
+              <button type="button" title="Hide panel" onClick={hideRightSidebar}
+                className="shrink-0 p-2 hover:bg-gray-700 text-gray-400">
+                <ChevronRight className="h-3.5 w-3.5" />
               </button>
             </div>
 
             {/* Add Component — a selected component's editing settings appear inline,
                 right inside its own type's section, instead of in a separate panel. */}
-            {!rightSidebarCollapsed && (
             <div className="flex-1 overflow-y-auto p-3">
               <p className={sLabel + " mb-2"}>Add Component</p>
               <div className="flex flex-col gap-1.5">
@@ -5553,27 +5715,23 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                 {/* Text */}
                 <div>
                   <button type="button" onClick={() => setOpenTool(openTool === "text" ? null : "text")}
-                    className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md border text-xs transition-colors text-left ${openTool === "text" ? "border-black bg-muted" : "border-gray-200 hover:bg-muted"}`}>
+                    className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md border text-xs transition-colors text-left text-gray-200 ${openTool === "text" ? "border-white bg-gray-700" : "border-gray-700 hover:bg-gray-700"}`}>
                     <Type className="h-3.5 w-3.5 text-muted-foreground shrink-0" /> Text
                     <ChevronDown className={`h-3 w-3 ml-auto text-muted-foreground transition-transform ${openTool === "text" ? "rotate-180" : ""}`} />
                   </button>
                   {openTool === "text" && (
-                    <div className="mt-1 p-1.5 border rounded-md bg-muted/30">
+                    <div className="mt-1 p-1.5 border rounded-md bg-gray-300 border-gray-400">
                       {selectedComp && (selectedComp.type === "text" || selectedComp.type === "header") ? (
                         <div className="flex flex-col">
                           {renderTypeHeader(selectedComp)}
                           {renderPropertySection("layout", "Layout", renderCommonFields(selectedComp))}
                           {renderPropertySection("typography", "Typography", <>
-                            <div>
-                              <label className={sLabel}>Edit text</label>
-                              <textarea value={selectedComp.content ?? ""} onChange={(e) => updateComp(selectedComp.id, { content: e.target.value })} className="w-full text-xs border rounded px-2 py-1 resize-none bg-background" rows={2} />
-                            </div>
                             {selectedComp.lockedTypography ? (
                               <>
                                 <div className="flex items-start gap-1.5 p-1.5 rounded border border-amber-200 bg-amber-50">
                                   <Lock className="h-3 w-3 text-amber-600 shrink-0 mt-0.5" />
                                   <p className="text-[10px] text-amber-800 leading-tight">
-                                    Typography locked to <span className="font-semibold">{selectedComp.textToken ? TEXT_TOKEN_LABELS[selectedComp.textToken] : "template"}</span> so this always matches its Text Template. Content, color, and alignment still editable.
+                                    Typography locked to <span className="font-semibold">{selectedComp.textToken ? TEXT_TOKEN_LABELS[selectedComp.textToken] : "template"}</span> so this always matches its Text Template. Double-click on canvas to edit content; color and alignment still editable here.
                                   </p>
                                 </div>
                                 <div>
@@ -5592,168 +5750,50 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                             ) : (
                               <>
                                 <div>
-                                  <label className={sLabel}>Style</label>
-                                  <select
-                                    value={effectiveTextToken(selectedComp)}
-                                    onChange={(e) => updateComp(selectedComp.id, textTokenPatch(e.target.value as TextToken, canvasW))}
-                                    className="w-full text-xs border rounded px-1.5 py-1 bg-background h-6"
-                                  >
-                                    {TEXT_TOKEN_ORDER.map((t) => <option key={t} value={t}>{TEXT_TOKEN_LABELS[t]}</option>)}
-                                  </select>
+                                  <label className={sLabel}>Font</label>
+                                  {(fontItems ?? []).length === 0 ? (
+                                    <p className="text-[10px] text-muted-foreground border rounded px-2 py-1.5 leading-tight">
+                                      No fonts uploaded yet — add one in the Upload tab to use it here.
+                                    </p>
+                                  ) : (
+                                    <FontSelect
+                                      value={selectedComp.fontFamily ?? (fontItems ?? [])[0].family}
+                                      onChange={(v) => updateComp(selectedComp.id, { fontFamily: v })}
+                                      options={(fontItems ?? []).map((f) => ({ label: f.name.replace(/\.\w+$/, ""), value: f.family }))}
+                                    />
+                                  )}
                                 </div>
                                 <div>
-                                  <label className={sLabel}>Font family</label>
-                                  <FontSelect value={selectedComp.fontFamily ?? TOKEN_FONT_FAMILY} onChange={(v) => updateComp(selectedComp.id, { fontFamily: v })} options={APPROVED_FONT_FAMILIES} />
+                                  <label className={sLabel}>Text size</label>
+                                  {renderStepperInput(selectedComp.fontSize ?? 16, 1, 1, 400, (v) => updateComp(selectedComp.id, { fontSize: v }))}
                                 </div>
-                                <div>
-                                  <label className={sLabel}>Size</label>
-                                  <div className="grid grid-cols-4 gap-1">
-                                    {SIZE_PRESETS.map((p) => {
-                                      const size = applySizePreset(selectedComp, p.mult, canvasW);
-                                      const isActive = (selectedComp.fontSize ?? 0) === size;
-                                      return (
-                                        <button key={p.id} type="button"
-                                          onClick={() => updateComp(selectedComp.id, { fontSize: size })}
-                                          className={`text-[11px] py-0.5 rounded border ${isActive ? "bg-black text-white" : "hover:bg-muted"}`}>
-                                          {p.label}
-                                        </button>
-                                      );
-                                    })}
-                                  </div>
-                                </div>
-                                <div>
-                                  <label className={sLabel}>Format</label>
-                                  <div className="grid grid-cols-4 gap-1">
-                                    <button type="button" onClick={() => updateComp(selectedComp.id, { bold: !selectedComp.bold, fontWeight: selectedComp.bold ? 400 : 700 })} className={`text-xs py-0.5 rounded border font-bold ${selectedComp.bold || (selectedComp.fontWeight ?? 400) >= 700 ? "bg-black text-white" : "hover:bg-muted"}`}>B</button>
-                                    <button type="button" onClick={() => updateComp(selectedComp.id, { italic: !selectedComp.italic })} className={`text-xs py-0.5 rounded border italic ${selectedComp.italic ? "bg-black text-white" : "hover:bg-muted"}`}>I</button>
-                                    <button type="button" onClick={() => updateComp(selectedComp.id, { underline: !selectedComp.underline })} className={`text-xs py-0.5 rounded border underline ${selectedComp.underline ? "bg-black text-white" : "hover:bg-muted"}`}>U</button>
-                                    <button type="button" onClick={() => updateComp(selectedComp.id, { strikethrough: !selectedComp.strikethrough })} className={`text-xs py-0.5 rounded border line-through ${selectedComp.strikethrough ? "bg-black text-white" : "hover:bg-muted"}`}>S</button>
-                                  </div>
+                                <div className="grid grid-cols-2 gap-1.5">
+                                  <ColorPicker key={`${selectedComp.id}-fc`} label="Text colour" value={selectedComp.fontColor ?? "#000000"} onChange={(v) => updateComp(selectedComp.id, { fontColor: v })} />
+                                  <ColorPicker key={`${selectedComp.id}-bg`} label="Background" value={selectedComp.bgColor === "transparent" || !selectedComp.bgColor ? "#ffffff" : selectedComp.bgColor} onChange={(v) => updateComp(selectedComp.id, { bgColor: v })} />
                                 </div>
                                 <div>
                                   <label className={sLabel}>Alignment</label>
-                                  <div className="grid grid-cols-4 gap-1">
-                                    {([["left", AlignLeft], ["center", AlignCenter], ["right", AlignRight], ["justify", AlignJustify]] as const).map(([a, Icon]) => (
-                                      <button key={a} type="button" onClick={() => updateComp(selectedComp.id, { textAlign: a })} className={`flex items-center justify-center py-0.5 rounded border ${selectedComp.textAlign === a ? "bg-black text-white" : "hover:bg-muted"}`}>
+                                  <div className="grid grid-cols-3 gap-1">
+                                    {([["left", AlignLeft], ["center", AlignCenter], ["right", AlignRight]] as const).map(([a, Icon]) => (
+                                      <button key={a} type="button" onClick={() => updateComp(selectedComp.id, { textAlign: a })} className={`flex items-center justify-center py-1 rounded border ${selectedComp.textAlign === a ? "bg-black text-white" : "hover:bg-muted"}`}>
                                         <Icon className="h-3 w-3" />
                                       </button>
                                     ))}
                                   </div>
                                 </div>
                                 <div>
-                                  <label className={sLabel}>Text color</label>
-                                  <div className="grid grid-cols-8 gap-1 mb-1">
-                                    {BRAND_TEXT_COLORS.map((c) => (
-                                      <button key={c} type="button" title={c} onClick={() => updateComp(selectedComp.id, { fontColor: c })}
-                                        className={`h-5 w-full rounded border ${selectedComp.fontColor === c ? "ring-2 ring-offset-1 ring-black" : ""}`}
-                                        style={{ backgroundColor: c }} />
-                                    ))}
-                                  </div>
-                                  {textContrastRatio(selectedComp) < 4.5 && (
-                                    <div className="flex items-start gap-1.5 p-1.5 rounded border border-amber-200 bg-amber-50">
-                                      <AlertTriangle className="h-3 w-3 text-amber-600 shrink-0 mt-0.5" />
-                                      <p className="text-[10px] text-amber-800 leading-tight">
-                                        Low contrast ({textContrastRatio(selectedComp).toFixed(1)}:1) against {selectedComp.bgColor && selectedComp.bgColor !== "transparent" ? "its background" : "a white page background"} — aim for 4.5:1 or higher.
-                                      </p>
-                                    </div>
-                                  )}
+                                  <label className={sLabel}>Letter spacing</label>
+                                  {renderStepperInput(selectedComp.letterSpacing ?? 0, 0.5, -20, 100, (v) => updateComp(selectedComp.id, { letterSpacing: v }))}
                                 </div>
                                 <div>
-                                  <label className={sLabel}>List</label>
-                                  <div className="grid grid-cols-4 gap-1">
-                                    <button type="button" title="Bulleted list" onClick={() => updateComp(selectedComp.id, { listType: selectedComp.listType === "bullet" ? "none" : "bullet" })} className={`flex items-center justify-center py-0.5 rounded border ${selectedComp.listType === "bullet" ? "bg-black text-white" : "hover:bg-muted"}`}><List className="h-3 w-3" /></button>
-                                    <button type="button" title="Numbered list" onClick={() => updateComp(selectedComp.id, { listType: selectedComp.listType === "number" ? "none" : "number" })} className={`flex items-center justify-center py-0.5 rounded border ${selectedComp.listType === "number" ? "bg-black text-white" : "hover:bg-muted"}`}><ListOrdered className="h-3 w-3" /></button>
-                                    <button type="button" title="Outdent" disabled={!selectedComp.listType || selectedComp.listType === "none" || !selectedComp.listIndent} onClick={() => updateComp(selectedComp.id, { listIndent: Math.max(0, (selectedComp.listIndent ?? 0) - 1) })} className="flex items-center justify-center py-0.5 rounded border hover:bg-muted disabled:opacity-30"><Outdent className="h-3 w-3" /></button>
-                                    <button type="button" title="Indent" disabled={!selectedComp.listType || selectedComp.listType === "none"} onClick={() => updateComp(selectedComp.id, { listIndent: Math.min(4, (selectedComp.listIndent ?? 0) + 1) })} className="flex items-center justify-center py-0.5 rounded border hover:bg-muted disabled:opacity-30"><Indent className="h-3 w-3" /></button>
-                                  </div>
+                                  <label className={sLabel}>Line height</label>
+                                  {renderStepperInput(selectedComp.lineHeight ?? 1.4, 0.1, 0.5, 4, (v) => updateComp(selectedComp.id, { lineHeight: Math.round(v * 100) / 100 }))}
                                 </div>
-                                <div>
-                                  <label className={sLabel + " flex items-center gap-0.5"}><Link2 className="h-2 w-2" /> Text link</label>
-                                  <div className="grid grid-cols-[1fr_auto] gap-1.5">
-                                    <Input value={selectedComp.link ?? ""} onChange={(e) => updateComp(selectedComp.id, { link: e.target.value })} placeholder="/products or https://…" className="h-6 text-xs px-1.5" />
-                                    <button type="button" title="Open in new tab (off = same window)" onClick={() => updateComp(selectedComp.id, { linkNewTab: !(selectedComp.linkNewTab === true) })}
-                                      className={`flex items-center gap-1 px-1.5 rounded border text-[11px] ${selectedComp.linkNewTab === true ? "bg-black text-white" : "hover:bg-muted"}`}>
-                                      <ExternalLink className="h-3 w-3" />
-                                    </button>
-                                  </div>
-                                </div>
+                                <p className="text-[10px] text-muted-foreground leading-tight">Double-click the text on canvas to edit its content.</p>
                               </>
                             )}
                           </>)}
-                          {renderPropertySection("appearance", "Appearance", <>
-                            <div className="grid grid-cols-2 gap-1.5">
-                              <ColorPicker key={`${selectedComp.id}-fc`} label="Text color" value={selectedComp.fontColor ?? "#000000"} onChange={(v) => updateComp(selectedComp.id, { fontColor: v })} />
-                              <ColorPicker key={`${selectedComp.id}-bg`} label="Background" value={selectedComp.bgColor === "transparent" ? "#ffffff" : (selectedComp.bgColor ?? "#ffffff")} onChange={(v) => updateComp(selectedComp.id, { bgColor: v })} />
-                            </div>
-                            <div>
-                              <label className={sLabel}>Transparency</label>
-                              <div className="grid grid-cols-[1fr_54px] gap-1.5">
-                                <input type="range" min="0" max="100" value={selectedComp.opacity ?? 100} onChange={(e) => updateComp(selectedComp.id, { opacity: +e.target.value })} className="w-full" />
-                                <Input type="number" min="0" max="100" value={selectedComp.opacity ?? 100} onChange={(e) => updateComp(selectedComp.id, { opacity: +e.target.value })} className="h-6 text-xs px-1.5" />
-                              </div>
-                            </div>
-                          </>)}
                           {renderPropertySection("responsive", "Responsive", renderResponsiveHint())}
-                          {!selectedComp.lockedTypography && renderPropertySection("advanced", "Advanced", <>
-                            <div>
-                              <label className={sLabel}>Font weight</label>
-                              <select value={selectedComp.fontWeight ?? (selectedComp.bold ? 700 : 400)} onChange={(e) => updateComp(selectedComp.id, { fontWeight: +e.target.value, bold: +e.target.value >= 700 })} className="w-full text-xs border rounded px-1.5 py-1 bg-background h-6">
-                                {FONT_WEIGHTS.map((w) => <option key={w.value} value={w.value}>{w.label}</option>)}
-                              </select>
-                            </div>
-                            <div>
-                              <label className={sLabel}>Line height</label>
-                              <div className="grid grid-cols-3 gap-1">
-                                {LINE_HEIGHT_PRESETS.map((p) => (
-                                  <button key={p.id} type="button" onClick={() => updateComp(selectedComp.id, { lineHeight: p.value })}
-                                    className={`text-[11px] py-0.5 rounded border ${selectedComp.lineHeight === p.value ? "bg-black text-white" : "hover:bg-muted"}`}>
-                                    {p.label}
-                                  </button>
-                                ))}
-                              </div>
-                            </div>
-                            <div>
-                              <label className={sLabel}>Letter spacing</label>
-                              <div className="grid grid-cols-3 gap-1">
-                                {LETTER_SPACING_PRESETS.map((p) => (
-                                  <button key={p.id} type="button" onClick={() => updateComp(selectedComp.id, { letterSpacing: p.value })}
-                                    className={`text-[11px] py-0.5 rounded border ${selectedComp.letterSpacing === p.value ? "bg-black text-white" : "hover:bg-muted"}`}>
-                                    {p.label}
-                                  </button>
-                                ))}
-                              </div>
-                            </div>
-                            <div>
-                              <label className={sLabel}>Text transform</label>
-                              <div className="grid grid-cols-3 gap-1">
-                                {(["none", "uppercase", "capitalize"] as const).map((t) => (
-                                  <button key={t} type="button" onClick={() => updateComp(selectedComp.id, { textTransform: t })}
-                                    className={`text-[11px] py-0.5 rounded border capitalize ${(selectedComp.textTransform ?? "none") === t ? "bg-black text-white" : "hover:bg-muted"}`}>
-                                    {t}
-                                  </button>
-                                ))}
-                              </div>
-                            </div>
-                            <div>
-                              <label className={sLabel}>Max lines (0 = no limit)</label>
-                              <Input type="number" min="0" max="20" value={selectedComp.maxLines ?? 0} onChange={(e) => updateComp(selectedComp.id, { maxLines: +e.target.value || undefined })} className="h-6 text-xs px-1.5" />
-                            </div>
-                            <div>
-                              <label className={sLabel}>Effect</label>
-                              <select value={selectedComp.textEffect ?? "none"} onChange={(e) => updateComp(selectedComp.id, { textEffect: e.target.value as TextEffect })} className="w-full text-xs border rounded px-1.5 py-1 bg-background h-6">
-                                {(["none", "glow", "outline", "background", "hollow", "neon", "glitch"] as const).map((effect) => (
-                                  <option key={effect} value={effect}>{effect[0].toUpperCase() + effect.slice(1)}</option>
-                                ))}
-                              </select>
-                            </div>
-                            <div>
-                              <label className={sLabel}>Effect strength</label>
-                              <div className="grid grid-cols-[1fr_54px] gap-1.5">
-                                <input type="range" min="0" max="100" value={selectedComp.effectStrength ?? 30} onChange={(e) => updateComp(selectedComp.id, { effectStrength: +e.target.value })} className="w-full" />
-                                <Input type="number" min="0" max="100" value={selectedComp.effectStrength ?? 30} onChange={(e) => updateComp(selectedComp.id, { effectStrength: +e.target.value })} className="h-6 text-xs px-1.5" />
-                              </div>
-                            </div>
-                          </>)}
                         </div>
                       ) : (
                         <div className="flex flex-col gap-2">
@@ -5780,17 +5820,17 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                               </div>
                             )}
                           </div>
-                          <div className="grid grid-cols-2 gap-1">
-                            {TEXT_PRESETS.map((preset) => (
-                              <button key={preset.id} type="button" onClick={() => addComponent("text", textTokenPatch(preset.token, canvasW, { content: preset.sample, fontColor: preset.fontColor }))}
-                                className="flex flex-col items-center justify-center gap-0.5 h-12 rounded border border-gray-200 bg-white hover:border-black transition-colors overflow-hidden px-1">
-                                <span className="truncate w-full text-center leading-tight"
-                                  style={{ fontSize: Math.min(TEXT_TOKENS[preset.token].fontSizeDesktop, 20), fontWeight: TEXT_TOKENS[preset.token].fontWeight, letterSpacing: TEXT_TOKENS[preset.token].letterSpacing, textTransform: TEXT_TOKENS[preset.token].textTransform, color: preset.fontColor }}>
-                                  {preset.sample}
-                                </span>
-                                <span className="text-[9px] text-muted-foreground">{preset.label}</span>
-                              </button>
-                            ))}
+                          <div className="grid grid-cols-2 gap-1.5">
+                            <button type="button" onClick={() => addComponent("text", { fontFamily: (fontItems ?? [])[0]?.family })}
+                              className="flex flex-col items-center justify-center gap-1 h-14 rounded border border-gray-200 bg-white hover:border-black transition-colors">
+                              <Type className="h-4 w-4 text-muted-foreground" />
+                              <span className="text-[11px]">+ Add Text</span>
+                            </button>
+                            <button type="button" onClick={() => addComponent("header", { fontFamily: (fontItems ?? [])[0]?.family })}
+                              className="flex flex-col items-center justify-center gap-1 h-14 rounded border border-gray-200 bg-white hover:border-black transition-colors">
+                              <Type className="h-4 w-4 text-muted-foreground" />
+                              <span className="text-[11px]">+ Add Heading</span>
+                            </button>
                           </div>
                         </div>
                       )}
@@ -5801,12 +5841,12 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                 {/* Shape */}
                 <div>
                   <button type="button" onClick={() => setOpenTool(openTool === "shape" ? null : "shape")}
-                    className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md border text-xs transition-colors text-left ${openTool === "shape" ? "border-black bg-muted" : "border-gray-200 hover:bg-muted"}`}>
+                    className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md border text-xs transition-colors text-left text-gray-200 ${openTool === "shape" ? "border-white bg-gray-700" : "border-gray-700 hover:bg-gray-700"}`}>
                     <Square className="h-3.5 w-3.5 text-muted-foreground shrink-0" /> Shape
                     <ChevronDown className={`h-3 w-3 ml-auto text-muted-foreground transition-transform ${openTool === "shape" ? "rotate-180" : ""}`} />
                   </button>
                   {openTool === "shape" && (
-                    <div className="mt-1 p-1.5 border rounded-md bg-muted/30">
+                    <div className="mt-1 p-1.5 border rounded-md bg-gray-300 border-gray-400">
                       {selectedComp && selectedComp.type === "shape" ? (
                         <div className="flex flex-col">
                           {renderTypeHeader(selectedComp)}
@@ -5865,7 +5905,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                 {/* Image */}
                 <div>
                   <button type="button" onClick={() => setOpenTool(openTool === "image" ? null : "image")}
-                    className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md border text-xs transition-colors text-left ${openTool === "image" ? "border-black bg-muted" : "border-gray-200 hover:bg-muted"}`}>
+                    className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md border text-xs transition-colors text-left text-gray-200 ${openTool === "image" ? "border-white bg-gray-700" : "border-gray-700 hover:bg-gray-700"}`}>
                     <ImageIcon className="h-3.5 w-3.5 text-muted-foreground shrink-0" /> Image
                     <ChevronDown className={`h-3 w-3 ml-auto text-muted-foreground transition-transform ${openTool === "image" ? "rotate-180" : ""}`} />
                   </button>
@@ -6011,12 +6051,12 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                 {/* Button */}
                 <div>
                   <button type="button" onClick={() => setOpenTool(openTool === "button" ? null : "button")}
-                    className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md border text-xs transition-colors text-left ${openTool === "button" ? "border-black bg-muted" : "border-gray-200 hover:bg-muted"}`}>
+                    className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md border text-xs transition-colors text-left text-gray-200 ${openTool === "button" ? "border-white bg-gray-700" : "border-gray-700 hover:bg-gray-700"}`}>
                     <MousePointerClick className="h-3.5 w-3.5 text-muted-foreground shrink-0" /> Button
                     <ChevronDown className={`h-3 w-3 ml-auto text-muted-foreground transition-transform ${openTool === "button" ? "rotate-180" : ""}`} />
                   </button>
                   {openTool === "button" && (
-                    <div className="mt-1 p-1.5 border rounded-md bg-muted/30">
+                    <div className="mt-1 p-1.5 border rounded-md bg-gray-300 border-gray-400">
                       {selectedComp && selectedComp.type === "button" ? (
                         <div className="flex flex-col">
                           {renderTypeHeader(selectedComp)}
@@ -6103,12 +6143,12 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                 {/* Carousel */}
                 <div>
                   <button type="button" onClick={() => setOpenTool(openTool === "carousel" ? null : "carousel")}
-                    className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md border text-xs transition-colors text-left ${openTool === "carousel" ? "border-black bg-muted" : "border-gray-200 hover:bg-muted"}`}>
+                    className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md border text-xs transition-colors text-left text-gray-200 ${openTool === "carousel" ? "border-white bg-gray-700" : "border-gray-700 hover:bg-gray-700"}`}>
                     <GalleryHorizontal className="h-3.5 w-3.5 text-muted-foreground shrink-0" /> Carousel
                     <ChevronDown className={`h-3 w-3 ml-auto text-muted-foreground transition-transform ${openTool === "carousel" ? "rotate-180" : ""}`} />
                   </button>
                   {openTool === "carousel" && (
-                    <div className="mt-1 p-1.5 border rounded-md bg-muted/30">
+                    <div className="mt-1 p-1.5 border rounded-md bg-gray-300 border-gray-400">
                       {selectedComp && selectedComp.type === "carousel" ? (() => {
                         const items = selectedComp.carouselItems ?? [];
                         return (
@@ -6231,12 +6271,12 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                 {/* Hero Carousel */}
                 <div>
                   <button type="button" onClick={() => setOpenTool(openTool === "hero-carousel" ? null : "hero-carousel")}
-                    className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md border text-xs transition-colors text-left ${openTool === "hero-carousel" ? "border-black bg-muted" : "border-gray-200 hover:bg-muted"}`}>
+                    className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md border text-xs transition-colors text-left text-gray-200 ${openTool === "hero-carousel" ? "border-white bg-gray-700" : "border-gray-700 hover:bg-gray-700"}`}>
                     <GalleryHorizontalEnd className="h-3.5 w-3.5 text-muted-foreground shrink-0" /> Hero Carousel
                     <ChevronDown className={`h-3 w-3 ml-auto text-muted-foreground transition-transform ${openTool === "hero-carousel" ? "rotate-180" : ""}`} />
                   </button>
                   {openTool === "hero-carousel" && (
-                    <div className="mt-1 p-1.5 border rounded-md bg-muted/30">
+                    <div className="mt-1 p-1.5 border rounded-md bg-gray-300 border-gray-400">
                       {selectedComp && selectedComp.type === "hero-carousel" ? (() => {
                         const slides = selectedComp.heroSlides ?? [];
                         return (
@@ -6347,12 +6387,12 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                 {/* Category Carousel */}
                 <div>
                   <button type="button" onClick={() => setOpenTool(openTool === "category-carousel" ? null : "category-carousel")}
-                    className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md border text-xs transition-colors text-left ${openTool === "category-carousel" ? "border-black bg-muted" : "border-gray-200 hover:bg-muted"}`}>
+                    className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md border text-xs transition-colors text-left text-gray-200 ${openTool === "category-carousel" ? "border-white bg-gray-700" : "border-gray-700 hover:bg-gray-700"}`}>
                     <LayoutGrid className="h-3.5 w-3.5 text-muted-foreground shrink-0" /> Category Carousel
                     <ChevronDown className={`h-3 w-3 ml-auto text-muted-foreground transition-transform ${openTool === "category-carousel" ? "rotate-180" : ""}`} />
                   </button>
                   {openTool === "category-carousel" && (
-                    <div className="mt-1 p-1.5 border rounded-md bg-muted/30">
+                    <div className="mt-1 p-1.5 border rounded-md bg-gray-300 border-gray-400">
                       {selectedComp && selectedComp.type === "category-carousel" ? (() => {
                         const items = selectedComp.catCarouselItems ?? [];
                         const cardStyle = selectedComp.catCarouselCardStyle ?? "image-first";
@@ -6498,12 +6538,12 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                 {/* Icon */}
                 <div>
                   <button type="button" onClick={() => setOpenTool(openTool === "icon" ? null : "icon")}
-                    className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md border text-xs transition-colors text-left ${openTool === "icon" ? "border-black bg-muted" : "border-gray-200 hover:bg-muted"}`}>
+                    className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md border text-xs transition-colors text-left text-gray-200 ${openTool === "icon" ? "border-white bg-gray-700" : "border-gray-700 hover:bg-gray-700"}`}>
                     <ComponentIcon className="h-3.5 w-3.5 text-muted-foreground shrink-0" /> Icon
                     <ChevronDown className={`h-3 w-3 ml-auto text-muted-foreground transition-transform ${openTool === "icon" ? "rotate-180" : ""}`} />
                   </button>
                   {openTool === "icon" && (
-                    <div className="mt-1 p-1.5 border rounded-md bg-muted/30">
+                    <div className="mt-1 p-1.5 border rounded-md bg-gray-300 border-gray-400">
                       {selectedComp && selectedComp.type === "icon" ? (
                         <div className="flex flex-col">
                           {renderTypeHeader(selectedComp)}
@@ -6542,12 +6582,12 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                 {/* Location Input */}
                 <div>
                   <button type="button" onClick={() => setOpenTool(openTool === "location-input" ? null : "location-input")}
-                    className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md border text-xs transition-colors text-left ${openTool === "location-input" ? "border-black bg-muted" : "border-gray-200 hover:bg-muted"}`}>
+                    className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md border text-xs transition-colors text-left text-gray-200 ${openTool === "location-input" ? "border-white bg-gray-700" : "border-gray-700 hover:bg-gray-700"}`}>
                     <MapPin className="h-3.5 w-3.5 text-muted-foreground shrink-0" /> Location Input
                     <ChevronDown className={`h-3 w-3 ml-auto text-muted-foreground transition-transform ${openTool === "location-input" ? "rotate-180" : ""}`} />
                   </button>
                   {openTool === "location-input" && (
-                    <div className="mt-1 p-1.5 border rounded-md bg-muted/30">
+                    <div className="mt-1 p-1.5 border rounded-md bg-gray-300 border-gray-400">
                       {selectedComp && selectedComp.type === "location-input" ? (
                         <div className="flex flex-col">
                           {renderTypeHeader(selectedComp)}
@@ -6581,12 +6621,12 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                 {/* Map */}
                 <div>
                   <button type="button" onClick={() => setOpenTool(openTool === "map" ? null : "map")}
-                    className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md border text-xs transition-colors text-left ${openTool === "map" ? "border-black bg-muted" : "border-gray-200 hover:bg-muted"}`}>
+                    className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md border text-xs transition-colors text-left text-gray-200 ${openTool === "map" ? "border-white bg-gray-700" : "border-gray-700 hover:bg-gray-700"}`}>
                     <MapIcon className="h-3.5 w-3.5 text-muted-foreground shrink-0" /> Map
                     <ChevronDown className={`h-3 w-3 ml-auto text-muted-foreground transition-transform ${openTool === "map" ? "rotate-180" : ""}`} />
                   </button>
                   {openTool === "map" && (
-                    <div className="mt-1 p-1.5 border rounded-md bg-muted/30">
+                    <div className="mt-1 p-1.5 border rounded-md bg-gray-300 border-gray-400">
                       {selectedComp && selectedComp.type === "map" ? (() => {
                         const markers = selectedComp.mapMarkers ?? [];
                         return (
@@ -6654,12 +6694,12 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                 {/* Date & Time Picker */}
                 <div>
                   <button type="button" onClick={() => setOpenTool(openTool === "datetime-picker" ? null : "datetime-picker")}
-                    className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md border text-xs transition-colors text-left ${openTool === "datetime-picker" ? "border-black bg-muted" : "border-gray-200 hover:bg-muted"}`}>
+                    className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md border text-xs transition-colors text-left text-gray-200 ${openTool === "datetime-picker" ? "border-white bg-gray-700" : "border-gray-700 hover:bg-gray-700"}`}>
                     <CalendarClock className="h-3.5 w-3.5 text-muted-foreground shrink-0" /> Date & Time Picker
                     <ChevronDown className={`h-3 w-3 ml-auto text-muted-foreground transition-transform ${openTool === "datetime-picker" ? "rotate-180" : ""}`} />
                   </button>
                   {openTool === "datetime-picker" && (
-                    <div className="mt-1 p-1.5 border rounded-md bg-muted/30">
+                    <div className="mt-1 p-1.5 border rounded-md bg-gray-300 border-gray-400">
                       {selectedComp && selectedComp.type === "datetime-picker" ? (
                         <div className="flex flex-col">
                           {renderTypeHeader(selectedComp)}
@@ -6706,12 +6746,12 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                 {/* Vehicle Selector */}
                 <div>
                   <button type="button" onClick={() => setOpenTool(openTool === "vehicle-selector" ? null : "vehicle-selector")}
-                    className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md border text-xs transition-colors text-left ${openTool === "vehicle-selector" ? "border-black bg-muted" : "border-gray-200 hover:bg-muted"}`}>
+                    className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md border text-xs transition-colors text-left text-gray-200 ${openTool === "vehicle-selector" ? "border-white bg-gray-700" : "border-gray-700 hover:bg-gray-700"}`}>
                     <CarFront className="h-3.5 w-3.5 text-muted-foreground shrink-0" /> Vehicle Selector
                     <ChevronDown className={`h-3 w-3 ml-auto text-muted-foreground transition-transform ${openTool === "vehicle-selector" ? "rotate-180" : ""}`} />
                   </button>
                   {openTool === "vehicle-selector" && (
-                    <div className="mt-1 p-1.5 border rounded-md bg-muted/30">
+                    <div className="mt-1 p-1.5 border rounded-md bg-gray-300 border-gray-400">
                       {selectedComp && selectedComp.type === "vehicle-selector" ? (() => {
                         const options = selectedComp.vehicleOptions ?? [];
                         return (
@@ -6767,12 +6807,12 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                 {/* Driver Badge */}
                 <div>
                   <button type="button" onClick={() => setOpenTool(openTool === "driver-badge" ? null : "driver-badge")}
-                    className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md border text-xs transition-colors text-left ${openTool === "driver-badge" ? "border-black bg-muted" : "border-gray-200 hover:bg-muted"}`}>
+                    className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md border text-xs transition-colors text-left text-gray-200 ${openTool === "driver-badge" ? "border-white bg-gray-700" : "border-gray-700 hover:bg-gray-700"}`}>
                     <BadgeCheck className="h-3.5 w-3.5 text-muted-foreground shrink-0" /> Driver Badge
                     <ChevronDown className={`h-3 w-3 ml-auto text-muted-foreground transition-transform ${openTool === "driver-badge" ? "rotate-180" : ""}`} />
                   </button>
                   {openTool === "driver-badge" && (
-                    <div className="mt-1 p-1.5 border rounded-md bg-muted/30">
+                    <div className="mt-1 p-1.5 border rounded-md bg-gray-300 border-gray-400">
                       {selectedComp && selectedComp.type === "driver-badge" ? (
                         <div className="flex flex-col">
                           {renderTypeHeader(selectedComp)}
@@ -6823,12 +6863,12 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                 {/* Fare Display */}
                 <div>
                   <button type="button" onClick={() => setOpenTool(openTool === "fare-display" ? null : "fare-display")}
-                    className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md border text-xs transition-colors text-left ${openTool === "fare-display" ? "border-black bg-muted" : "border-gray-200 hover:bg-muted"}`}>
+                    className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md border text-xs transition-colors text-left text-gray-200 ${openTool === "fare-display" ? "border-white bg-gray-700" : "border-gray-700 hover:bg-gray-700"}`}>
                     <Receipt className="h-3.5 w-3.5 text-muted-foreground shrink-0" /> Fare Display
                     <ChevronDown className={`h-3 w-3 ml-auto text-muted-foreground transition-transform ${openTool === "fare-display" ? "rotate-180" : ""}`} />
                   </button>
                   {openTool === "fare-display" && (
-                    <div className="mt-1 p-1.5 border rounded-md bg-muted/30">
+                    <div className="mt-1 p-1.5 border rounded-md bg-gray-300 border-gray-400">
                       {selectedComp && selectedComp.type === "fare-display" ? (
                         <div className="flex flex-col">
                           {renderTypeHeader(selectedComp)}
@@ -7066,6 +7106,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                 </div>
               )}
             </div>
+              </>
             )}
           </div>
           {/* end right panel */}
@@ -7096,6 +7137,15 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                 onClick={ungroupSelected}
               >
                 <UngroupIcon className="h-3.5 w-3.5" /> Ungroup
+              </button>
+            )}
+            {selectedComp && (
+              <button
+                type="button"
+                className="w-full flex items-center gap-2 text-left px-3 py-1.5 hover:bg-muted"
+                onClick={copySelection}
+              >
+                <ClipboardCopy className="h-3.5 w-3.5" /> Copy
               </button>
             )}
             {selectedComp && (
@@ -7205,14 +7255,53 @@ export function PageEditor({ slug, label }: PageEditorProps) {
           </div>
         )}
 
-        {/* Status bar — "All changes saved"/"Saving…" plus Version Control counts,
-            absorbed from the stat-tile row that used to sit above the canvas. */}
-        <div className="flex items-center gap-3 shrink-0 pt-2 mt-1 border-t text-xs text-muted-foreground">
-          <span className={`flex items-center gap-1.5 font-medium ${syncStatus === "error" ? "text-destructive" : syncStatus === "dirty" ? "text-amber-700" : "text-foreground"}`}>
+        {/* Bottom bar — gray chrome (matches top bar + sidebars). Sync status/
+            Version Control counts stay here (absorbed from the stat-tile row
+            that used to sit above the canvas); zoom controls moved here from
+            their old floating position at the canvas's bottom-right corner;
+            Logout moved here from the top bar. */}
+        <div className="flex items-center gap-3 shrink-0 mt-3 rounded-lg px-3 py-2 bg-gray-800 border border-gray-700 text-xs text-gray-400">
+          <span className={`flex items-center gap-1.5 font-medium ${syncStatus === "error" ? "text-destructive" : syncStatus === "dirty" ? "text-amber-400" : "text-gray-300"}`}>
             <Cloud className={`h-3 w-3 ${syncStatus === "syncing" ? "animate-pulse" : ""}`} /> {syncLabel}
           </span>
           <span className="flex items-center gap-1"><History className="h-3 w-3" /> {versions.length} checkpoint{versions.length === 1 ? "" : "s"}</span>
           <span className="flex items-center gap-1"><Activity className="h-3 w-3" /> {changeCount === 0 ? "Clean" : `${changeCount} tracked`}</span>
+
+          {/* Zoom controls */}
+          <div className="flex items-center gap-0.5 rounded-lg border border-gray-600 bg-gray-700 px-1 py-1">
+            <button type="button" title="Zoom out" onClick={() => setZoom((z) => Math.max(25, z - 10))}
+              className="flex h-6 w-6 items-center justify-center rounded hover:bg-gray-600 text-gray-300">
+              <Minus className="h-3 w-3" />
+            </button>
+            <button type="button" title="Reset to 100%" onClick={() => setZoom(100)}
+              className="h-6 px-1.5 text-[11px] rounded hover:bg-gray-600 text-gray-300 tabular-nums">
+              {zoom}%
+            </button>
+            <button type="button" title="Zoom in" onClick={() => setZoom((z) => Math.min(300, z + 10))}
+              className="flex h-6 w-6 items-center justify-center rounded hover:bg-gray-600 text-gray-300">
+              <Plus className="h-3 w-3" />
+            </button>
+            <div className="w-px h-4 bg-gray-600 mx-0.5" />
+            <button type="button" title="Fit to screen"
+              onClick={() => {
+                const containerW = scrollContainerRef.current?.clientWidth ?? canvasW;
+                setZoom(Math.max(25, Math.min(300, Math.floor((containerW - 24) / canvasW * 100))));
+              }}
+              className="flex items-center gap-1 h-6 px-1.5 text-[11px] rounded hover:bg-gray-600 text-gray-300"
+            >
+              <Maximize className="h-3 w-3" /> Fit
+            </button>
+          </div>
+
+          {/* Logout — right-aligned */}
+          <button
+            onClick={logout}
+            disabled={loggingOut}
+            className="ml-auto flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm text-gray-400 hover:bg-gray-700 hover:text-gray-100 transition-colors disabled:opacity-50"
+          >
+            <LogOut className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">{loggingOut ? "Logging out…" : "Logout"}</span>
+          </button>
         </div>
 
       </div>

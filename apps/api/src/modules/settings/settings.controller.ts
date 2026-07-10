@@ -43,7 +43,7 @@ export class SettingsController {
   @Roles(UserRole.ADMIN)
   @UseInterceptors(FileInterceptor("file"))
   async uploadImage(@UploadedFile() file: Express.Multer.File) {
-    const url = await this.storage.upload(file.buffer, file.mimetype, "site");
+    const { url } = await this.storage.upload(file.buffer, file.mimetype, "site");
     return { url, contentType: file.mimetype };
   }
 }

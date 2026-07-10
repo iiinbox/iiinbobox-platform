@@ -259,6 +259,25 @@ export class PageConfigService {
     });
   }
 
+  // Folder → Domain/Subdomain connection (Pages panel's "Connect to" box).
+  // `subdomain: null` disconnects (folder no longer resolves at any
+  // subdomain — its pages are still reachable via the normal /slug route,
+  // this only controls the dedicated-subdomain-root shortcut). A non-null
+  // value must be globally unique across every folder — enforced here with a
+  // friendly error rather than relying solely on the DB's unique constraint
+  // (which would surface as an opaque 500).
+  async setFolderSubdomain(id: string, subdomain: string | null) {
+    const folder = await prisma.folder.findUnique({ where: { id } });
+    if (!folder) throw new BadRequestException("Folder not found");
+    if (subdomain) {
+      const existing = await prisma.folder.findUnique({ where: { subdomain } });
+      if (existing && existing.id !== id) {
+        throw new BadRequestException(`"${subdomain}" is already connected to another folder`);
+      }
+    }
+    return prisma.folder.update({ where: { id }, data: { subdomain } });
+  }
+
   // Drag-and-drop reparent — folderId: null moves a page back to Unassigned
   // (draft-only, never live, until moved into a folder and that folder is
   // published). Rejects moving a folder's own root page (undefined state —

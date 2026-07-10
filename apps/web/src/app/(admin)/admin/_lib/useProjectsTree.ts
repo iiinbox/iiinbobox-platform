@@ -211,6 +211,35 @@ export function useProjectsTree() {
     }
   }
 
+  // "Connect to" box — ties a folder to the apex domain (subdomain: null) or
+  // a specific subdomain. Optimistic update (the dropdown needs to reflect
+  // the new choice immediately), rolled back to the pre-fetch snapshot on
+  // failure (e.g. someone else just claimed that subdomain).
+  async function setFolderSubdomain(id: string, subdomain: string | null): Promise<{ ok: boolean; error?: string }> {
+    const previous = projects;
+    setProjects((prev) => prev.map((p) => ({
+      ...p,
+      folders: p.folders.map((f) => (f.id === id ? { ...f, subdomain } : f)),
+    })));
+    try {
+      const res = await fetch(`/api/page-config/folders/${encodeURIComponent(id)}/subdomain`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ subdomain }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        setProjects(previous);
+        return { ok: false, error: data?.message ?? `HTTP ${res.status}` };
+      }
+      await fetchProjects();
+      return { ok: true };
+    } catch {
+      setProjects(previous);
+      return { ok: false, error: "Network error" };
+    }
+  }
+
   async function publishFolder(id: string): Promise<boolean> {
     setPublishingFolderId(id);
     try {
@@ -257,6 +286,7 @@ export function useProjectsTree() {
     editingProjectId, setEditingProjectId, projectEditInput, setProjectEditInput, startEditProject, commitEditProject,
     createFolder, deleteFolder,
     editingFolderId, setEditingFolderId, folderEditInput, setFolderEditInput, startEditFolder, commitEditFolder,
+    setFolderSubdomain,
     publishFolder, publishingFolderId,
     movePageToFolder, duplicatePage,
     collapsedProjectIds, toggleProjectCollapsed, collapsedFolderIds, toggleFolderCollapsed,

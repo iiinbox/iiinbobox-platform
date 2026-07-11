@@ -398,4 +398,31 @@ export class PageConfigService {
     );
     return { ok: true };
   }
+
+  // Table component cross-page cell binding — a cell's "ref" is
+  // "<page>:<cellId>" (e.g. "seller-dashboard:C1R1T1"). Only a cell that's
+  // actually typed into directly (not itself bound to another cell) ever
+  // calls setTableCell; a bound cell reads via getTableCells at render time
+  // (editor AND live site), so it always shows the source's current value —
+  // "live" here means "correct as of this fetch", not push/websocket. No
+  // Redis layer (Redis is optional/often disabled in this app — see
+  // RedisService's Postgres/JWT-only fallback) — direct reads are cheap
+  // enough for a component that's inherently low-traffic.
+  async setTableCell(ref: string, value: string) {
+    await prisma.tableCellValue.upsert({
+      where: { ref },
+      update: { value },
+      create: { ref, value },
+    });
+    return { ok: true };
+  }
+
+  async getTableCells(refs: string[]): Promise<Record<string, string>> {
+    const uniqueRefs = Array.from(new Set(refs)).filter(Boolean);
+    if (uniqueRefs.length === 0) return {};
+    const rows = await prisma.tableCellValue.findMany({ where: { ref: { in: uniqueRefs } } });
+    const result: Record<string, string> = {};
+    for (const r of rows) result[r.ref] = r.value;
+    return result;
+  }
 }

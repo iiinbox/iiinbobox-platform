@@ -324,3 +324,15 @@ model SiteSettings {
   faviconContentType String   @default("image/png")
   updatedAt          DateTime @updatedAt
 }
+
+// Cross-page Table-cell data binding (Table component) — one row per cell
+// that has ever had content typed directly into it (not a bound cell),
+// addressed globally as "<page>:<cellId>" (e.g. "seller-dashboard:C1R1T1")
+// so any Table cell on any other page can bind to it and read the live
+// value at render time. See PageEditor.tsx's table-cell save path and
+// PageRenderer.tsx's binding resolution.
+model TableCellValue {
+  ref       String   @id
+  value     String   @default("")
+  updatedAt DateTime @updatedAt
+}

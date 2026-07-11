@@ -67,11 +67,38 @@ type CardStyle = "image-first" | "icon-text" | "split";
 type CardAspectRatio = "1:1" | "3:4";
 type SnapMode = "single" | "double";
 
+interface TableCellMeta {
+  row: number;
+  col: number;
+  width?: number;
+  height?: number;
+  bgColor?: string;
+  borderColor?: string;
+  borderWidth?: number;
+  borderRadius?: number;
+  align?: "left" | "center" | "right";
+  content?: string;
+  bindingRef?: string;
+  childType?: "text" | "image" | "button";
+  childImageUrl?: string;
+  childLink?: string;
+  childFontColor?: string;
+  childBgColor?: string;
+}
+
 interface PageComponent {
   id: string;
   type: "text" | "header" | "shape" | "image" | "button" | "carousel" | "icon"
     | "location-input" | "map" | "datetime-picker" | "vehicle-selector" | "driver-badge" | "fare-display"
-    | "hero-carousel" | "category-carousel" | "logo";
+    | "hero-carousel" | "category-carousel" | "logo" | "table";
+  tableIndex?: number;
+  tableRows?: number;
+  tableCols?: number;
+  tableBgColor?: string;
+  tableBorderColor?: string;
+  tableBorderWidth?: number;
+  tableBorderRadius?: number;
+  tableCells?: TableCellMeta[];
   x: number;
   y: number;
   width: number;
@@ -186,6 +213,33 @@ export async function getPublishedPageConfig(slug: string) {
   }
 }
 
+// Resolves every Table cell's bindingRef ("<page>:<cellId>") to that source
+// cell's current value, same POST-body/no-cache endpoint the editor's
+// PreviewCanvas uses — see page-config.service.ts's getTableCells. No
+// revalidate window (unlike getPublishedPageConfig) since a bound cell needs
+// to reflect its source's latest saved value, not a 10s-stale one.
+async function resolveTableCells(refs: string[]): Promise<Record<string, string>> {
+  if (refs.length === 0) return {};
+  try {
+    const res = await fetch(`${API}/page-config/table-cells/resolve`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ refs }),
+      cache: "no-store",
+    });
+    if (!res.ok) return {};
+    return await res.json();
+  } catch {
+    return {};
+  }
+}
+
+function collectBindingRefs(components: PageComponent[]): string[] {
+  return components
+    .filter((c) => c.type === "table")
+    .flatMap((c) => (c.tableCells ?? []).map((cell) => cell.bindingRef).filter((r): r is string => !!r));
+}
+
 export interface PublicSiteSettings {
   logoUrl: string | null;
   logoWidth: number;
@@ -244,7 +298,7 @@ function buttonHref(comp: PageComponent): string | undefined {
   }
 }
 
-function Canvas({ components, canvasW, canvasH, bgColor, settings, rotation }: { components: PageComponent[]; canvasW: number; canvasH: number; bgColor?: string; settings?: PublicSiteSettings | null; rotation?: number }) {
+function Canvas({ components, canvasW, canvasH, bgColor, settings, rotation, resolvedBindings }: { components: PageComponent[]; canvasW: number; canvasH: number; bgColor?: string; settings?: PublicSiteSettings | null; rotation?: number; resolvedBindings?: Record<string, string> }) {
   // Generate per-button hover CSS so we don't need a client component
   const hoverCss = components
     .filter((c) => c.type === "button")
@@ -300,6 +354,7 @@ function Canvas({ components, canvasW, canvasH, bgColor, settings, rotation }: {
             const isCarousel = comp.type === "carousel";
             const isIcon = comp.type === "icon";
             const isLogo = comp.type === "logo";
+            const isTable = comp.type === "table";
             const isTaxi = comp.type === "location-input" || comp.type === "map" || comp.type === "datetime-picker" || comp.type === "vehicle-selector" || comp.type === "driver-badge" || comp.type === "fare-display";
             const isHero = comp.type === "hero-carousel";
             const isCatCarousel = comp.type === "category-carousel";
@@ -321,8 +376,8 @@ function Canvas({ components, canvasW, canvasH, bgColor, settings, rotation }: {
                 className="absolute"
                 style={{
                   left, top, width, height,
-                  borderRadius: isBtn || isShape || isCarousel || isIcon || isLogo || isTaxi || isHero || isCatCarousel ? 0 : (comp.borderRadius ?? 0),
-                  backgroundColor: isBtn || isShape || isCarousel || isIcon || isLogo || isTaxi || isHero || isCatCarousel
+                  borderRadius: isBtn || isShape || isCarousel || isIcon || isLogo || isTable || isTaxi || isHero || isCatCarousel ? 0 : (comp.borderRadius ?? 0),
+                  backgroundColor: isBtn || isShape || isCarousel || isIcon || isLogo || isTable || isTaxi || isHero || isCatCarousel
                     ? "transparent"
                     : (comp.bgColor === "transparent" ? "transparent" : (comp.bgColor ?? "transparent")),
                   transform: comp.rotation ? `rotate(${comp.rotation}deg)` : undefined,
@@ -341,6 +396,55 @@ function Canvas({ components, canvasW, canvasH, bgColor, settings, rotation }: {
                     opacity: (comp.opacity ?? 100) / 100,
                   }} />
                 )}
+
+                {isTable && (() => {
+                  const rows = comp.tableRows ?? 2;
+                  const cols = comp.tableCols ?? 2;
+                  const cells = comp.tableCells ?? [];
+                  return (
+                    <table
+                      className="w-full h-full select-none"
+                      style={{ borderCollapse: "collapse", backgroundColor: comp.tableBgColor ?? "#ffffff", border: `${comp.tableBorderWidth ?? 1}px solid ${comp.tableBorderColor ?? "#e5e7eb"}`, borderRadius: comp.tableBorderRadius ?? 0, overflow: "hidden" }}
+                    >
+                      <tbody>
+                        {Array.from({ length: rows }).map((_, r) => (
+                          <tr key={r}>
+                            {Array.from({ length: cols }).map((_, c) => {
+                              const cell = cells.find((cc) => cc.row === r && cc.col === c);
+                              const displayValue = cell?.bindingRef ? (resolvedBindings?.[cell.bindingRef] ?? "") : (cell?.content ?? "");
+                              const inner = cell?.childType === "image" && cell.childImageUrl ? (
+                                <img src={cell.childImageUrl} alt="" className="w-full h-full object-cover" />
+                              ) : cell?.childType === "button" ? (
+                                <span className="inline-block px-2 py-1 rounded text-xs" style={{ backgroundColor: cell.childBgColor ?? "#3b82f6", color: cell.childFontColor ?? "#ffffff" }}>
+                                  {displayValue || "Button"}
+                                </span>
+                              ) : (
+                                <span style={{ color: cell?.childFontColor ?? "#111111" }}>{displayValue}</span>
+                              );
+                              return (
+                                <td
+                                  key={c}
+                                  style={{
+                                    width: cell?.width ?? 120, height: cell?.height ?? 40,
+                                    backgroundColor: cell?.bgColor ?? "#ffffff",
+                                    border: `${cell?.borderWidth ?? 1}px solid ${cell?.borderColor ?? "#e5e7eb"}`,
+                                    borderRadius: cell?.borderRadius ?? 0,
+                                    textAlign: cell?.align ?? "left",
+                                    padding: "4px 8px",
+                                    fontSize: 12,
+                                    overflow: "hidden",
+                                  }}
+                                >
+                                  {cell?.childLink ? <a href={cell.childLink}>{inner}</a> : inner}
+                                </td>
+                              );
+                            })}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  );
+                })()}
 
                 {isCarousel && (comp.carouselItems?.length ?? 0) > 0 && (
                   <div className="w-full h-full" style={{
@@ -633,13 +737,14 @@ function Canvas({ components, canvasW, canvasH, bgColor, settings, rotation }: {
 // element can't "hide" mid-scroll, but a plain bottom block with no threshold
 // has no reason to float over content; it just sits in normal flow at the
 // natural end of the page like every other component does.
-function DockedBlock({ block, canvasW, pageHeight, bgColor, settings, offset }: {
+function DockedBlock({ block, canvasW, pageHeight, bgColor, settings, offset, resolvedBindings }: {
   block: HeaderFooterBlock;
   canvasW: number;
   pageHeight: number;
   bgColor?: string;
   settings?: PublicSiteSettings | null;
   offset: number;
+  resolvedBindings?: Record<string, string>;
 }) {
   const isVertical = block.dock === "left" || block.dock === "right";
   const comps = block.components as unknown as PageComponent[];
@@ -652,6 +757,7 @@ function DockedBlock({ block, canvasW, pageHeight, bgColor, settings, offset }: 
         bgColor={block.bgColor ?? bgColor}
         settings={settings}
         rotation={block.rotation}
+        resolvedBindings={resolvedBindings}
       />
     </div>
   );
@@ -671,9 +777,17 @@ function DockedBlock({ block, canvasW, pageHeight, bgColor, settings, offset }: 
 // (see lib/page-template-zones.ts) — extractZonesFromTemplate pulls every
 // header-block/footer-block back out of template.components for each
 // viewport independently, same as the editor's own load effect does.
-export function RenderedPage({ data, settings }: { data: any; settings?: PublicSiteSettings | null }) {
+export async function RenderedPage({ data, settings }: { data: any; settings?: PublicSiteSettings | null }) {
   const desktopZones = extractZonesFromTemplate(data?.template?.desktop, 900);
   const mobileZones = extractZonesFromTemplate(data?.template?.mobile, 812);
+
+  const allBlockComponents = [...desktopZones.blocks, ...mobileZones.blocks].flatMap((b) => b.components as unknown as PageComponent[]);
+  const refs = Array.from(new Set([
+    ...collectBindingRefs(desktopZones.template.components as unknown as PageComponent[]),
+    ...collectBindingRefs(mobileZones.template.components as unknown as PageComponent[]),
+    ...collectBindingRefs(allBlockComponents),
+  ]));
+  const resolvedBindings = await resolveTableCells(refs);
 
   // Page-level, not per-zone (see PageEditor.tsx's canvasBgColor) — same color
   // behind every zone since there's one control per page, not one per zone.
@@ -689,20 +803,20 @@ export function RenderedPage({ data, settings }: { data: any; settings?: PublicS
     const pageHeight = topInset + zones.template.height + bottomInset;
 
     let offset = 0;
-    const topEls = top.map((b) => { const el = <DockedBlock key={b.id} block={b} canvasW={canvasW} pageHeight={pageHeight} bgColor={canvasBgColor} settings={settings} offset={offset} />; offset += b.size; return el; });
+    const topEls = top.map((b) => { const el = <DockedBlock key={b.id} block={b} canvasW={canvasW} pageHeight={pageHeight} bgColor={canvasBgColor} settings={settings} offset={offset} resolvedBindings={resolvedBindings} />; offset += b.size; return el; });
     offset = 0;
-    const bottomEls = bottom.map((b) => { const el = <DockedBlock key={b.id} block={b} canvasW={canvasW} pageHeight={pageHeight} bgColor={canvasBgColor} settings={settings} offset={offset} />; offset += b.size; return el; });
+    const bottomEls = bottom.map((b) => { const el = <DockedBlock key={b.id} block={b} canvasW={canvasW} pageHeight={pageHeight} bgColor={canvasBgColor} settings={settings} offset={offset} resolvedBindings={resolvedBindings} />; offset += b.size; return el; });
     offset = 0;
-    const leftEls = left.map((b) => { const el = <DockedBlock key={b.id} block={b} canvasW={canvasW} pageHeight={pageHeight} bgColor={canvasBgColor} settings={settings} offset={offset} />; offset += 0; return el; });
+    const leftEls = left.map((b) => { const el = <DockedBlock key={b.id} block={b} canvasW={canvasW} pageHeight={pageHeight} bgColor={canvasBgColor} settings={settings} offset={offset} resolvedBindings={resolvedBindings} />; offset += 0; return el; });
     offset = 0;
-    const rightEls = right.map((b) => { const el = <DockedBlock key={b.id} block={b} canvasW={canvasW} pageHeight={pageHeight} bgColor={canvasBgColor} settings={settings} offset={offset} />; offset += 0; return el; });
+    const rightEls = right.map((b) => { const el = <DockedBlock key={b.id} block={b} canvasW={canvasW} pageHeight={pageHeight} bgColor={canvasBgColor} settings={settings} offset={offset} resolvedBindings={resolvedBindings} />; offset += 0; return el; });
 
     return (
       <>
         {leftEls}
         {rightEls}
         {topEls}
-        <Canvas components={zones.template.components as unknown as PageComponent[]} canvasW={canvasW} canvasH={zones.template.height} bgColor={canvasBgColor} settings={settings} />
+        <Canvas components={zones.template.components as unknown as PageComponent[]} canvasW={canvasW} canvasH={zones.template.height} bgColor={canvasBgColor} settings={settings} resolvedBindings={resolvedBindings} />
         {bottomEls}
         <div style={{ clear: "both" }} />
       </>

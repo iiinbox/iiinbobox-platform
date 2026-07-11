@@ -30,7 +30,40 @@ import { extractZonesFromTemplate, buildTemplateZone, type Dock, type HeaderFoot
 
 export type ComponentType = "text" | "header" | "shape" | "image" | "button" | "carousel" | "icon"
   | "location-input" | "map" | "datetime-picker" | "vehicle-selector" | "driver-badge" | "fare-display"
-  | "hero-carousel" | "category-carousel" | "header-block" | "footer-block" | "logo";
+  | "hero-carousel" | "category-carousel" | "header-block" | "footer-block" | "logo" | "table";
+
+// One Table cell — its display id ("C{col}R{row}T{tableIndex}") is always
+// derived from row/col/the table's own tableIndex, never stored separately,
+// since rows/columns are only ever appended (never reordered/deleted), so
+// that derivation is permanently stable — which is exactly what a
+// cross-page binding reference needs to keep pointing at the right cell.
+export interface TableCellMeta {
+  row: number;
+  col: number;
+  width?: number;
+  height?: number;
+  bgColor?: string;
+  borderColor?: string;
+  borderWidth?: number;
+  borderRadius?: number;
+  align?: "left" | "center" | "right";
+  // Plain typed-in content — the cell's own source value (what gets synced
+  // to TableCellValue for other pages to bind to), used whenever bindingRef
+  // is unset.
+  content?: string;
+  // "<page>:<cellId>" — when set, this cell always displays that other
+  // cell's current value instead of its own `content` (item 6).
+  bindingRef?: string;
+  // A single placed component filling the cell (item 2's "components can be
+  // placed inside cells") — deliberately NOT a full freely-positioned
+  // PageComponent (no per-child drag/resize inside a cell this small);
+  // just enough fields for a text/image/button to render and be styled.
+  childType?: "text" | "image" | "button";
+  childImageUrl?: string;
+  childLink?: string;
+  childFontColor?: string;
+  childBgColor?: string;
+}
 type CardStyle = "image-first" | "icon-text" | "split";
 type CardAspectRatio = "1:1" | "3:4";
 type SnapMode = "single" | "double";
@@ -179,6 +212,20 @@ export interface PageComponent {
   // legacy Icon component saved before uploads existed (renders a plain
   // square placeholder now that the built-in registry is gone).
   iconUrl?: string;
+  // Table
+  tableName?: string;
+  // Stable per-page numbering ("T1", "T2", ...), assigned once at creation —
+  // never renumbered even if an earlier table is deleted, so an existing
+  // cross-page binding into this table never silently points at the wrong
+  // one.
+  tableIndex?: number;
+  tableRows?: number;
+  tableCols?: number;
+  tableBgColor?: string;
+  tableBorderColor?: string;
+  tableBorderWidth?: number;
+  tableBorderRadius?: number;
+  tableCells?: TableCellMeta[];
   // Location Input (taxi/ride-hailing)
   locationPlaceholder?: string;
   locationLabel?: string;
@@ -282,6 +329,9 @@ interface VersionSnapshot {
 
 const DESKTOP_W = 1920;
 const MOBILE_W = 375;
+// The editor viewport is intentionally an artboard, not a resizable page.
+// Content can extend beneath it and scroll inside the artboard, but its frame
+// always stays at these dimensions.
 const DEFAULT_DESKTOP_H = 900;
 const DEFAULT_MOBILE_H = 812;
 // Header/Footer share Template's canvas width (DESKTOP_W/MOBILE_W) but start
@@ -1027,6 +1077,72 @@ function IconGlyph({ comp }: { comp: PageComponent }) {
   );
 }
 
+// ── Table: a real HTML table so row height / column width naturally follow
+// whatever any cell in that row/column requests (standard table layout),
+// while each <td> still carries its own bg/border/radius/align. Editing a
+// cell's content/styling/binding happens entirely through the property
+// panel (double-click a cell to select it there) — same convention as every
+// other component type already uses, not a special inline-editing path. ──
+
+function TableBody({ comp, isTableSelected, selectedCellKey, resolvedBindings, onSelectCell }: {
+  comp: PageComponent;
+  isTableSelected: boolean;
+  selectedCellKey: string | null;
+  resolvedBindings: Record<string, string>;
+  onSelectCell: (row: number, col: number) => void;
+}) {
+  const rows = comp.tableRows ?? 2;
+  const cols = comp.tableCols ?? 2;
+  const cells = comp.tableCells ?? [];
+  return (
+    <table
+      className="w-full h-full select-none"
+      style={{ borderCollapse: "collapse", backgroundColor: comp.tableBgColor ?? "#ffffff", border: `${comp.tableBorderWidth ?? 1}px solid ${comp.tableBorderColor ?? "#e5e7eb"}`, borderRadius: comp.tableBorderRadius ?? 0, overflow: "hidden" }}
+    >
+      <tbody>
+        {Array.from({ length: rows }).map((_, r) => (
+          <tr key={r}>
+            {Array.from({ length: cols }).map((_, c) => {
+              const cell = cells.find((cc) => cc.row === r && cc.col === c);
+              const cellKey = `${comp.id}:${r}:${c}`;
+              const isCellSelected = isTableSelected && selectedCellKey === cellKey;
+              const displayValue = cell?.bindingRef ? (resolvedBindings[cell.bindingRef] ?? "") : (cell?.content ?? "");
+              return (
+                <td
+                  key={c}
+                  onDoubleClick={(e) => { e.stopPropagation(); onSelectCell(r, c); }}
+                  style={{
+                    width: cell?.width ?? 120, height: cell?.height ?? 40,
+                    backgroundColor: cell?.bgColor ?? "#ffffff",
+                    border: `${cell?.borderWidth ?? 1}px solid ${cell?.borderColor ?? "#e5e7eb"}`,
+                    borderRadius: cell?.borderRadius ?? 0,
+                    textAlign: cell?.align ?? "left",
+                    outline: isCellSelected ? "2px solid #6366f1" : undefined,
+                    outlineOffset: isCellSelected ? -2 : undefined,
+                    padding: "4px 8px",
+                    fontSize: 12,
+                    overflow: "hidden",
+                  }}
+                >
+                  {cell?.childType === "image" && cell.childImageUrl ? (
+                    <img src={cell.childImageUrl} alt="" className="w-full h-full object-cover" />
+                  ) : cell?.childType === "button" ? (
+                    <span className="inline-block px-2 py-1 rounded text-xs" style={{ backgroundColor: cell.childBgColor ?? "#3b82f6", color: cell.childFontColor ?? "#ffffff" }}>
+                      {displayValue || "Button"}
+                    </span>
+                  ) : (
+                    <span style={{ color: cell?.childFontColor ?? "#111111" }}>{displayValue}</span>
+                  )}
+                </td>
+              );
+            })}
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
 // ── Taxi/ride-hailing components ────────────────────────────────────────────
 // Editor renders a static/inert preview for all of these (matching how Button
 // and Carousel links are already inert in the editor) — only the live
@@ -1440,6 +1556,7 @@ function componentTypeLabel(type: ComponentType): string {
     case "header-block": return "Header";
     case "footer-block": return "Footer";
     case "logo": return "Logo";
+    case "table": return "Table";
     default: return "Button";
   }
 }
@@ -1477,6 +1594,10 @@ function defaults(type: ComponentType, canvasW: number): Partial<PageComponent> 
     case "carousel": return { width: Math.round(canvasW * 0.6), height: 220, bgColor: "transparent", borderRadius: 12, opacity: 100, rotation: 0, carouselItems: [], carouselItemWidth: 160, carouselZoom: 1.25 };
     case "icon": return { width: 64, height: 64, fontColor: "#111111", fontSize: 32, opacity: 100, rotation: 0 };
     case "logo": return { width: 120, height: 48, rotation: 0, opacity: 100 };
+    // Real cell grid is built by addTable() (needs a page-wide tableIndex
+    // count this standalone function has no access to) — this is just a
+    // type-exhaustiveness placeholder.
+    case "table": return { width: Math.round(canvasW * 0.4), height: 160, rotation: 0, opacity: 100, tableName: "Table 1", tableRows: 2, tableCols: 2, tableBgColor: "#ffffff", tableBorderColor: "#e5e7eb", tableBorderWidth: 1, tableBorderRadius: 4, tableCells: [] };
     case "location-input": return { width: Math.round(canvasW * 0.3), height: 52, bgColor: "#ffffff", borderColor: "#e5e7eb", fontColor: "#111111", borderRadius: 8, locationPlaceholder: "Enter pickup location", locationLabel: "Pickup", rotation: 0 };
     case "map": return { width: Math.round(canvasW * 0.5), height: 320, borderRadius: 12, mapCenterLat: 12.9716, mapCenterLng: 77.5946, mapZoom: 13, mapMarkers: [], mapServiceRadiusKm: 5, rotation: 0 };
     case "datetime-picker": return { width: Math.round(canvasW * 0.3), height: 100, bgColor: "#ffffff", borderColor: "#e5e7eb", fontColor: "#111111", borderRadius: 8, dtDefaultOption: "today", dtTime: "09:00", rotation: 0 };
@@ -1949,7 +2070,7 @@ function ImagePickerButton({
 
 // ── Preview canvas ─────────────────────────────────────────────────────────────
 
-export function PreviewCanvas({ components, canvasW, canvasH, logoUrl }: { components: PageComponent[]; canvasW: number; canvasH: number; logoUrl?: string | null }) {
+export function PreviewCanvas({ components, canvasW, canvasH, logoUrl, resolvedBindings }: { components: PageComponent[]; canvasW: number; canvasH: number; logoUrl?: string | null; resolvedBindings?: Record<string, string> }) {
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const ref = useRef<HTMLDivElement>(null);
   const pct = (v: number, total: number) => `${(v / total) * 100}%`;
@@ -1963,13 +2084,14 @@ export function PreviewCanvas({ components, canvasW, canvasH, logoUrl }: { compo
         const isCarousel = comp.type === "carousel";
         const isIcon = comp.type === "icon";
         const isLogo = comp.type === "logo";
+        const isTable = comp.type === "table";
         const isTaxi = comp.type === "location-input" || comp.type === "map" || comp.type === "datetime-picker" || comp.type === "vehicle-selector" || comp.type === "driver-badge" || comp.type === "fare-display";
         const isHero = comp.type === "hero-carousel";
         const isCatCarousel = comp.type === "category-carousel";
         const btn = isBtn ? resolveButtonStyles(comp, isHovered) : null;
         return (
           <div key={comp.id} className="absolute"
-            style={{ left: pct(comp.x, canvasW), top: pct(comp.y, canvasH), width: pct(comp.width, canvasW), height: pct(comp.height, canvasH), borderRadius: isBtn || isShape || isCarousel || isIcon || isLogo || isTaxi || isHero || isCatCarousel ? 0 : (comp.borderRadius ?? 0), backgroundColor: isBtn || isShape || isCarousel || isIcon || isLogo || isTaxi || isHero || isCatCarousel ? "transparent" : (comp.bgColor === "transparent" ? "transparent" : (comp.bgColor ?? "transparent")), transform: `rotate(${comp.rotation ?? 0}deg)`, transformOrigin: "center", boxShadow: buildBoxShadow(comp), filter: buildBlurFilter(comp) }}
+            style={{ left: pct(comp.x, canvasW), top: pct(comp.y, canvasH), width: pct(comp.width, canvasW), height: pct(comp.height, canvasH), borderRadius: isBtn || isShape || isCarousel || isIcon || isLogo || isTable || isTaxi || isHero || isCatCarousel ? 0 : (comp.borderRadius ?? 0), backgroundColor: isBtn || isShape || isCarousel || isIcon || isLogo || isTable || isTaxi || isHero || isCatCarousel ? "transparent" : (comp.bgColor === "transparent" ? "transparent" : (comp.bgColor ?? "transparent")), transform: `rotate(${comp.rotation ?? 0}deg)`, transformOrigin: "center", boxShadow: buildBoxShadow(comp), filter: buildBlurFilter(comp) }}
             onMouseEnter={() => isBtn && setHoveredId(comp.id)} onMouseLeave={() => isBtn && setHoveredId(null)}
           >
             {(comp.type === "text" || comp.type === "header") && (
@@ -1983,6 +2105,9 @@ export function PreviewCanvas({ components, canvasW, canvasH, logoUrl }: { compo
             )}
             {isLogo && logoUrl && (
               <img src={logoUrl} alt="Logo" className="w-full h-full object-contain" style={{ opacity: (comp.opacity ?? 100) / 100 }} />
+            )}
+            {isTable && (
+              <TableBody comp={comp} isTableSelected={false} selectedCellKey={null} resolvedBindings={resolvedBindings ?? {}} onSelectCell={() => {}} />
             )}
             {isCarousel && (
               <div className="w-full h-full" style={{ backgroundColor: comp.bgColor === "transparent" ? "transparent" : (comp.bgColor ?? "transparent"), opacity: (comp.opacity ?? 100) / 100 }}>
@@ -2172,6 +2297,17 @@ export function PageEditor({ slug, label }: PageEditorProps) {
   const [deleting, setDeleting] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  // Table component: which cell is "entered" for editing — "<tableCompId>:<row>:<col>",
+  // or null when just the table itself (not a specific cell) is selected.
+  // Double-click a cell to enter it (matches Text's own double-click-to-edit
+  // convention); a single click still just selects/drags the whole table.
+  const [selectedCellKey, setSelectedCellKey] = useState<string | null>(null);
+  // Item 6: every bound cell's currently-resolved value, keyed by its
+  // bindingRef ("<page>:<cellId>") — refreshed whenever the set of bindings
+  // on the page changes (see the effect below). A cell whose bindingRef
+  // isn't in here yet (still loading, or points at a cell with no value)
+  // just renders empty rather than stale/wrong.
+  const [resolvedBindings, setResolvedBindings] = useState<Record<string, string>>({});
   const [marquee, setMarquee] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
   // Double-click-to-edit-inline for Text/Header — content editing now lives
@@ -2381,6 +2517,30 @@ export function PageEditor({ slug, label }: PageEditorProps) {
   useEffect(() => { refreshReusableComponents(); }, [refreshReusableComponents]);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { loadFonts(); loadIcons(); }, []);
+  // Item 6: resolve every bound cell's current value. Recomputes the
+  // requested ref set (not the raw component arrays, which change identity
+  // every render) so this only actually re-fetches when a binding is
+  // added/changed/removed, not on every unrelated edit.
+  const allBindingRefs = Array.from(new Set(
+    [...templateDesktopComponents, ...templateMobileComponents, ...headerDesktopComponents, ...headerMobileComponents, ...footerDesktopComponents, ...footerMobileComponents]
+      .filter((c) => c.type === "table")
+      .flatMap((c) => (c.tableCells ?? []).map((cell) => cell.bindingRef).filter((r): r is string => !!r)),
+  )).sort();
+  const bindingRefsKey = allBindingRefs.join(",");
+  useEffect(() => {
+    if (allBindingRefs.length === 0) { setResolvedBindings({}); return; }
+    let cancelled = false;
+    fetch("/api/page-config/table-cells/resolve", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ refs: allBindingRefs }),
+    })
+      .then((r) => r.json())
+      .then((d) => { if (!cancelled && d && typeof d === "object") setResolvedBindings(d); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bindingRefsKey]);
   // Marking a component reusable only updates local editor state immediately —
   // the actual PUT that persists it happens on the debounced autosave (~4s
   // later, see the syncStatus effect below). Refetching the sidebar list right
@@ -2780,10 +2940,12 @@ export function PageEditor({ slug, label }: PageEditorProps) {
         const desktopZones = extractZonesFromTemplate(rawDesktop, DEFAULT_DESKTOP_H);
         const mobileZones = extractZonesFromTemplate(rawMobile, DEFAULT_MOBILE_H);
 
-        setTemplateDesktopComponents(desktopZones.template.components.map((c) => ({ ...c, ...clampToCanvas(c.x, c.y, c.width, c.height, DESKTOP_W, desktopZones.template.height, c.rotation ?? 0) })) as PageComponent[]);
-        setTemplateDesktopHeight(desktopZones.template.height);
-        setTemplateMobileComponents(mobileZones.template.components.map((c) => ({ ...c, ...clampToCanvas(c.x, c.y, c.width, c.height, MOBILE_W, mobileZones.template.height, c.rotation ?? 0) })) as PageComponent[]);
-        setTemplateMobileHeight(mobileZones.template.height);
+        // Read legacy header/footer zones so older pages still load, but keep
+        // only the page canvas. The editor is now a single-canvas experience.
+        setTemplateDesktopComponents(desktopZones.template.components.map((c) => ({ ...c, ...clampToCanvas(c.x, c.y, c.width, c.height, DESKTOP_W, DEFAULT_DESKTOP_H, c.rotation ?? 0) })) as PageComponent[]);
+        setTemplateDesktopHeight(DEFAULT_DESKTOP_H);
+        setTemplateMobileComponents(mobileZones.template.components.map((c) => ({ ...c, ...clampToCanvas(c.x, c.y, c.width, c.height, MOBILE_W, DEFAULT_MOBILE_H, c.rotation ?? 0) })) as PageComponent[]);
+        setTemplateMobileHeight(DEFAULT_MOBILE_H);
 
         const toBlockMeta = (b: HeaderFooterBlock): BlockMeta => ({
           id: b.id, kind: b.kind, dock: b.dock, size: b.size, rotation: b.rotation as 0 | 90 | 180 | 270,
@@ -3000,6 +3162,43 @@ export function PageEditor({ slug, label }: PageEditorProps) {
   // imageUrl, so re-uploading the logo updates every placed instance.
   function addLogo(targetZone?: Zone) {
     const base: PageComponent = { id: uid(), type: "logo", x: 0, y: 0, ...defaults("logo", canvasW) } as PageComponent;
+    placeAndAddComponent(base, targetZone);
+  }
+  // A cell's stable cross-page-bindable id — see TableCellMeta's comment for
+  // why this is always derived, never stored.
+  function tableCellId(row: number, col: number, tableIndex: number) {
+    return `C${col + 1}R${row + 1}T${tableIndex}`;
+  }
+  function buildTableCells(rows: number, cols: number): TableCellMeta[] {
+    const cells: TableCellMeta[] = [];
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        cells.push({ row: r, col: c, width: 120, height: 40, bgColor: "#ffffff", borderColor: "#e5e7eb", borderWidth: 1, borderRadius: 0, align: "left", content: "" });
+      }
+    }
+    return cells;
+  }
+  // Next available T-number, scanned across every zone/viewport so it's
+  // truly unique on this page regardless of where a table gets added —
+  // never reused even if an earlier table is later deleted (see tableIndex's
+  // field comment on PageComponent).
+  function nextTableIndex(): number {
+    let max = 0;
+    (["header", "template", "footer"] as Zone[]).forEach((z) => {
+      (["desktop", "mobile"] as ViewMode[]).forEach((v) => {
+        compsRef.current[z][v].forEach((c) => { if (c.type === "table" && (c.tableIndex ?? 0) > max) max = c.tableIndex!; });
+      });
+    });
+    return max + 1;
+  }
+  function addTable(targetZone?: Zone) {
+    const tableIndex = nextTableIndex();
+    const rows = 2, cols = 2;
+    const base: PageComponent = {
+      id: uid(), type: "table", x: 0, y: 0, ...defaults("table", canvasW),
+      tableName: `Table ${tableIndex}`, tableIndex, tableRows: rows, tableCols: cols,
+      tableCells: buildTableCells(rows, cols),
+    } as PageComponent;
     placeAndAddComponent(base, targetZone);
   }
   function addMarketWidget(id: MarketWidgetId, targetZone?: Zone) {
@@ -3792,6 +3991,18 @@ export function PageEditor({ slug, label }: PageEditorProps) {
     return url;
   }
 
+  // Table cross-page binding — writes this cell's own source value so other
+  // pages referencing "<slug>:<cellId>" can resolve it. Fire-and-forget, same
+  // pattern as autosave: the cell's local content already updated optimistically
+  // via updateComp, this just persists the resolvable value server-side.
+  function saveTableCellValue(ref: string, value: string) {
+    fetch("/api/page-config/table-cells", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ref, value }),
+    }).catch(() => {});
+  }
+
   // ── Rename ──────────────────────────────────────────────────────────────────
   function startRename() { setNameInput(pageLabel); setEditingName(true); setTimeout(() => nameInputRef.current?.select(), 0); }
 
@@ -3852,56 +4063,19 @@ export function PageEditor({ slug, label }: PageEditorProps) {
     window.location.href = "/admin-gate";
   }
 
-  // Item 4: Header/Template/Footer are all embedded in this one page's own row —
-  // no more shared reserved-slug routes, so editing Header on "Home" can never
-  // touch Header on any other page. A single signature/PUT covers all three.
+  // A page has exactly one canvas. Heights are fixed; overflowing content is
+  // handled by the canvas's internal scroll viewport rather than resizing it.
   const templateConfigPayload = {
-    desktop: { components: templateDesktopComponents, height: templateDesktopHeight },
-    mobile: { components: templateMobileComponents, height: templateMobileHeight },
+    desktop: { components: templateDesktopComponents, height: DEFAULT_DESKTOP_H },
+    mobile: { components: templateMobileComponents, height: DEFAULT_MOBILE_H },
   };
   // Kept separate from pageConfigSignature purely for version history, which is
   // scoped to Template only (see captureVersion below) — editing just the header
   // shouldn't create a new Template restore point.
   const templateConfigSignature = JSON.stringify(templateConfigPayload);
-  // Reconstructs the single template.components array for saving — inverse of
-  // the extractZonesFromTemplate call in the load effect above. blocksForSave
-  // overlays the currently-ACTIVE header/footer block's live, being-edited
-  // components (headerDesktopComponents/footerDesktopComponents etc.) onto
-  // the otherwise-dormant blocksDesktop/blocksMobile metadata array, so every
-  // block — active or not — is fully up to date at save time.
-  function blocksForSave(vp: ViewMode): HeaderFooterBlock[] {
-    const blocks = vp === "desktop" ? blocksDesktop : blocksMobile;
-    const activeH = (vp === "desktop" ? activeHeaderId.desktop : activeHeaderId.mobile);
-    const activeF = (vp === "desktop" ? activeFooterId.desktop : activeFooterId.mobile);
-    const liveHeader = vp === "desktop" ? headerDesktopComponents : headerMobileComponents;
-    const liveFooter = vp === "desktop" ? footerDesktopComponents : footerMobileComponents;
-    return blocks.map((b) => {
-      if (b.id === activeH) return { ...b, components: liveHeader };
-      if (b.id === activeF) return { ...b, components: liveFooter };
-      return b;
-    });
-  }
-  const blocksDesktopForSave = blocksForSave("desktop");
-  const blocksMobileForSave = blocksForSave("mobile");
-  const builtDesktopTemplate = buildTemplateZone({
-    blocks: blocksDesktopForSave,
-    templateComponents: templateDesktopComponents,
-    templateHeight: templateDesktopHeight,
-    canvasWidth: DESKTOP_W,
-    canvasHeightHint: templateDesktopHeight + blocksDesktopForSave.filter((b) => b.dock === "top" || b.dock === "bottom").reduce((s, b) => s + b.size, 0),
-    newId: uid,
-  });
-  const builtMobileTemplate = buildTemplateZone({
-    blocks: blocksMobileForSave,
-    templateComponents: templateMobileComponents,
-    templateHeight: templateMobileHeight,
-    canvasWidth: MOBILE_W,
-    canvasHeightHint: templateMobileHeight + blocksMobileForSave.filter((b) => b.dock === "top" || b.dock === "bottom").reduce((s, b) => s + b.size, 0),
-    newId: uid,
-  });
   const pageConfigPayload = {
     name: pageLabel || label || slug,
-    template: { desktop: builtDesktopTemplate, mobile: builtMobileTemplate },
+    template: { desktop: templateConfigPayload.desktop, mobile: templateConfigPayload.mobile },
     canvasBgColor,
   };
   const pageConfigSignature = JSON.stringify(pageConfigPayload);
@@ -4274,6 +4448,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
           const isCarousel = comp.type === "carousel";
           const isIcon = comp.type === "icon";
           const isLogo = comp.type === "logo";
+          const isTable = comp.type === "table";
           const isTaxi = comp.type === "location-input" || comp.type === "map" || comp.type === "datetime-picker" || comp.type === "vehicle-selector" || comp.type === "driver-badge" || comp.type === "fare-display";
           const isHero = comp.type === "hero-carousel";
           const isCatCarousel = comp.type === "category-carousel";
@@ -4284,7 +4459,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
           return (
             <div key={comp.id}
               className={`absolute group ${isSoleSelected ? "ring-2 ring-blue-500" : isSelected ? "ring-1 ring-blue-400" : "hover:ring-1 hover:ring-blue-300"}`}
-              style={{ left: pct(comp.x, canvasW), top: pct(comp.y, zCanvasH), width: pct(comp.width, canvasW), height: pct(comp.height, zCanvasH), borderRadius: isBtn || isShape || isCarousel || isIcon || isLogo || isTaxi || isHero || isCatCarousel ? 0 : (comp.borderRadius ?? 0), backgroundColor: isBtn || isShape || isCarousel || isIcon || isLogo || isTaxi || isHero || isCatCarousel ? "transparent" : (comp.bgColor === "transparent" ? "transparent" : (comp.bgColor ?? "transparent")), transform: `rotate(${rotation}deg)`, transformOrigin: "center", cursor: comp.locked ? "not-allowed" : "move",
+              style={{ left: pct(comp.x, canvasW), top: pct(comp.y, zCanvasH), width: pct(comp.width, canvasW), height: pct(comp.height, zCanvasH), borderRadius: isBtn || isShape || isCarousel || isIcon || isLogo || isTable || isTaxi || isHero || isCatCarousel ? 0 : (comp.borderRadius ?? 0), backgroundColor: isBtn || isShape || isCarousel || isIcon || isLogo || isTable || isTaxi || isHero || isCatCarousel ? "transparent" : (comp.bgColor === "transparent" ? "transparent" : (comp.bgColor ?? "transparent")), transform: `rotate(${rotation}deg)`, transformOrigin: "center", cursor: comp.locked ? "not-allowed" : "move",
                 boxShadow: buildBoxShadow(comp), filter: buildBlurFilter(comp),
                 // Editor-only convenience dimming — never affects the published page (see PageComponent.hidden).
                 ...(comp.hidden ? { opacity: 0.35, pointerEvents: "none" } : {}) }}
@@ -4349,6 +4524,19 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                 siteSettings.logoUrl
                   ? <img src={siteSettings.logoUrl} alt="Logo" className="w-full h-full object-contain" style={{ opacity: (comp.opacity ?? 100) / 100 }} />
                   : <div className="w-full h-full flex items-center justify-center text-[10px] text-gray-500 border border-dashed border-gray-600">No logo uploaded</div>
+              )}
+              {isTable && (
+                <TableBody
+                  comp={comp}
+                  isTableSelected={isSoleSelected}
+                  selectedCellKey={selectedCellKey}
+                  resolvedBindings={resolvedBindings}
+                  onSelectCell={(row, col) => {
+                    if (zone !== activeZoneRef.current) { activeZoneRef.current = zone; setActiveZone(zone); }
+                    setSelectedIds([comp.id]);
+                    setSelectedCellKey(`${comp.id}:${row}:${col}`);
+                  }}
+                />
               )}
               {comp.type === "location-input" && <LocationInputBody comp={comp} />}
               {comp.type === "map" && <MapBody comp={comp} />}
@@ -5769,6 +5957,224 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                           className="w-full flex flex-col items-center justify-center gap-1 h-14 rounded border border-gray-700 bg-gray-800 text-gray-200 transition-colors">
                           <ArrowDownToLine className="h-4 w-4 text-muted-foreground" />
                           <span className="text-[11px]">+ Add Footer</span>
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Table — structure/table-level settings when no cell is
+                    entered, cell-level settings once one is (double-click a
+                    cell on the canvas, or the "Edit" button in the cell
+                    grid below, to enter it). */}
+                <div>
+                  <button type="button" onClick={() => setOpenTool(openTool === "table" ? null : "table")}
+                    className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md border text-xs transition-colors text-left text-gray-200 ${openTool === "table" ? "border-white bg-gray-700" : "border-gray-700 hover:bg-gray-700"}`}>
+                    <LayoutGrid className="h-3.5 w-3.5 text-muted-foreground shrink-0" /> Table
+                    <ChevronDown className={`h-3 w-3 ml-auto text-muted-foreground transition-transform ${openTool === "table" ? "rotate-180" : ""}`} />
+                  </button>
+                  {openTool === "table" && (
+                    <div className="mt-1 p-1.5 border rounded-md bg-gray-900 border-gray-700 text-gray-200">
+                      {selectedComp && selectedComp.type === "table" ? (() => {
+                        const table = selectedComp;
+                        const rows = table.tableRows ?? 2;
+                        const cols = table.tableCols ?? 2;
+                        const cells = table.tableCells ?? [];
+                        const enteredCell = selectedCellKey && selectedCellKey.startsWith(`${table.id}:`)
+                          ? (() => { const [, r, c] = selectedCellKey.split(":"); return { row: +r, col: +c }; })()
+                          : null;
+                        function updateCell(row: number, col: number, patch: Partial<TableCellMeta>) {
+                          updateComp(table.id, { tableCells: cells.map((c) => (c.row === row && c.col === col ? { ...c, ...patch } : c)) });
+                        }
+                        if (enteredCell) {
+                          const cell = cells.find((c) => c.row === enteredCell.row && c.col === enteredCell.col) ?? { row: enteredCell.row, col: enteredCell.col };
+                          const cellId = tableCellId(cell.row, cell.col, table.tableIndex ?? 1);
+                          const ref = `${slug}:${cellId}`;
+                          return (
+                            <div className="flex flex-col gap-2">
+                              <button type="button" onClick={() => setSelectedCellKey(null)}
+                                className="flex items-center gap-1 text-[11px] text-blue-400 w-fit">
+                                <ChevronLeft className="h-3 w-3" /> Back to table settings
+                              </button>
+                              <div className="text-[10px] text-gray-400">
+                                Cell ID: <span className="font-mono text-gray-200">{cellId}</span>
+                              </div>
+                              <div className="grid grid-cols-2 gap-1.5">
+                                <div>
+                                  <label className={sLabel}>Width</label>
+                                  <Input type="number" min={20} value={cell.width ?? 120} onChange={(e) => updateCell(cell.row, cell.col, { width: +e.target.value || 20 })} className="h-6 text-xs px-1.5" />
+                                </div>
+                                <div>
+                                  <label className={sLabel}>Height</label>
+                                  <Input type="number" min={16} value={cell.height ?? 40} onChange={(e) => updateCell(cell.row, cell.col, { height: +e.target.value || 16 })} className="h-6 text-xs px-1.5" />
+                                </div>
+                              </div>
+                              <ColorPicker label="Background colour" value={cell.bgColor ?? "#ffffff"} onChange={(v) => updateCell(cell.row, cell.col, { bgColor: v })} />
+                              <ColorPicker label="Border colour" value={cell.borderColor ?? "#e5e7eb"} onChange={(v) => updateCell(cell.row, cell.col, { borderColor: v })} />
+                              <div className="grid grid-cols-2 gap-1.5">
+                                <div>
+                                  <label className={sLabel}>Border size</label>
+                                  <Input type="number" min={0} value={cell.borderWidth ?? 1} onChange={(e) => updateCell(cell.row, cell.col, { borderWidth: +e.target.value })} className="h-6 text-xs px-1.5" />
+                                </div>
+                                <div>
+                                  <label className={sLabel}>Corner radius</label>
+                                  <Input type="number" min={0} value={cell.borderRadius ?? 0} onChange={(e) => updateCell(cell.row, cell.col, { borderRadius: +e.target.value })} className="h-6 text-xs px-1.5" />
+                                </div>
+                              </div>
+                              <div>
+                                <label className={sLabel}>Content alignment</label>
+                                <div className="grid grid-cols-3 gap-1">
+                                  {(["left", "center", "right"] as const).map((a) => (
+                                    <button key={a} type="button" onClick={() => updateCell(cell.row, cell.col, { align: a })}
+                                      className={`text-[11px] py-1 rounded border capitalize ${(cell.align ?? "left") === a ? "bg-black text-white border-black" : "border-gray-700"}`}>
+                                      {a}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                              <div>
+                                <label className={sLabel}>Content type</label>
+                                <div className="grid grid-cols-3 gap-1">
+                                  {([["text", "Text"], ["image", "Image"], ["button", "Button"]] as const).map(([t, label]) => (
+                                    <button key={t} type="button" onClick={() => updateCell(cell.row, cell.col, { childType: t })}
+                                      className={`text-[11px] py-1 rounded border ${(cell.childType ?? "text") === t ? "bg-black text-white border-black" : "border-gray-700"}`}>
+                                      {label}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                              {!cell.bindingRef && (cell.childType ?? "text") !== "image" && (
+                                <div>
+                                  <label className={sLabel}>{(cell.childType ?? "text") === "button" ? "Button text" : "Text content"}</label>
+                                  <Input value={cell.content ?? ""}
+                                    onChange={(e) => updateCell(cell.row, cell.col, { content: e.target.value })}
+                                    onBlur={(e) => saveTableCellValue(ref, e.target.value)}
+                                    className="h-6 text-xs px-1.5" />
+                                </div>
+                              )}
+                              {(cell.childType ?? "text") === "button" && (
+                                <div className="grid grid-cols-2 gap-1.5">
+                                  <ColorPicker label="Button colour" value={cell.childBgColor ?? "#3b82f6"} onChange={(v) => updateCell(cell.row, cell.col, { childBgColor: v })} />
+                                  <ColorPicker label="Text colour" value={cell.childFontColor ?? "#ffffff"} onChange={(v) => updateCell(cell.row, cell.col, { childFontColor: v })} />
+                                </div>
+                              )}
+                              {cell.childType === "image" && (
+                                <ImagePickerButton
+                                  label="Choose image" icon={ImageIcon}
+                                  uploading={uploading} uploadProgress={uploadProgress}
+                                  assetItems={assetItems} assetsLoading={assetsLoading} loadAssets={loadAssets}
+                                  onUpload={uploadToAssets}
+                                  onSelect={(url) => updateCell(cell.row, cell.col, { childImageUrl: url })}
+                                />
+                              )}
+                              <div className="pt-1.5 border-t border-gray-700">
+                                <label className={sLabel}>Bind to another cell (optional)</label>
+                                <Input value={cell.bindingRef ?? ""}
+                                  placeholder="e.g. seller-dashboard:C1R1T1"
+                                  onChange={(e) => updateCell(cell.row, cell.col, { bindingRef: e.target.value || undefined })}
+                                  className="h-6 text-xs px-1.5 font-mono" />
+                                <p className="text-[9px] text-gray-400 mt-1">When set, this cell always shows that cell's current value instead of its own — on any page.</p>
+                              </div>
+                            </div>
+                          );
+                        }
+                        return (
+                          <div className="flex flex-col gap-2">
+                            <div>
+                              <label className={sLabel}>Table name</label>
+                              <Input value={table.tableName ?? "Table 1"} onChange={(e) => updateComp(table.id, { tableName: e.target.value })} className="h-6 text-xs px-1.5" />
+                            </div>
+                            <div className="grid grid-cols-2 gap-1.5">
+                              <button type="button"
+                                onClick={() => {
+                                  const newRow = Array.from({ length: cols }).map((_, c) => ({ row: rows, col: c, width: 120, height: 40, bgColor: "#ffffff", borderColor: "#e5e7eb", borderWidth: 1, borderRadius: 0, align: "left" as const, content: "" }));
+                                  updateComp(table.id, { tableRows: rows + 1, tableCells: [...cells, ...newRow] });
+                                }}
+                                className="flex items-center justify-center gap-1 h-7 rounded border border-gray-700 text-[11px]">
+                                <Plus className="h-3 w-3" /> Add Row
+                              </button>
+                              <button type="button"
+                                onClick={() => {
+                                  const newCol = Array.from({ length: rows }).map((_, r) => ({ row: r, col: cols, width: 120, height: 40, bgColor: "#ffffff", borderColor: "#e5e7eb", borderWidth: 1, borderRadius: 0, align: "left" as const, content: "" }));
+                                  updateComp(table.id, { tableCols: cols + 1, tableCells: [...cells, ...newCol] });
+                                }}
+                                className="flex items-center justify-center gap-1 h-7 rounded border border-gray-700 text-[11px]">
+                                <Plus className="h-3 w-3" /> Add Column
+                              </button>
+                            </div>
+                            <div className="grid grid-cols-2 gap-1.5">
+                              <button type="button" onClick={() => duplicateComp(table)}
+                                className="flex items-center justify-center gap-1 h-7 rounded border border-gray-700 text-[11px]">
+                                <Copy className="h-3 w-3" /> Duplicate
+                              </button>
+                              <button type="button" onClick={() => addTable()}
+                                className="flex items-center justify-center gap-1 h-7 rounded border border-gray-700 text-[11px]">
+                                <Plus className="h-3 w-3" /> New Table
+                              </button>
+                            </div>
+                            <div className="grid grid-cols-2 gap-1.5">
+                              <button type="button"
+                                onClick={() => {
+                                  const idx = nextTableIndex();
+                                  const clone: PageComponent = { ...table, id: uid(), x: table.x + table.width + 16, y: table.y, tableIndex: idx, tableName: `Table ${idx}`, tableCells: buildTableCells(rows, cols) };
+                                  const setter = view === "desktop" ? zoneSetters[zone].setDesktop : zoneSetters[zone].setMobile;
+                                  commitUndoSnapshot(zone);
+                                  setter((prev) => [...prev, clone]);
+                                  setSelectedIds([clone.id]);
+                                }}
+                                className="flex items-center justify-center gap-1 h-7 rounded border border-gray-700 text-[11px]">
+                                <ChevronRight className="h-3 w-3" /> Add Same Table Right
+                              </button>
+                              <button type="button"
+                                onClick={() => {
+                                  const idx = nextTableIndex();
+                                  const clone: PageComponent = { ...table, id: uid(), x: table.x, y: table.y + table.height + 16, tableIndex: idx, tableName: `Table ${idx}`, tableCells: buildTableCells(rows, cols) };
+                                  const setter = view === "desktop" ? zoneSetters[zone].setDesktop : zoneSetters[zone].setMobile;
+                                  commitUndoSnapshot(zone);
+                                  setter((prev) => [...prev, clone]);
+                                  setSelectedIds([clone.id]);
+                                }}
+                                className="flex items-center justify-center gap-1 h-7 rounded border border-gray-700 text-[11px]">
+                                <ChevronDown className="h-3 w-3" /> Add Same Table Below
+                              </button>
+                            </div>
+                            <p className="text-[9px] text-gray-400">
+                              Tables added to the right scroll left-right as a group; tables added below scroll up-down. (Scoped to positioning for now — an independently-scrollable group is a larger follow-up.)
+                            </p>
+                            <ColorPicker label="Table background" value={table.tableBgColor ?? "#ffffff"} onChange={(v) => updateComp(table.id, { tableBgColor: v })} />
+                            <ColorPicker label="Border colour" value={table.tableBorderColor ?? "#e5e7eb"} onChange={(v) => updateComp(table.id, { tableBorderColor: v })} />
+                            <div className="grid grid-cols-2 gap-1.5">
+                              <div>
+                                <label className={sLabel}>Border size</label>
+                                <Input type="number" min={0} value={table.tableBorderWidth ?? 1} onChange={(e) => updateComp(table.id, { tableBorderWidth: +e.target.value })} className="h-6 text-xs px-1.5" />
+                              </div>
+                              <div>
+                                <label className={sLabel}>Corner radius</label>
+                                <Input type="number" min={0} value={table.tableBorderRadius ?? 0} onChange={(e) => updateComp(table.id, { tableBorderRadius: +e.target.value })} className="h-6 text-xs px-1.5" />
+                              </div>
+                            </div>
+                            <div>
+                              <label className={sLabel}>Cells (click to edit)</label>
+                              <div className="flex flex-col gap-0.5 max-h-40 overflow-y-auto">
+                                {Array.from({ length: rows }).map((_, r) => (
+                                  <div key={r} className="flex gap-0.5">
+                                    {Array.from({ length: cols }).map((_, c) => (
+                                      <button key={c} type="button" onClick={() => setSelectedCellKey(`${table.id}:${r}:${c}`)}
+                                        className="flex-1 h-6 text-[9px] font-mono rounded border border-gray-700 hover:border-white">
+                                        {tableCellId(r, c, table.tableIndex ?? 1)}
+                                      </button>
+                                    ))}
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })() : (
+                        <button type="button" onClick={() => addTable()}
+                          className="w-full flex flex-col items-center justify-center gap-1 h-14 rounded border border-gray-700 bg-gray-800 text-gray-200 transition-colors">
+                          <LayoutGrid className="h-4 w-4 text-muted-foreground" />
+                          <span className="text-[11px]">+ Add Table</span>
                         </button>
                       )}
                     </div>

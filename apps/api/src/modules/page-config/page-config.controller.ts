@@ -28,6 +28,23 @@ export class PageConfigController {
     return this.storage.list("homepage");
   }
 
+  // Table component cross-page cell binding (see page-config.service.ts).
+  // Resolve is public/POST-body (not GET+query) since it takes an arbitrary-
+  // length list of refs — the live published site needs this to render a
+  // bound cell, same trust tier as getPublished below. Set is admin-only —
+  // only the editor writes a cell's own source value.
+  @Post("table-cells/resolve")
+  resolveTableCells(@Body("refs") refs: string[]) {
+    return this.svc.getTableCells(Array.isArray(refs) ? refs : []);
+  }
+
+  @Put("table-cells")
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  setTableCell(@Body("ref") ref: string, @Body("value") value: string) {
+    return this.svc.setTableCell(ref, value ?? "");
+  }
+
   // Renames in place (metadata only — see StorageService.rename, the key/URL
   // never changes so nothing already placed on a page breaks).
   @Put("assets")

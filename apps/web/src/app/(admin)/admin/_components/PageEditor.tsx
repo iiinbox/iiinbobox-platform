@@ -4092,13 +4092,23 @@ export function PageEditor({ slug, label }: PageEditorProps) {
     const zCanvasH = zoneHeights[zone][view];
     const isActiveZone = zone === activeZone;
     const pct = (v: number, total: number) => `${(v / total) * 100}%`;
+    // Header/footer blocks can be rotated (0/90/180/270, set in the block's
+    // settings) — apply that as a real visual transform here so it actually
+    // shows up on the canvas instead of just being a stored, invisible value.
+    const blockRotation = zone === "template" ? 0 : (activeBlock(zone as "header" | "footer")?.rotation ?? 0);
     return (
       <div key={zone}>
         <div className="flex">
+          {/* Outer wrapper reserves the zone's real (un-rotated) footprint and
+              clips anything a rotation would otherwise spill outside of it —
+              CSS transforms don't reflow layout, so a 90°-rotated wide/short
+              header would otherwise visually poke out above/below its own
+              box into whatever sits above the canvas. */}
+          <div className="relative flex-1 min-w-0 overflow-hidden" style={{ aspectRatio: `${canvasW} / ${zCanvasH}` }}>
           <div
             ref={(el) => { canvasElRefs.current[zone] = el; }}
-            className="relative select-none flex-1 min-w-0"
-            style={{ aspectRatio: `${canvasW} / ${zCanvasH}`, backgroundColor: zone === "template" ? canvasBgColor : (activeBlock(zone as "header" | "footer")?.bgColor ?? "#ffffff") }}
+            className="absolute inset-0 select-none"
+            style={{ backgroundColor: zone === "template" ? canvasBgColor : (activeBlock(zone as "header" | "footer")?.bgColor ?? "#ffffff"), transform: blockRotation ? `rotate(${blockRotation}deg)` : undefined, transformOrigin: "center" }}
             onMouseDown={(e) => onCanvasMouseDown(e, zone)}
             onDragOver={(e) => {
               if (e.dataTransfer.types.includes("application/x-reusable-component")) e.preventDefault();
@@ -4354,6 +4364,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
           <div className="absolute border border-blue-500 bg-blue-500/10 pointer-events-none z-30"
             style={{ left: `${(marquee.x / canvasW) * 100}%`, top: `${(marquee.y / zCanvasH) * 100}%`, width: `${(marquee.w / canvasW) * 100}%`, height: `${(marquee.h / zCanvasH) * 100}%` }} />
         )}
+          </div>
           </div>
         </div>
 

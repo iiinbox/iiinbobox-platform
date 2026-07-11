@@ -6,7 +6,6 @@ import { HomeVehicleSelector } from "./HomeVehicleSelector";
 import { HeroCarousel } from "./HeroCarousel";
 import { CategoryCarousel } from "./CategoryCarousel";
 import { StickyHeader } from "./StickyHeader";
-import { getHomeIcon } from "@/lib/homepage-icons";
 import { extractZonesFromTemplate, type HeaderFooterBlock } from "@/lib/page-template-zones";
 
 const API = process.env.API_INTERNAL_URL ?? "http://localhost:4000";
@@ -72,7 +71,7 @@ interface PageComponent {
   id: string;
   type: "text" | "header" | "shape" | "image" | "button" | "carousel" | "icon"
     | "location-input" | "map" | "datetime-picker" | "vehicle-selector" | "driver-badge" | "fare-display"
-    | "hero-carousel" | "category-carousel";
+    | "hero-carousel" | "category-carousel" | "logo";
   x: number;
   y: number;
   width: number;
@@ -124,6 +123,7 @@ interface PageComponent {
   carouselGap?: number;
   carouselItemBg?: string;
   iconName?: string;
+  iconUrl?: string;
   locationPlaceholder?: string;
   locationLabel?: string;
   mapCenterLat?: number;
@@ -244,7 +244,7 @@ function buttonHref(comp: PageComponent): string | undefined {
   }
 }
 
-function Canvas({ components, canvasW, canvasH, bgColor, logo, rotation }: { components: PageComponent[]; canvasW: number; canvasH: number; bgColor?: string; logo?: PublicSiteSettings; rotation?: number }) {
+function Canvas({ components, canvasW, canvasH, bgColor, settings, rotation }: { components: PageComponent[]; canvasW: number; canvasH: number; bgColor?: string; settings?: PublicSiteSettings | null; rotation?: number }) {
   // Generate per-button hover CSS so we don't need a client component
   const hoverCss = components
     .filter((c) => c.type === "button")
@@ -299,6 +299,7 @@ function Canvas({ components, canvasW, canvasH, bgColor, logo, rotation }: { com
             const isShape = comp.type === "shape";
             const isCarousel = comp.type === "carousel";
             const isIcon = comp.type === "icon";
+            const isLogo = comp.type === "logo";
             const isTaxi = comp.type === "location-input" || comp.type === "map" || comp.type === "datetime-picker" || comp.type === "vehicle-selector" || comp.type === "driver-badge" || comp.type === "fare-display";
             const isHero = comp.type === "hero-carousel";
             const isCatCarousel = comp.type === "category-carousel";
@@ -320,8 +321,8 @@ function Canvas({ components, canvasW, canvasH, bgColor, logo, rotation }: { com
                 className="absolute"
                 style={{
                   left, top, width, height,
-                  borderRadius: isBtn || isShape || isCarousel || isIcon || isTaxi || isHero || isCatCarousel ? 0 : (comp.borderRadius ?? 0),
-                  backgroundColor: isBtn || isShape || isCarousel || isIcon || isTaxi || isHero || isCatCarousel
+                  borderRadius: isBtn || isShape || isCarousel || isIcon || isLogo || isTaxi || isHero || isCatCarousel ? 0 : (comp.borderRadius ?? 0),
+                  backgroundColor: isBtn || isShape || isCarousel || isIcon || isLogo || isTaxi || isHero || isCatCarousel
                     ? "transparent"
                     : (comp.bgColor === "transparent" ? "transparent" : (comp.bgColor ?? "transparent")),
                   transform: comp.rotation ? `rotate(${comp.rotation}deg)` : undefined,
@@ -358,17 +359,28 @@ function Canvas({ components, canvasW, canvasH, bgColor, logo, rotation }: { com
                   </div>
                 )}
 
-                {isIcon && (() => {
-                  const def = getHomeIcon(comp.iconName);
-                  if (!def) return null;
-                  const Ico = def.Icon;
+                {isIcon && comp.iconUrl && (() => {
                   const size = comp.fontSize ?? 32;
+                  const color = comp.fontColor ?? "#111111";
                   return (
                     <div className="w-full h-full flex items-center justify-center" style={{ opacity: (comp.opacity ?? 100) / 100 }}>
-                      <Ico style={{ width: size, height: size, color: comp.fontColor ?? "#111111" }} />
+                      <div style={{
+                        width: size, height: size, backgroundColor: color,
+                        WebkitMaskImage: `url(${comp.iconUrl})`, maskImage: `url(${comp.iconUrl})`,
+                        WebkitMaskSize: "contain", maskSize: "contain",
+                        WebkitMaskRepeat: "no-repeat", maskRepeat: "no-repeat",
+                        WebkitMaskPosition: "center", maskPosition: "center",
+                      }} />
                     </div>
                   );
                 })()}
+
+                {/* Logo — no longer auto-attached to a header block; it's a plain
+                    freely-placed component like Image, sourcing the current global
+                    logo at render time so re-uploading it updates every instance. */}
+                {isLogo && settings?.logoUrl && (
+                  <img src={settings.logoUrl} alt="Logo" className="w-full h-full object-contain" style={{ opacity: (comp.opacity ?? 100) / 100 }} />
+                )}
 
                 {comp.type === "location-input" && (
                   <HomeLocationInput
@@ -601,24 +613,6 @@ function Canvas({ components, canvasW, canvasH, bgColor, logo, rotation }: { com
               </Wrapper>
             );
           })}
-          {/* Logo — global (see getPublicSettings), overlaid on a top-docked
-              header block's own canvas only (see RenderedPage/DockedBlock,
-              which only pass `logo` through for dock:"top"). Independently implemented from the
-              editor's Preview-overlay version, matching this file's established
-              convention of duplicating editor vs. live render logic. */}
-          {logo?.logoUrl && (
-            <a
-              href={logo.logoLink || "/"}
-              className="absolute z-30 top-1/2"
-              style={{
-                left: logo.logoAlign === "left" ? "2%" : logo.logoAlign === "center" ? "50%" : undefined,
-                right: logo.logoAlign === "right" ? "2%" : undefined,
-                transform: logo.logoAlign === "center" ? "translate(-50%, -50%)" : "translateY(-50%)",
-              }}
-            >
-              <img src={logo.logoUrl} alt="Logo" style={{ width: `${(logo.logoWidth / canvasW) * 100}%`, height: "auto", display: "block" }} />
-            </a>
-          )}
         </div>
       </div>
     </>
@@ -639,12 +633,12 @@ function Canvas({ components, canvasW, canvasH, bgColor, logo, rotation }: { com
 // element can't "hide" mid-scroll, but a plain bottom block with no threshold
 // has no reason to float over content; it just sits in normal flow at the
 // natural end of the page like every other component does.
-function DockedBlock({ block, canvasW, pageHeight, bgColor, logo, offset }: {
+function DockedBlock({ block, canvasW, pageHeight, bgColor, settings, offset }: {
   block: HeaderFooterBlock;
   canvasW: number;
   pageHeight: number;
   bgColor?: string;
-  logo?: PublicSiteSettings;
+  settings?: PublicSiteSettings | null;
   offset: number;
 }) {
   const isVertical = block.dock === "left" || block.dock === "right";
@@ -656,7 +650,7 @@ function DockedBlock({ block, canvasW, pageHeight, bgColor, logo, offset }: {
         canvasW={isVertical ? block.size : canvasW}
         canvasH={isVertical ? pageHeight : block.size}
         bgColor={block.bgColor ?? bgColor}
-        logo={block.dock === "top" ? logo : undefined}
+        settings={settings}
         rotation={block.rotation}
       />
     </div>
@@ -695,20 +689,20 @@ export function RenderedPage({ data, settings }: { data: any; settings?: PublicS
     const pageHeight = topInset + zones.template.height + bottomInset;
 
     let offset = 0;
-    const topEls = top.map((b) => { const el = <DockedBlock key={b.id} block={b} canvasW={canvasW} pageHeight={pageHeight} bgColor={canvasBgColor} logo={settings ?? undefined} offset={offset} />; offset += b.size; return el; });
+    const topEls = top.map((b) => { const el = <DockedBlock key={b.id} block={b} canvasW={canvasW} pageHeight={pageHeight} bgColor={canvasBgColor} settings={settings} offset={offset} />; offset += b.size; return el; });
     offset = 0;
-    const bottomEls = bottom.map((b) => { const el = <DockedBlock key={b.id} block={b} canvasW={canvasW} pageHeight={pageHeight} bgColor={canvasBgColor} offset={offset} />; offset += b.size; return el; });
+    const bottomEls = bottom.map((b) => { const el = <DockedBlock key={b.id} block={b} canvasW={canvasW} pageHeight={pageHeight} bgColor={canvasBgColor} settings={settings} offset={offset} />; offset += b.size; return el; });
     offset = 0;
-    const leftEls = left.map((b) => { const el = <DockedBlock key={b.id} block={b} canvasW={canvasW} pageHeight={pageHeight} bgColor={canvasBgColor} offset={offset} />; offset += 0; return el; });
+    const leftEls = left.map((b) => { const el = <DockedBlock key={b.id} block={b} canvasW={canvasW} pageHeight={pageHeight} bgColor={canvasBgColor} settings={settings} offset={offset} />; offset += 0; return el; });
     offset = 0;
-    const rightEls = right.map((b) => { const el = <DockedBlock key={b.id} block={b} canvasW={canvasW} pageHeight={pageHeight} bgColor={canvasBgColor} offset={offset} />; offset += 0; return el; });
+    const rightEls = right.map((b) => { const el = <DockedBlock key={b.id} block={b} canvasW={canvasW} pageHeight={pageHeight} bgColor={canvasBgColor} settings={settings} offset={offset} />; offset += 0; return el; });
 
     return (
       <>
         {leftEls}
         {rightEls}
         {topEls}
-        <Canvas components={zones.template.components as unknown as PageComponent[]} canvasW={canvasW} canvasH={zones.template.height} bgColor={canvasBgColor} />
+        <Canvas components={zones.template.components as unknown as PageComponent[]} canvasW={canvasW} canvasH={zones.template.height} bgColor={canvasBgColor} settings={settings} />
         {bottomEls}
         <div style={{ clear: "both" }} />
       </>

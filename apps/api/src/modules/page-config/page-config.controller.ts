@@ -68,6 +68,33 @@ export class PageConfigController {
     return this.storage.remove("fonts", key);
   }
 
+  // Custom icons (Icon component — admin-uploaded only, no built-in registry
+  // anymore). Same trust tier/route-order reasoning as fonts above: public so
+  // the live published site can render whichever icon a page references.
+  @Get("icons")
+  listIcons() {
+    return this.storage.list("icons");
+  }
+
+  @Post("upload-icon")
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 5 * 1024 * 1024 } }))
+  async uploadIcon(@UploadedFile() file: Express.Multer.File) {
+    const ext = (file.originalname.match(/\.(\w+)$/)?.[1] ?? "").toLowerCase();
+    if (!["svg", "png", "webp"].includes(ext)) {
+      throw new BadRequestException("Only .svg, .png, .webp icon files are allowed");
+    }
+    return this.storage.upload(file.buffer, file.mimetype, "icons", file.originalname);
+  }
+
+  @Delete("icons")
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  deleteIcon(@Body("key") key: string) {
+    return this.storage.remove("icons", key);
+  }
+
   // Item 3: the cached read, hit by the live site. Registered before the
   // bare :page route for the same reason as "assets"/"reorder" above — it's a
   // two-segment path so it wouldn't actually collide, but keeping all the

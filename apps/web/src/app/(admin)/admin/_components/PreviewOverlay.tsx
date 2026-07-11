@@ -84,12 +84,12 @@ function isBlockHidden(scroll: { y: number; direction: "up" | "down"; directionC
 // block's own outer bar ONLY — the inner wrapper carries an equal-and-
 // opposite counter-rotation so the children inside always stay upright,
 // regardless of what the outer bar's rotation is doing.
-function RotatableBlock({ components, canvasW, canvasH, rotation, bgColor }: { components: PageComponent[]; canvasW: number; canvasH: number; rotation: number; bgColor?: string }) {
-  if (!rotation) return <PreviewCanvas components={components} canvasW={canvasW} canvasH={canvasH} />;
+function RotatableBlock({ components, canvasW, canvasH, rotation, bgColor, logoUrl }: { components: PageComponent[]; canvasW: number; canvasH: number; rotation: number; bgColor?: string; logoUrl?: string | null }) {
+  if (!rotation) return <PreviewCanvas components={components} canvasW={canvasW} canvasH={canvasH} logoUrl={logoUrl} />;
   return (
     <div className="relative shadow-sm mx-auto" style={{ width: "100%", maxWidth: canvasW, aspectRatio: `${canvasW} / ${canvasH}`, transform: `rotate(${rotation}deg)`, transformOrigin: "center", backgroundColor: bgColor ?? "#ffffff" }}>
       <div className="absolute inset-0" style={{ transform: `rotate(${-rotation}deg)`, transformOrigin: "center" }}>
-        <PreviewCanvas components={components} canvasW={canvasW} canvasH={canvasH} />
+        <PreviewCanvas components={components} canvasW={canvasW} canvasH={canvasH} logoUrl={logoUrl} />
       </div>
     </div>
   );
@@ -160,22 +160,7 @@ export function PreviewOverlay({
       const blockCanvasH = isVertical ? totalHeight : b.size;
       return (
         <div key={b.id} style={style} className="relative">
-          <RotatableBlock components={b.components} canvasW={blockCanvasW} canvasH={blockCanvasH} rotation={b.rotation} bgColor={b.bgColor} />
-          {edge === "top" && siteSettings.logoUrl && (
-            <a
-              href={siteSettings.logoLink || "/"}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="absolute z-30 top-1/2"
-              style={{
-                left: siteSettings.logoAlign === "left" ? "2%" : siteSettings.logoAlign === "center" ? "50%" : undefined,
-                right: siteSettings.logoAlign === "right" ? "2%" : undefined,
-                transform: siteSettings.logoAlign === "center" ? "translate(-50%, -50%)" : "translateY(-50%)",
-              }}
-            >
-              <img src={siteSettings.logoUrl} alt="Logo" style={{ width: `${(siteSettings.logoWidth / canvasW) * 100}%`, height: "auto", display: "block" }} />
-            </a>
-          )}
+          <RotatableBlock components={b.components} canvasW={blockCanvasW} canvasH={blockCanvasH} rotation={b.rotation} bgColor={b.bgColor} logoUrl={siteSettings.logoUrl} />
         </div>
       );
     });
@@ -218,7 +203,7 @@ export function PreviewOverlay({
           {renderStack(leftBlocks, "left")}
           {renderStack(rightBlocks, "right")}
           {renderStack(topBlocks, "top")}
-          <PreviewCanvas components={templateZone.components} canvasW={canvasW} canvasH={templateZone.height} />
+          <PreviewCanvas components={templateZone.components} canvasW={canvasW} canvasH={templateZone.height} logoUrl={siteSettings.logoUrl} />
           {renderStack(bottomBlocks, "bottom")}
           <div style={{ clear: "both" }} />
         </div>

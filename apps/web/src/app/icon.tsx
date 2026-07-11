@@ -123,16 +123,21 @@ function defaultIcon() {
 // settings fetch must never take the site's favicon down entirely.
 export default async function Icon() {
   try {
-    const settingsRes = await fetch(`${API}/settings/public`, { next: { revalidate: 60 } });
+    // Uncached — the backend's own settings.service.ts already Redis-caches
+    // this (1hr TTL) and purges that cache immediately on every admin save,
+    // so freshness is already handled server-side; adding a second, longer-
+    // lived ISR cache on top of that here was the actual cause of a newly
+    // uploaded favicon not showing up for up to a minute or two.
+    const settingsRes = await fetch(`${API}/settings/public`, { cache: "no-store" });
     if (!settingsRes.ok) return defaultIcon();
     const settings = await settingsRes.json();
     if (!settings?.faviconUrl) return defaultIcon();
 
-    const imageRes = await fetch(settings.faviconUrl, { next: { revalidate: 60 } });
+    const imageRes = await fetch(settings.faviconUrl, { cache: "no-store" });
     if (!imageRes.ok) return defaultIcon();
     const bytes = await imageRes.arrayBuffer();
     return new Response(bytes, {
-      headers: { "content-type": settings.faviconContentType || "image/png" },
+      headers: { "content-type": settings.faviconContentType || "image/png", "cache-control": "no-store" },
     });
   } catch {
     return defaultIcon();

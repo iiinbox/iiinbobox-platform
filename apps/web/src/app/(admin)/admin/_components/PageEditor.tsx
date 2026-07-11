@@ -30,7 +30,7 @@ import { extractZonesFromTemplate, buildTemplateZone, type Dock, type HeaderFoot
 
 export type ComponentType = "text" | "header" | "shape" | "image" | "button" | "carousel" | "icon"
   | "location-input" | "map" | "datetime-picker" | "vehicle-selector" | "driver-badge" | "fare-display"
-  | "hero-carousel" | "category-carousel" | "header-block" | "footer-block";
+  | "hero-carousel" | "category-carousel" | "header-block" | "footer-block" | "logo";
 type CardStyle = "image-first" | "icon-text" | "split";
 type CardAspectRatio = "1:1" | "3:4";
 type SnapMode = "single" | "double";
@@ -174,6 +174,11 @@ export interface PageComponent {
   carouselGap?: number;
   carouselItemBg?: string;
   iconName?: string;
+  // Icon component's picked upload — see IconGlyph. iconName stays for the
+  // Vehicle Selector's per-option registry icons (unchanged) and for any
+  // legacy Icon component saved before uploads existed (renders a plain
+  // square placeholder now that the built-in registry is gone).
+  iconUrl?: string;
   // Location Input (taxi/ride-hailing)
   locationPlaceholder?: string;
   locationLabel?: string;
@@ -995,17 +1000,29 @@ function CategoryCarouselBody({ comp, canvasW }: { comp: PageComponent; canvasW:
   );
 }
 
-// ── Icon: a single glyph from the shared homepage icon registry ─────────────
+// ── Icon: a single admin-uploaded icon (svg/png/webp), recoloured via a CSS
+// mask so any single-colour uploaded glyph can still take the picked colour —
+// same technique as a icon font, just driven by an uploaded image instead of
+// a built-in registry. ────────────────────────────────────────────────────
 
 function IconGlyph({ comp }: { comp: PageComponent }) {
-  const def = getHomeIcon(comp.iconName);
   const size = comp.fontSize ?? 32;
-  const Ico = def?.Icon;
+  const color = comp.fontColor ?? "#111111";
   return (
     <div className="w-full h-full flex items-center justify-center" style={{ opacity: (comp.opacity ?? 100) / 100 }}>
-      {Ico
-        ? <Ico style={{ width: size, height: size, color: comp.fontColor ?? "#111111" }} />
-        : <Square className="text-muted-foreground" style={{ width: size, height: size }} />}
+      {comp.iconUrl ? (
+        <div
+          style={{
+            width: size, height: size, backgroundColor: color,
+            WebkitMaskImage: `url(${comp.iconUrl})`, maskImage: `url(${comp.iconUrl})`,
+            WebkitMaskSize: "contain", maskSize: "contain",
+            WebkitMaskRepeat: "no-repeat", maskRepeat: "no-repeat",
+            WebkitMaskPosition: "center", maskPosition: "center",
+          }}
+        />
+      ) : (
+        <Square className="text-muted-foreground" style={{ width: size, height: size }} />
+      )}
     </div>
   );
 }
@@ -1422,6 +1439,7 @@ function componentTypeLabel(type: ComponentType): string {
     case "category-carousel": return "Category Carousel";
     case "header-block": return "Header";
     case "footer-block": return "Footer";
+    case "logo": return "Logo";
     default: return "Button";
   }
 }
@@ -1457,7 +1475,8 @@ function defaults(type: ComponentType, canvasW: number): Partial<PageComponent> 
     case "image":  return { width: Math.round(canvasW * 0.18), height: 180, bgColor: "#e5e7eb", borderRadius: 4, rotation: 0 };
     case "button": return { width: Math.round(canvasW * 0.1), height: 56, content: "Click me", fontSize: 16, fontFamily: "system-ui, -apple-system, sans-serif", fontWeight: 600, fontColor: "#ffffff", bgColor: "#3b82f6", borderRadius: 8, buttonStyle: "solid", borderColor: "#3b82f6", hoverBgColor: "#2563eb", hoverFontColor: "#ffffff", buttonAction: { type: "url", value: "" }, rotation: 0 };
     case "carousel": return { width: Math.round(canvasW * 0.6), height: 220, bgColor: "transparent", borderRadius: 12, opacity: 100, rotation: 0, carouselItems: [], carouselItemWidth: 160, carouselZoom: 1.25 };
-    case "icon": return { width: 64, height: 64, fontColor: "#111111", fontSize: 32, opacity: 100, rotation: 0, iconName: "cart" };
+    case "icon": return { width: 64, height: 64, fontColor: "#111111", fontSize: 32, opacity: 100, rotation: 0 };
+    case "logo": return { width: 120, height: 48, rotation: 0, opacity: 100 };
     case "location-input": return { width: Math.round(canvasW * 0.3), height: 52, bgColor: "#ffffff", borderColor: "#e5e7eb", fontColor: "#111111", borderRadius: 8, locationPlaceholder: "Enter pickup location", locationLabel: "Pickup", rotation: 0 };
     case "map": return { width: Math.round(canvasW * 0.5), height: 320, borderRadius: 12, mapCenterLat: 12.9716, mapCenterLng: 77.5946, mapZoom: 13, mapMarkers: [], mapServiceRadiusKm: 5, rotation: 0 };
     case "datetime-picker": return { width: Math.round(canvasW * 0.3), height: 100, bgColor: "#ffffff", borderColor: "#e5e7eb", fontColor: "#111111", borderRadius: 8, dtDefaultOption: "today", dtTime: "09:00", rotation: 0 };
@@ -1930,7 +1949,7 @@ function ImagePickerButton({
 
 // ── Preview canvas ─────────────────────────────────────────────────────────────
 
-export function PreviewCanvas({ components, canvasW, canvasH }: { components: PageComponent[]; canvasW: number; canvasH: number }) {
+export function PreviewCanvas({ components, canvasW, canvasH, logoUrl }: { components: PageComponent[]; canvasW: number; canvasH: number; logoUrl?: string | null }) {
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const ref = useRef<HTMLDivElement>(null);
   const pct = (v: number, total: number) => `${(v / total) * 100}%`;
@@ -1943,13 +1962,14 @@ export function PreviewCanvas({ components, canvasW, canvasH }: { components: Pa
         const isShape = comp.type === "shape";
         const isCarousel = comp.type === "carousel";
         const isIcon = comp.type === "icon";
+        const isLogo = comp.type === "logo";
         const isTaxi = comp.type === "location-input" || comp.type === "map" || comp.type === "datetime-picker" || comp.type === "vehicle-selector" || comp.type === "driver-badge" || comp.type === "fare-display";
         const isHero = comp.type === "hero-carousel";
         const isCatCarousel = comp.type === "category-carousel";
         const btn = isBtn ? resolveButtonStyles(comp, isHovered) : null;
         return (
           <div key={comp.id} className="absolute"
-            style={{ left: pct(comp.x, canvasW), top: pct(comp.y, canvasH), width: pct(comp.width, canvasW), height: pct(comp.height, canvasH), borderRadius: isBtn || isShape || isCarousel || isIcon || isTaxi || isHero || isCatCarousel ? 0 : (comp.borderRadius ?? 0), backgroundColor: isBtn || isShape || isCarousel || isIcon || isTaxi || isHero || isCatCarousel ? "transparent" : (comp.bgColor === "transparent" ? "transparent" : (comp.bgColor ?? "transparent")), transform: `rotate(${comp.rotation ?? 0}deg)`, transformOrigin: "center", boxShadow: buildBoxShadow(comp), filter: buildBlurFilter(comp) }}
+            style={{ left: pct(comp.x, canvasW), top: pct(comp.y, canvasH), width: pct(comp.width, canvasW), height: pct(comp.height, canvasH), borderRadius: isBtn || isShape || isCarousel || isIcon || isLogo || isTaxi || isHero || isCatCarousel ? 0 : (comp.borderRadius ?? 0), backgroundColor: isBtn || isShape || isCarousel || isIcon || isLogo || isTaxi || isHero || isCatCarousel ? "transparent" : (comp.bgColor === "transparent" ? "transparent" : (comp.bgColor ?? "transparent")), transform: `rotate(${comp.rotation ?? 0}deg)`, transformOrigin: "center", boxShadow: buildBoxShadow(comp), filter: buildBlurFilter(comp) }}
             onMouseEnter={() => isBtn && setHoveredId(comp.id)} onMouseLeave={() => isBtn && setHoveredId(null)}
           >
             {(comp.type === "text" || comp.type === "header") && (
@@ -1960,6 +1980,9 @@ export function PreviewCanvas({ components, canvasW, canvasH }: { components: Pa
             )}
             {isShape && (
               <div className="w-full h-full" style={{ backgroundColor: comp.bgColor ?? "#3b82f6", borderRadius: shapeBorderRadius(comp), clipPath: shapeClipPath(comp.shapeType), opacity: (comp.opacity ?? 100) / 100 }} />
+            )}
+            {isLogo && logoUrl && (
+              <img src={logoUrl} alt="Logo" className="w-full h-full object-contain" style={{ opacity: (comp.opacity ?? 100) / 100 }} />
             )}
             {isCarousel && (
               <div className="w-full h-full" style={{ backgroundColor: comp.bgColor === "transparent" ? "transparent" : (comp.bgColor ?? "transparent"), opacity: (comp.opacity ?? 100) / 100 }}>
@@ -2118,6 +2141,28 @@ export function PageEditor({ slug, label }: PageEditorProps) {
       if (result) updateSiteSettings({ faviconUrl: result.url, faviconContentType: result.contentType });
     } finally { setFaviconUploading(false); }
   }
+  // Apply/Publish — the upload already saves immediately (see
+  // updateSiteSettings), but that used to still take up to ~60s to actually
+  // show up because icon.tsx cached its own fetches on top of the backend's
+  // already-correct cache-purge-on-save (fixed — see icon.tsx). Apply just
+  // re-confirms the save explicitly; Publish additionally busts Next's own
+  // route cache for /icon so there's no cache layer left that could delay it.
+  const [faviconStatus, setFaviconStatus] = useState<"idle" | "applying" | "publishing" | "published">("idle");
+  async function applyFavicon() {
+    setFaviconStatus("applying");
+    updateSiteSettings({ faviconUrl: siteSettings.faviconUrl, faviconContentType: siteSettings.faviconContentType });
+    setFaviconStatus("idle");
+  }
+  async function publishFavicon() {
+    setFaviconStatus("publishing");
+    try {
+      await fetch("/api/settings/publish-favicon", { method: "POST" });
+      setFaviconStatus("published");
+      setTimeout(() => setFaviconStatus("idle"), 2000);
+    } catch {
+      setFaviconStatus("idle");
+    }
+  }
   const [footerDesktopComponents, setFooterDesktopComponents] = useState<PageComponent[]>([]);
   const [footerMobileComponents, setFooterMobileComponents] = useState<PageComponent[]>([]);
   const [pageLabel, setPageLabel] = useState(label ?? "");
@@ -2148,6 +2193,11 @@ export function PageEditor({ slug, label }: PageEditorProps) {
   // Preview is now folder-level only (see openFolderPreview/previewFolder
   // above) — no more in-editor "preview the page I'm currently on" toggle.
   const [openTool, setOpenTool] = useState<ComponentType | null>(null);
+  // Item 5: Text/Shape/Image/Button/Icon live under a "Component" dropdown,
+  // Map/Location/Date-Time/Vehicle Selector/Driver Badge/Fare Display live
+  // under "Travel Component" — each individual type keeps its own openTool
+  // accordion underneath, this just shows/hides the whole group.
+  const [openGroup, setOpenGroup] = useState<"component" | "travel" | null>(null);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [alignmentGuides, setAlignmentGuides] = useState<AlignmentGuideLine[]>([]);
   const [dragLayerId, setDragLayerId] = useState<string | null>(null);
@@ -2298,6 +2348,10 @@ export function PageEditor({ slug, label }: PageEditorProps) {
   const [fontsLoading, setFontsLoading] = useState(false);
   const [uploadingFont, setUploadingFont] = useState(false);
   const [fontUploadProgress, setFontUploadProgress] = useState(0);
+  const [iconItems, setIconItems] = useState<AssetItem[] | null>(null);
+  const [iconsLoading, setIconsLoading] = useState(false);
+  const [uploadingIcon, setUploadingIcon] = useState(false);
+  const [iconUploadProgress, setIconUploadProgress] = useState(0);
   // Metadata-only rename (see StorageService.rename) — the key/URL never
   // changes, so this can't break any page that already placed this image.
   async function commitAssetRename(key: string) {
@@ -2326,7 +2380,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
   }, []);
   useEffect(() => { refreshReusableComponents(); }, [refreshReusableComponents]);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { loadFonts(); }, []);
+  useEffect(() => { loadFonts(); loadIcons(); }, []);
   // Marking a component reusable only updates local editor state immediately —
   // the actual PUT that persists it happens on the debounced autosave (~4s
   // later, see the syncStatus effect below). Refetching the sidebar list right
@@ -2602,8 +2656,17 @@ export function PageEditor({ slug, label }: PageEditorProps) {
 
   // Selecting a single, ungrouped component opens its matching Add Component
   // accordion so its settings appear right there; deselecting closes it again.
+  // Also opens the right "Component"/"Travel Component" group (item 5) so the
+  // now-nested accordion is actually visible, not hidden behind a closed group.
   useEffect(() => {
-    if (selectedComp && !selectedComp.groupId) setOpenTool(toolForType(selectedComp.type));
+    if (selectedComp && !selectedComp.groupId) {
+      const tool = toolForType(selectedComp.type);
+      setOpenTool(tool);
+      const travelTypes: ComponentType[] = ["location-input", "map", "datetime-picker", "vehicle-selector", "driver-badge", "fare-display"];
+      const componentTypes: ComponentType[] = ["text", "shape", "image", "button", "icon"];
+      if (travelTypes.includes(tool)) setOpenGroup("travel");
+      else if (componentTypes.includes(tool)) setOpenGroup("component");
+    }
     else if (selectedIds.length === 0) setOpenTool(null);
   }, [selectedComp?.id, selectedComp?.groupId, selectedIds.length]);
 
@@ -2895,12 +2958,8 @@ export function PageEditor({ slug, label }: PageEditorProps) {
     };
     placeAndAddComponent(base, targetZone);
   }
-  function addCarousel(targetZone?: Zone) {
-    const base: PageComponent = { id: uid(), type: "carousel", x: 0, y: 0, ...defaults("carousel", canvasW) } as PageComponent;
-    placeAndAddComponent(base, targetZone);
-  }
-  function addIcon(iconName: string, targetZone?: Zone) {
-    const base: PageComponent = { id: uid(), type: "icon", x: 0, y: 0, ...defaults("icon", canvasW), iconName } as PageComponent;
+  function addIcon(iconUrl: string, targetZone?: Zone) {
+    const base: PageComponent = { id: uid(), type: "icon", x: 0, y: 0, ...defaults("icon", canvasW), iconUrl } as PageComponent;
     placeAndAddComponent(base, targetZone);
   }
   function addLocationInput(targetZone?: Zone) {
@@ -2927,20 +2986,20 @@ export function PageEditor({ slug, label }: PageEditorProps) {
     const base: PageComponent = { id: uid(), type: "fare-display", x: 0, y: 0, ...defaults("fare-display", canvasW) } as PageComponent;
     placeAndAddComponent(base, targetZone);
   }
-  function addHeroCarousel(targetZone?: Zone) {
-    const base: PageComponent = { id: uid(), type: "hero-carousel", x: 0, y: 0, ...defaults("hero-carousel", canvasW) } as PageComponent;
-    placeAndAddComponent(base, targetZone);
-  }
-  function addCategoryCarousel(targetZone?: Zone) {
-    const base: PageComponent = { id: uid(), type: "category-carousel", x: 0, y: 0, ...defaults("category-carousel", canvasW) } as PageComponent;
-    placeAndAddComponent(base, targetZone);
-  }
   // Insert an already-uploaded asset (from the Assets tab) as a new single-image component.
   function addImageFromUrl(url: string, targetZone?: Zone) {
     const preset = IMAGE_SIZES.find((s) => s.id === imageSizePreset) ?? IMAGE_SIZES[2];
     const width = Math.round(canvasW * 0.22);
     const height = Math.max(40, Math.round(width / preset.ratio));
     const base: PageComponent = { id: uid(), type: "image", x: 0, y: 0, width, height, bgColor: "#e5e7eb", borderRadius: 8, opacity: 100, rotation: 0, imageMode: "single", imageUrl: url };
+    placeAndAddComponent(base, targetZone);
+  }
+  // Logo is no longer auto-attached to a header block — it's a plain,
+  // freely-placeable component like Image, just always sourcing the current
+  // global logo (siteSettings.logoUrl) at render time instead of a baked-in
+  // imageUrl, so re-uploading the logo updates every placed instance.
+  function addLogo(targetZone?: Zone) {
+    const base: PageComponent = { id: uid(), type: "logo", x: 0, y: 0, ...defaults("logo", canvasW) } as PageComponent;
     placeAndAddComponent(base, targetZone);
   }
   function addMarketWidget(id: MarketWidgetId, targetZone?: Zone) {
@@ -3189,6 +3248,59 @@ export function PageEditor({ slug, label }: PageEditorProps) {
     setFontItems((prev) => (prev ? prev.filter((f) => f.key !== key) : prev));
     try {
       await fetch("/api/page-config/fonts", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key }),
+      });
+    } catch {}
+  }
+  // Custom icons (Icon component — admin-uploaded only, no built-in registry).
+  // Same load/upload/delete shape as fonts above.
+  async function loadIcons() {
+    setIconsLoading(true);
+    try {
+      const res = await fetch("/api/page-config/icons");
+      const data = await res.json();
+      setIconItems(Array.isArray(data) ? data : []);
+    } catch {
+      setIconItems([]);
+    } finally {
+      setIconsLoading(false);
+    }
+  }
+  function uploadIconWithProgress(file: File, onProgress: (pct: number) => void): Promise<AssetItem | null> {
+    return new Promise((resolve) => {
+      const fd = new FormData(); fd.append("file", file);
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", "/api/page-config/upload-icon");
+      xhr.upload.onprogress = (e) => { if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100)); };
+      xhr.onload = () => {
+        if (xhr.status < 200 || xhr.status >= 300) { resolve(null); return; }
+        try {
+          const d = JSON.parse(xhr.responseText);
+          resolve({ key: d.key, url: d.url, name: file.name, size: file.size, lastModified: null });
+        } catch { resolve(null); }
+      };
+      xhr.onerror = () => resolve(null);
+      xhr.send(fd);
+    });
+  }
+  async function uploadIcon(file: File) {
+    const ext = file.name.split(".").pop()?.toLowerCase();
+    if (!ext || !["svg", "png", "webp"].includes(ext)) {
+      alert("Only .svg, .png, .webp icon files are allowed.");
+      return;
+    }
+    setUploadingIcon(true); setIconUploadProgress(0);
+    try {
+      const result = await uploadIconWithProgress(file, setIconUploadProgress);
+      if (result) setIconItems((prev) => [result, ...(prev ?? [])]);
+    } finally { setUploadingIcon(false); setIconUploadProgress(0); }
+  }
+  async function deleteIcon(key: string) {
+    setIconItems((prev) => (prev ? prev.filter((f) => f.key !== key) : prev));
+    try {
+      await fetch("/api/page-config/icons", {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ key }),
@@ -4161,6 +4273,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
           const isShape = comp.type === "shape";
           const isCarousel = comp.type === "carousel";
           const isIcon = comp.type === "icon";
+          const isLogo = comp.type === "logo";
           const isTaxi = comp.type === "location-input" || comp.type === "map" || comp.type === "datetime-picker" || comp.type === "vehicle-selector" || comp.type === "driver-badge" || comp.type === "fare-display";
           const isHero = comp.type === "hero-carousel";
           const isCatCarousel = comp.type === "category-carousel";
@@ -4171,7 +4284,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
           return (
             <div key={comp.id}
               className={`absolute group ${isSoleSelected ? "ring-2 ring-blue-500" : isSelected ? "ring-1 ring-blue-400" : "hover:ring-1 hover:ring-blue-300"}`}
-              style={{ left: pct(comp.x, canvasW), top: pct(comp.y, zCanvasH), width: pct(comp.width, canvasW), height: pct(comp.height, zCanvasH), borderRadius: isBtn || isShape || isCarousel || isIcon || isTaxi || isHero || isCatCarousel ? 0 : (comp.borderRadius ?? 0), backgroundColor: isBtn || isShape || isCarousel || isIcon || isTaxi || isHero || isCatCarousel ? "transparent" : (comp.bgColor === "transparent" ? "transparent" : (comp.bgColor ?? "transparent")), transform: `rotate(${rotation}deg)`, transformOrigin: "center", cursor: comp.locked ? "not-allowed" : "move",
+              style={{ left: pct(comp.x, canvasW), top: pct(comp.y, zCanvasH), width: pct(comp.width, canvasW), height: pct(comp.height, zCanvasH), borderRadius: isBtn || isShape || isCarousel || isIcon || isLogo || isTaxi || isHero || isCatCarousel ? 0 : (comp.borderRadius ?? 0), backgroundColor: isBtn || isShape || isCarousel || isIcon || isLogo || isTaxi || isHero || isCatCarousel ? "transparent" : (comp.bgColor === "transparent" ? "transparent" : (comp.bgColor ?? "transparent")), transform: `rotate(${rotation}deg)`, transformOrigin: "center", cursor: comp.locked ? "not-allowed" : "move",
                 boxShadow: buildBoxShadow(comp), filter: buildBlurFilter(comp),
                 // Editor-only convenience dimming — never affects the published page (see PageComponent.hidden).
                 ...(comp.hidden ? { opacity: 0.35, pointerEvents: "none" } : {}) }}
@@ -4232,6 +4345,11 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                 </div>
               )}
               {isIcon && <IconGlyph comp={comp} />}
+              {isLogo && (
+                siteSettings.logoUrl
+                  ? <img src={siteSettings.logoUrl} alt="Logo" className="w-full h-full object-contain" style={{ opacity: (comp.opacity ?? 100) / 100 }} />
+                  : <div className="w-full h-full flex items-center justify-center text-[10px] text-gray-500 border border-dashed border-gray-600">No logo uploaded</div>
+              )}
               {comp.type === "location-input" && <LocationInputBody comp={comp} />}
               {comp.type === "map" && <MapBody comp={comp} />}
               {comp.type === "datetime-picker" && <DateTimePickerBody comp={comp} />}
@@ -4524,17 +4642,60 @@ export function PageEditor({ slug, label }: PageEditorProps) {
       <div className="max-h-56 overflow-y-auto flex flex-col gap-2 pr-0.5">
         {HOME_ICON_CATEGORIES.map((cat) => (
           <div key={cat}>
-            <p className="text-[9px] uppercase tracking-wide text-muted-foreground mb-1">{cat}</p>
+            <p className="text-[9px] uppercase tracking-wide text-gray-400 mb-1">{cat}</p>
             <div className="grid grid-cols-6 gap-1">
               {HOME_ICONS.filter((i) => i.category === cat).map((icon) => (
                 <button key={icon.id} type="button" title={icon.label} onClick={() => onPick(icon.id)}
-                  className={`flex items-center justify-center h-8 rounded border transition-colors ${activeId === icon.id ? "bg-black text-white border-black" : "border-gray-200 bg-white hover:border-black text-gray-700"}`}>
+                  className={`flex items-center justify-center h-8 rounded border transition-colors ${activeId === icon.id ? "bg-black text-white border-black" : "border-gray-700 bg-gray-800 text-gray-300"}`}>
                   <icon.Icon className="h-4 w-4" />
                 </button>
               ))}
             </div>
           </div>
         ))}
+      </div>
+    );
+  }
+
+  // Icon component's own picker — admin-uploaded icons only (no built-in
+  // registry), same "grid of thumbnails + upload button" shape as the image
+  // asset picker. Shared by "add a new icon" and "change the selected
+  // icon's glyph", same as renderIconPicker was for the old registry.
+  function renderIconAssetPicker(onPick: (url: string) => void, activeUrl?: string) {
+    return (
+      <div className="flex flex-col gap-2">
+        <label className="flex items-center justify-center gap-1.5 h-8 rounded-md border border-gray-700 bg-gray-800 text-gray-200 text-xs cursor-pointer">
+          {uploadingIcon ? `Uploading… ${iconUploadProgress}%` : <><Plus className="h-3 w-3" /> Upload Icon</>}
+          <input type="file" accept=".svg,.png,.webp" className="hidden"
+            onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadIcon(f); e.target.value = ""; }} />
+        </label>
+        {iconsLoading ? (
+          <p className="text-[11px] text-gray-400 text-center py-3">Loading…</p>
+        ) : (iconItems ?? []).length === 0 ? (
+          <p className="text-[11px] text-gray-400 text-center py-3">No icons uploaded yet — upload from the IBOX ICON folder to use them here.</p>
+        ) : (
+          <div className="grid grid-cols-6 gap-1 max-h-56 overflow-y-auto pr-0.5">
+            {(iconItems ?? []).map((icon) => (
+              <button key={icon.key} type="button" title={icon.name ?? undefined} onClick={() => onPick(icon.url)}
+                className={`group relative flex items-center justify-center h-8 rounded border transition-colors ${activeUrl === icon.url ? "bg-black border-black" : "border-gray-700 bg-gray-800"}`}>
+                <div style={{
+                  width: 16, height: 16, backgroundColor: activeUrl === icon.url ? "#ffffff" : "#d1d5db",
+                  WebkitMaskImage: `url(${icon.url})`, maskImage: `url(${icon.url})`,
+                  WebkitMaskSize: "contain", maskSize: "contain",
+                  WebkitMaskRepeat: "no-repeat", maskRepeat: "no-repeat",
+                  WebkitMaskPosition: "center", maskPosition: "center",
+                }} />
+                <span
+                  role="button" tabIndex={-1} title="Delete icon"
+                  onClick={(e) => { e.stopPropagation(); deleteIcon(icon.key); }}
+                  className="absolute -top-1 -right-1 hidden group-hover:flex h-3.5 w-3.5 items-center justify-center rounded-full bg-red-500 text-white"
+                >
+                  <X className="h-2.5 w-2.5" />
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
       </div>
     );
   }
@@ -4688,10 +4849,6 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                                     <button type="button" onClick={() => { addShape("rectangle", zone); setZoneAddMenuOpen(null); }} className="flex items-center gap-1.5 text-xs px-2 py-1 rounded text-left"><Square className="h-3 w-3" /> Shape</button>
                                     <button type="button" onClick={() => { addImage("single", zone); setZoneAddMenuOpen(null); }} className="flex items-center gap-1.5 text-xs px-2 py-1 rounded text-left"><ImageIcon className="h-3 w-3" /> Image</button>
                                     <button type="button" onClick={() => { addComponent("button", BUTTON_PRESETS[0].patch, zone); setZoneAddMenuOpen(null); }} className="flex items-center gap-1.5 text-xs px-2 py-1 rounded text-left"><ComponentIcon className="h-3 w-3" /> Button</button>
-                                    <button type="button" onClick={() => { addCarousel(zone); setZoneAddMenuOpen(null); }} className="flex items-center gap-1.5 text-xs px-2 py-1 rounded text-left"><GalleryHorizontal className="h-3 w-3" /> Carousel</button>
-                                    <button type="button" onClick={() => { addHeroCarousel(zone); setZoneAddMenuOpen(null); }} className="flex items-center gap-1.5 text-xs px-2 py-1 rounded text-left"><GalleryHorizontalEnd className="h-3 w-3" /> Hero Carousel</button>
-                                    <button type="button" onClick={() => { addCategoryCarousel(zone); setZoneAddMenuOpen(null); }} className="flex items-center gap-1.5 text-xs px-2 py-1 rounded text-left"><LayoutGrid className="h-3 w-3" /> Category Carousel</button>
-                                    <button type="button" onClick={() => { addIcon("cart", zone); setZoneAddMenuOpen(null); }} className="flex items-center gap-1.5 text-xs px-2 py-1 rounded text-left"><Square className="h-3 w-3" /> Icon</button>
                                     <div className="h-px bg-gray-700 my-0.5" />
                                     <p className="text-[9px] uppercase tracking-wide text-gray-400 px-2">Widgets</p>
                                     {MARKET_WIDGETS.map((w) => (
@@ -5010,10 +5167,19 @@ export function PageEditor({ slug, label }: PageEditorProps) {
             className={`shrink-0 border-r border-gray-700 bg-gray-800 flex flex-col overflow-hidden transition-[width] duration-300 ease-in-out ${leftSidebarVisible ? "w-full lg:w-60" : "w-7"}`}
           >
             {!leftSidebarVisible ? (
-              <button type="button" title="Show panel" onClick={() => setLeftSidebarCollapsed(false)}
-                className="flex-1 flex items-center justify-center hover:bg-gray-700 text-gray-400">
-                <ChevronRight className="h-4 w-4" />
-              </button>
+              <div className="flex-1 flex flex-col items-center pt-2 gap-1">
+                {([
+                  { id: "project" as const, label: "Project", icon: FileText },
+                  { id: "assets" as const, label: "Upload", icon: FolderIcon },
+                  { id: "history" as const, label: "History", icon: Layers },
+                ]).map((tab) => (
+                  <button key={tab.id} type="button" title={tab.label}
+                    onClick={() => { setActiveLeftTab(tab.id); if (tab.id === "assets") loadAssets(); setLeftSidebarCollapsed(false); }}
+                    className="flex items-center justify-center h-8 w-8 rounded hover:bg-gray-700 text-gray-400">
+                    <tab.icon className="h-4 w-4" />
+                  </button>
+                ))}
+              </div>
             ) : (
               <>
             <div className="flex items-center shrink-0 bg-gray-900">
@@ -5517,10 +5683,18 @@ export function PageEditor({ slug, label }: PageEditorProps) {
             className={`shrink-0 border-t lg:border-t-0 lg:border-l border-gray-700 bg-gray-800 flex flex-col overflow-hidden transition-[width] duration-300 ease-in-out ${rightSidebarVisible ? "w-full lg:w-72 lg:max-w-72 max-h-[48vh] lg:max-h-none" : "w-7"}`}
           >
             {!rightSidebarVisible ? (
-              <button type="button" title="Show panel" onClick={() => setRightSidebarCollapsed(false)}
-                className="flex-1 flex items-center justify-center hover:bg-gray-700 text-gray-400">
-                <ChevronLeft className="h-4 w-4" />
-              </button>
+              <div className="flex-1 flex flex-col items-center pt-2 gap-1">
+                {([
+                  { id: "component" as const, label: "Component", icon: ComponentIcon },
+                  { id: "travel" as const, label: "Travel Component", icon: MapPin },
+                ]).map((g) => (
+                  <button key={g.id} type="button" title={g.label}
+                    onClick={() => { setRightSidebarCollapsed(false); setOpenGroup(g.id); }}
+                    className="flex items-center justify-center h-8 w-8 rounded hover:bg-gray-700 text-gray-400">
+                    <g.icon className="h-4 w-4" />
+                  </button>
+                ))}
+              </div>
             ) : (
               <>
             <div className="flex items-center shrink-0 bg-gray-900">
@@ -5537,6 +5711,80 @@ export function PageEditor({ slug, label }: PageEditorProps) {
               <p className={sLabel + " mb-2"}>Add Component</p>
               <div className="flex flex-col gap-1.5">
 
+                {/* Header — a component like any other: click to add, click
+                    again to edit its position/size/colour/rotation/scroll
+                    behaviour. Multiple can exist (see renderBlockSelector's
+                    pills below); the block's own content is edited directly
+                    on the canvas, exactly like Template's content. */}
+                <div>
+                  <button type="button" onClick={() => setOpenTool(openTool === "header-block" ? null : "header-block")}
+                    className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md border text-xs transition-colors text-left text-gray-200 ${openTool === "header-block" ? "border-white bg-gray-700" : "border-gray-700 hover:bg-gray-700"}`}>
+                    <ArrowUpToLine className="h-3.5 w-3.5 text-muted-foreground shrink-0" /> Header
+                    <ChevronDown className={`h-3 w-3 ml-auto text-muted-foreground transition-transform ${openTool === "header-block" ? "rotate-180" : ""}`} />
+                  </button>
+                  {openTool === "header-block" && (
+                    <div className="mt-1 p-1.5 border rounded-md bg-gray-900 border-gray-700 text-gray-200">
+                      {hasHeaderBlock ? (
+                        <div className="flex flex-col gap-2">
+                          {renderBlockSelector("header")}
+                          {renderBlockSettings("header")}
+                          <button type="button"
+                            onClick={() => { const id = view === "desktop" ? activeHeaderId.desktop : activeHeaderId.mobile; if (id) removeBlock("header", id); }}
+                            className="flex items-center justify-center gap-1.5 h-7 rounded border border-gray-700 text-xs text-red-400">
+                            <Trash2 className="h-3 w-3" /> Remove header
+                          </button>
+                        </div>
+                      ) : (
+                        <button type="button" onClick={() => addBlock("header")}
+                          className="w-full flex flex-col items-center justify-center gap-1 h-14 rounded border border-gray-700 bg-gray-800 text-gray-200 transition-colors">
+                          <ArrowUpToLine className="h-4 w-4 text-muted-foreground" />
+                          <span className="text-[11px]">+ Add Header</span>
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Footer — same pattern as Header, docked to the bottom by default. */}
+                <div>
+                  <button type="button" onClick={() => setOpenTool(openTool === "footer-block" ? null : "footer-block")}
+                    className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md border text-xs transition-colors text-left text-gray-200 ${openTool === "footer-block" ? "border-white bg-gray-700" : "border-gray-700 hover:bg-gray-700"}`}>
+                    <ArrowDownToLine className="h-3.5 w-3.5 text-muted-foreground shrink-0" /> Footer
+                    <ChevronDown className={`h-3 w-3 ml-auto text-muted-foreground transition-transform ${openTool === "footer-block" ? "rotate-180" : ""}`} />
+                  </button>
+                  {openTool === "footer-block" && (
+                    <div className="mt-1 p-1.5 border rounded-md bg-gray-900 border-gray-700 text-gray-200">
+                      {hasFooterBlock ? (
+                        <div className="flex flex-col gap-2">
+                          {renderBlockSelector("footer")}
+                          {renderBlockSettings("footer")}
+                          <button type="button"
+                            onClick={() => { const id = view === "desktop" ? activeFooterId.desktop : activeFooterId.mobile; if (id) removeBlock("footer", id); }}
+                            className="flex items-center justify-center gap-1.5 h-7 rounded border border-gray-700 text-xs text-red-400">
+                            <Trash2 className="h-3 w-3" /> Remove footer
+                          </button>
+                        </div>
+                      ) : (
+                        <button type="button" onClick={() => addBlock("footer")}
+                          className="w-full flex flex-col items-center justify-center gap-1 h-14 rounded border border-gray-700 bg-gray-800 text-gray-200 transition-colors">
+                          <ArrowDownToLine className="h-4 w-4 text-muted-foreground" />
+                          <span className="text-[11px]">+ Add Footer</span>
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Component group — Text/Shape/Image/Button/Icon */}
+                <div>
+                  <button type="button" onClick={() => setOpenGroup(openGroup === "component" ? null : "component")}
+                    className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md border text-xs font-semibold transition-colors text-left text-gray-100 ${openGroup === "component" ? "border-white bg-gray-700" : "border-gray-700 bg-gray-800"}`}>
+                    <ComponentIcon className="h-3.5 w-3.5 text-muted-foreground shrink-0" /> Component
+                    <ChevronDown className={`h-3 w-3 ml-auto text-muted-foreground transition-transform ${openGroup === "component" ? "rotate-180" : ""}`} />
+                  </button>
+                </div>
+                {openGroup === "component" && (
+                  <div className="flex flex-col gap-1.5 pl-2 border-l border-gray-700 ml-1.5">
                 {/* Text */}
                 <div>
                   <button type="button" onClick={() => setOpenTool(openTool === "text" ? null : "text")}
@@ -5704,69 +5952,6 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                   )}
                 </div>
 
-                {/* Header — a component like any other: click to add, click
-                    again to edit its position/size/colour/rotation/scroll
-                    behaviour. Multiple can exist (see renderBlockSelector's
-                    pills below); the block's own content is edited directly
-                    on the canvas, exactly like Template's content. */}
-                <div>
-                  <button type="button" onClick={() => setOpenTool(openTool === "header-block" ? null : "header-block")}
-                    className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md border text-xs transition-colors text-left text-gray-200 ${openTool === "header-block" ? "border-white bg-gray-700" : "border-gray-700 hover:bg-gray-700"}`}>
-                    <ArrowUpToLine className="h-3.5 w-3.5 text-muted-foreground shrink-0" /> Header
-                    <ChevronDown className={`h-3 w-3 ml-auto text-muted-foreground transition-transform ${openTool === "header-block" ? "rotate-180" : ""}`} />
-                  </button>
-                  {openTool === "header-block" && (
-                    <div className="mt-1 p-1.5 border rounded-md bg-gray-900 border-gray-700 text-gray-200">
-                      {hasHeaderBlock ? (
-                        <div className="flex flex-col gap-2">
-                          {renderBlockSelector("header")}
-                          {renderBlockSettings("header")}
-                          <button type="button"
-                            onClick={() => { const id = view === "desktop" ? activeHeaderId.desktop : activeHeaderId.mobile; if (id) removeBlock("header", id); }}
-                            className="flex items-center justify-center gap-1.5 h-7 rounded border border-gray-700 text-xs text-red-400">
-                            <Trash2 className="h-3 w-3" /> Remove header
-                          </button>
-                        </div>
-                      ) : (
-                        <button type="button" onClick={() => addBlock("header")}
-                          className="w-full flex flex-col items-center justify-center gap-1 h-14 rounded border border-gray-700 bg-gray-800 text-gray-200 transition-colors">
-                          <ArrowUpToLine className="h-4 w-4 text-muted-foreground" />
-                          <span className="text-[11px]">+ Add Header</span>
-                        </button>
-                      )}
-                    </div>
-                  )}
-                </div>
-
-                {/* Footer — same pattern as Header, docked to the bottom by default. */}
-                <div>
-                  <button type="button" onClick={() => setOpenTool(openTool === "footer-block" ? null : "footer-block")}
-                    className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md border text-xs transition-colors text-left text-gray-200 ${openTool === "footer-block" ? "border-white bg-gray-700" : "border-gray-700 hover:bg-gray-700"}`}>
-                    <ArrowDownToLine className="h-3.5 w-3.5 text-muted-foreground shrink-0" /> Footer
-                    <ChevronDown className={`h-3 w-3 ml-auto text-muted-foreground transition-transform ${openTool === "footer-block" ? "rotate-180" : ""}`} />
-                  </button>
-                  {openTool === "footer-block" && (
-                    <div className="mt-1 p-1.5 border rounded-md bg-gray-900 border-gray-700 text-gray-200">
-                      {hasFooterBlock ? (
-                        <div className="flex flex-col gap-2">
-                          {renderBlockSelector("footer")}
-                          {renderBlockSettings("footer")}
-                          <button type="button"
-                            onClick={() => { const id = view === "desktop" ? activeFooterId.desktop : activeFooterId.mobile; if (id) removeBlock("footer", id); }}
-                            className="flex items-center justify-center gap-1.5 h-7 rounded border border-gray-700 text-xs text-red-400">
-                            <Trash2 className="h-3 w-3" /> Remove footer
-                          </button>
-                        </div>
-                      ) : (
-                        <button type="button" onClick={() => addBlock("footer")}
-                          className="w-full flex flex-col items-center justify-center gap-1 h-14 rounded border border-gray-700 bg-gray-800 text-gray-200 transition-colors">
-                          <ArrowDownToLine className="h-4 w-4 text-muted-foreground" />
-                          <span className="text-[11px]">+ Add Footer</span>
-                        </button>
-                      )}
-                    </div>
-                  )}
-                </div>
 
                 {/* Image */}
                 <div>
@@ -6006,401 +6191,6 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                   )}
                 </div>
 
-                {/* Carousel */}
-                <div>
-                  <button type="button" onClick={() => setOpenTool(openTool === "carousel" ? null : "carousel")}
-                    className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md border text-xs transition-colors text-left text-gray-200 ${openTool === "carousel" ? "border-white bg-gray-700" : "border-gray-700 hover:bg-gray-700"}`}>
-                    <GalleryHorizontal className="h-3.5 w-3.5 text-muted-foreground shrink-0" /> Carousel
-                    <ChevronDown className={`h-3 w-3 ml-auto text-muted-foreground transition-transform ${openTool === "carousel" ? "rotate-180" : ""}`} />
-                  </button>
-                  {openTool === "carousel" && (
-                    <div className="mt-1 p-1.5 border rounded-md bg-gray-900 border-gray-700 text-gray-200">
-                      {selectedComp && selectedComp.type === "carousel" ? (() => {
-                        const items = selectedComp.carouselItems ?? [];
-                        return (
-                          <div className="flex flex-col">
-                            {renderTypeHeader(selectedComp)}
-                            {renderPropertySection("layout", "Layout", renderCommonFields(selectedComp))}
-                            {renderPropertySection("appearance", "Appearance", <>
-                            <div>
-                              <label className={sLabel}>Items ({items.length})</label>
-                              {items.length > 0 && (
-                                <div className="flex flex-col gap-1 mb-1.5">
-                                  {items.map((item, i) => (
-                                    <div key={item.id} className="flex gap-1.5 items-center p-1.5 border border-gray-700 rounded bg-gray-900 text-gray-200">
-                                      <div className="w-8 h-8 rounded bg-gray-100 overflow-hidden shrink-0 flex items-center justify-center">
-                                        {item.imageUrl ? <img src={item.imageUrl} alt="" className="w-full h-full object-cover" /> : <ImageIcon className="h-3.5 w-3.5 text-gray-300" />}
-                                      </div>
-                                      <div className="flex-1 min-w-0 flex flex-col gap-1">
-                                        <Input value={item.label ?? ""} onChange={(e) => updateCarouselItem(selectedComp.id, items, item.id, { label: e.target.value })} placeholder="Label" className="h-6 text-xs px-1.5" />
-                                        <Input value={item.link ?? ""} onChange={(e) => updateCarouselItem(selectedComp.id, items, item.id, { link: e.target.value })} placeholder="Link to page" className="h-6 text-xs px-1.5" />
-                                      </div>
-                                      <div className="flex flex-col shrink-0">
-                                        <button type="button" title="Move earlier" disabled={i === 0} onClick={() => moveCarouselItem(selectedComp.id, items, i, -1)} className="h-4 w-4 flex items-center justify-center disabled:opacity-20 hover:bg-muted hover:text-gray-900 rounded"><ChevronLeft className="h-3 w-3" /></button>
-                                        <button type="button" title="Move later" disabled={i === items.length - 1} onClick={() => moveCarouselItem(selectedComp.id, items, i, 1)} className="h-4 w-4 flex items-center justify-center disabled:opacity-20 hover:bg-muted hover:text-gray-900 rounded"><ChevronRight className="h-3 w-3" /></button>
-                                      </div>
-                                      <button type="button" title="Remove" onClick={() => removeCarouselItem(selectedComp.id, items, item.id)} className="text-destructive shrink-0 hover:bg-destructive/10 rounded p-0.5">
-                                        <Trash2 className="h-3.5 w-3.5" />
-                                      </button>
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
-                              <div className="grid grid-cols-2 gap-1.5">
-                                <button type="button"
-                                  onClick={() => { setShowCategoryPicker((v) => !v); if (!showCategoryPicker) loadCategoryOptions(); }}
-                                  className={`flex items-center justify-center gap-1 h-7 rounded border text-xs transition-colors ${showCategoryPicker ? "bg-black text-white border-black" : "border-gray-700 text-gray-200"}`}>
-                                  <Tag className="h-3 w-3" /> From Categories
-                                </button>
-                                <ImagePickerButton
-                                  label="Custom item" icon={ImageIcon}
-                                  buttonClassName="flex items-center justify-center gap-1 h-7 rounded border border-gray-700 text-xs text-gray-200 cursor-pointer w-full"
-                                  uploading={uploading} uploadProgress={uploadProgress}
-                                  assetItems={assetItems} assetsLoading={assetsLoading} loadAssets={loadAssets}
-                                  onUpload={uploadToAssets}
-                                  onSelect={(url) => updateComp(selectedComp.id, { carouselItems: [...items, { id: uid(), imageUrl: url, label: "", link: "" }] })}
-                                />
-                              </div>
-                              {showCategoryPicker && (
-                                <div className="mt-1.5 max-h-36 overflow-y-auto border border-gray-700 rounded bg-gray-900 text-gray-200 flex flex-col gap-0.5 p-1">
-                                  {loadingCategories ? (
-                                    <p className="text-[11px] text-muted-foreground p-1">Loading…</p>
-                                  ) : (categoryOptions ?? []).length === 0 ? (
-                                    <p className="text-[11px] text-muted-foreground p-1">No categories found.</p>
-                                  ) : (
-                                    (categoryOptions ?? []).map((cat) => (
-                                      <button key={cat.id} type="button" onClick={() => addCategoryItem(selectedComp.id, items, cat)}
-                                        className="flex items-center gap-1.5 text-left text-xs px-1.5 py-1 rounded hover:bg-muted hover:text-gray-900">
-                                        {cat.imageUrl ? <img src={cat.imageUrl} alt="" className="w-4 h-4 rounded object-cover shrink-0" /> : <Tag className="h-3 w-3 text-muted-foreground shrink-0" />}
-                                        <span className="truncate">{cat.name}</span>
-                                      </button>
-                                    ))
-                                  )}
-                                </div>
-                              )}
-                            </div>
-
-                            <div>
-                              <label className={sLabel}>Style</label>
-                              <div className="grid grid-cols-2 gap-1">
-                                <button type="button" onClick={() => updateComp(selectedComp.id, { carouselStyle: "zoom" })}
-                                  className={`text-[11px] py-1 rounded border ${(selectedComp.carouselStyle ?? "zoom") === "zoom" ? "bg-black text-white" : "hover:bg-muted hover:text-gray-900"}`}>
-                                  Zoom carousel
-                                </button>
-                                <button type="button" onClick={() => updateComp(selectedComp.id, { carouselStyle: "row" })}
-                                  className={`text-[11px] py-1 rounded border ${selectedComp.carouselStyle === "row" ? "bg-black text-white" : "hover:bg-muted hover:text-gray-900"}`}>
-                                  Category row
-                                </button>
-                              </div>
-                            </div>
-                            <div className="grid grid-cols-3 gap-1.5">
-                              <div>
-                                <label className={sLabel}>Item width</label>
-                                <Input type="number" min="40" max="600" value={selectedComp.carouselItemWidth ?? 160} onChange={(e) => updateComp(selectedComp.id, { carouselItemWidth: +e.target.value })} className="h-6 text-xs px-1.5" />
-                              </div>
-                              <div>
-                                <label className={sLabel}>Spacing</label>
-                                <Input type="number" min="0" max="100" value={selectedComp.carouselGap ?? 12} onChange={(e) => updateComp(selectedComp.id, { carouselGap: +e.target.value })} className="h-6 text-xs px-1.5" />
-                              </div>
-                              <div>
-                                <label className={sLabel}>Radius</label>
-                                <Input type="number" min="0" value={selectedComp.borderRadius ?? 12} onChange={(e) => updateComp(selectedComp.id, { borderRadius: +e.target.value })} className="h-6 text-xs px-1.5" />
-                              </div>
-                            </div>
-                            {(selectedComp.carouselStyle ?? "zoom") === "zoom" ? (
-                              <div>
-                                <label className={sLabel}>Center zoom</label>
-                                <div className="grid grid-cols-[1fr_54px] gap-1.5">
-                                  <input type="range" min="1" max="2" step="0.05" value={selectedComp.carouselZoom ?? 1.25} onChange={(e) => updateComp(selectedComp.id, { carouselZoom: +e.target.value })} className="w-full" />
-                                  <Input type="number" min="1" max="2" step="0.05" value={selectedComp.carouselZoom ?? 1.25} onChange={(e) => updateComp(selectedComp.id, { carouselZoom: +e.target.value })} className="h-6 text-xs px-1.5" />
-                                </div>
-                              </div>
-                            ) : (
-                              <ColorPicker label="Item background" value={selectedComp.carouselItemBg ?? "#eef2f6"} onChange={(v) => updateComp(selectedComp.id, { carouselItemBg: v })} />
-                            )}
-                            <ColorPicker label="Background" value={selectedComp.bgColor === "transparent" ? "#ffffff" : (selectedComp.bgColor ?? "#ffffff")} onChange={(v) => updateComp(selectedComp.id, { bgColor: v })} />
-                            </>)}
-                            {renderPropertySection("responsive", "Responsive", renderResponsiveHint())}
-                            {renderPropertySection("effects", "Effects", renderShadowBlurFields(selectedComp))}
-                          </div>
-                        );
-                      })() : (
-                        <button type="button" onClick={() => addCarousel()}
-                          className="w-full flex items-center justify-center gap-1.5 h-9 rounded border border-gray-700 bg-gray-800 transition-colors text-xs text-gray-200">
-                          <GalleryHorizontal className="h-4 w-4" /> Add Carousel
-                        </button>
-                      )}
-                    </div>
-                  )}
-                </div>
-
-                {/* Hero Carousel */}
-                <div>
-                  <button type="button" onClick={() => setOpenTool(openTool === "hero-carousel" ? null : "hero-carousel")}
-                    className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md border text-xs transition-colors text-left text-gray-200 ${openTool === "hero-carousel" ? "border-white bg-gray-700" : "border-gray-700 hover:bg-gray-700"}`}>
-                    <GalleryHorizontalEnd className="h-3.5 w-3.5 text-muted-foreground shrink-0" /> Hero Carousel
-                    <ChevronDown className={`h-3 w-3 ml-auto text-muted-foreground transition-transform ${openTool === "hero-carousel" ? "rotate-180" : ""}`} />
-                  </button>
-                  {openTool === "hero-carousel" && (
-                    <div className="mt-1 p-1.5 border rounded-md bg-gray-900 border-gray-700 text-gray-200">
-                      {selectedComp && selectedComp.type === "hero-carousel" ? (() => {
-                        const slides = selectedComp.heroSlides ?? [];
-                        return (
-                          <div className="flex flex-col">
-                            {renderTypeHeader(selectedComp)}
-                            {renderPropertySection("layout", "Layout", renderCommonFields(selectedComp))}
-                            {renderPropertySection("appearance", "Appearance", <>
-                            <div>
-                              <div className="flex items-center justify-between mb-1">
-                                <label className={sLabel + " mb-0"}>Slides ({slides.length})</label>
-                                <button type="button" onClick={() => addHeroSlide(selectedComp.id, slides)} className="text-[10px] px-1.5 py-0.5 rounded border hover:bg-muted hover:text-gray-900 flex items-center gap-1"><Plus className="h-3 w-3" /> Add</button>
-                              </div>
-                              <div className="flex flex-col gap-1.5">
-                                {slides.map((slide, i) => (
-                                  <div key={slide.id} className="flex flex-col gap-1 p-1.5 border border-gray-700 rounded bg-gray-900 text-gray-200">
-                                    <div className="flex gap-1.5 items-center">
-                                      <ImagePickerButton
-                                        label="Slide image"
-                                        buttonClassName="w-9 h-9 rounded bg-gray-100 overflow-hidden shrink-0 flex items-center justify-center cursor-pointer hover:opacity-80"
-                                        uploading={uploading} uploadProgress={uploadProgress}
-                                        assetItems={assetItems} assetsLoading={assetsLoading} loadAssets={loadAssets}
-                                        onUpload={uploadToAssets}
-                                        onSelect={(url) => updateHeroSlide(selectedComp.id, slides, slide.id, { imageUrl: url })}
-                                      >
-                                        {slide.imageUrl ? <img src={slide.imageUrl} alt="" className="w-full h-full object-cover" /> : <ImageIcon className="h-3.5 w-3.5 text-gray-300" />}
-                                      </ImagePickerButton>
-                                      <div className="flex-1 min-w-0 flex flex-col gap-1">
-                                        <Input value={slide.headline ?? ""} onChange={(e) => updateHeroSlide(selectedComp.id, slides, slide.id, { headline: e.target.value })} placeholder="Headline" className="h-6 text-xs px-1.5" />
-                                        <Input value={slide.subtext ?? ""} onChange={(e) => updateHeroSlide(selectedComp.id, slides, slide.id, { subtext: e.target.value })} placeholder="Subtext" className="h-6 text-xs px-1.5" />
-                                      </div>
-                                      <div className="flex flex-col shrink-0">
-                                        <button type="button" title="Move earlier" disabled={i === 0} onClick={() => moveHeroSlide(selectedComp.id, slides, i, -1)} className="h-4 w-4 flex items-center justify-center disabled:opacity-20 hover:bg-muted hover:text-gray-900 rounded"><ChevronLeft className="h-3 w-3" /></button>
-                                        <button type="button" title="Move later" disabled={i === slides.length - 1} onClick={() => moveHeroSlide(selectedComp.id, slides, i, 1)} className="h-4 w-4 flex items-center justify-center disabled:opacity-20 hover:bg-muted hover:text-gray-900 rounded"><ChevronRight className="h-3 w-3" /></button>
-                                      </div>
-                                      <button type="button" title="Remove" onClick={() => removeHeroSlide(selectedComp.id, slides, slide.id)} className="text-destructive shrink-0 hover:bg-destructive/10 rounded p-0.5">
-                                        <Trash2 className="h-3.5 w-3.5" />
-                                      </button>
-                                    </div>
-                                    <div className="grid grid-cols-2 gap-1">
-                                      <Input value={slide.buttonLabel ?? ""} onChange={(e) => updateHeroSlide(selectedComp.id, slides, slide.id, { buttonLabel: e.target.value })} placeholder="Button label" className="h-6 text-xs px-1.5" />
-                                      <Input value={slide.buttonLink ?? ""} onChange={(e) => updateHeroSlide(selectedComp.id, slides, slide.id, { buttonLink: e.target.value })} placeholder="Link to page" className="h-6 text-xs px-1.5" />
-                                    </div>
-                                  </div>
-                                ))}
-                                {slides.length === 0 && <p className="text-[11px] text-muted-foreground text-center py-2">No slides yet</p>}
-                              </div>
-                            </div>
-                            <div className="flex items-center justify-between">
-                              <label className={sLabel + " mb-0"}>Autoplay</label>
-                              <button type="button" onClick={() => updateComp(selectedComp.id, { heroAutoplay: !(selectedComp.heroAutoplay ?? true) })}
-                                className={`text-[11px] px-2 py-0.5 rounded border ${(selectedComp.heroAutoplay ?? true) ? "bg-black text-white border-black" : "hover:bg-muted hover:text-gray-900"}`}>
-                                {(selectedComp.heroAutoplay ?? true) ? "On" : "Off"}
-                              </button>
-                            </div>
-                            {(selectedComp.heroAutoplay ?? true) && (
-                              <div>
-                                <label className={sLabel}>Autoplay every (seconds)</label>
-                                <div className="grid grid-cols-[1fr_54px] gap-1.5">
-                                  <input type="range" min="3" max="10" step="0.5" value={selectedComp.heroAutoplaySeconds ?? 5} onChange={(e) => updateComp(selectedComp.id, { heroAutoplaySeconds: +e.target.value })} className="w-full" />
-                                  <Input type="number" min="3" max="10" step="0.5" value={selectedComp.heroAutoplaySeconds ?? 5} onChange={(e) => updateComp(selectedComp.id, { heroAutoplaySeconds: +e.target.value })} className="h-6 text-xs px-1.5" />
-                                </div>
-                              </div>
-                            )}
-                            <div className="grid grid-cols-2 gap-1.5">
-                              <button type="button" onClick={() => updateComp(selectedComp.id, { heroShowArrows: !(selectedComp.heroShowArrows ?? true) })}
-                                className={`text-[11px] py-1 rounded border ${(selectedComp.heroShowArrows ?? true) ? "bg-black text-white border-black" : "hover:bg-muted hover:text-gray-900"}`}>
-                                Arrows {(selectedComp.heroShowArrows ?? true) ? "On" : "Off"}
-                              </button>
-                              <button type="button" onClick={() => updateComp(selectedComp.id, { heroShowDots: !(selectedComp.heroShowDots ?? true) })}
-                                className={`text-[11px] py-1 rounded border ${(selectedComp.heroShowDots ?? true) ? "bg-black text-white border-black" : "hover:bg-muted hover:text-gray-900"}`}>
-                                Dots {(selectedComp.heroShowDots ?? true) ? "On" : "Off"}
-                              </button>
-                            </div>
-                            <div>
-                              <label className={sLabel}>Next-slide peek (%)</label>
-                              <div className="grid grid-cols-[1fr_54px] gap-1.5">
-                                <input type="range" min="0" max="20" value={selectedComp.heroPeekPercent ?? 6} onChange={(e) => updateComp(selectedComp.id, { heroPeekPercent: +e.target.value })} className="w-full" />
-                                <Input type="number" min="0" max="20" value={selectedComp.heroPeekPercent ?? 6} onChange={(e) => updateComp(selectedComp.id, { heroPeekPercent: +e.target.value })} className="h-6 text-xs px-1.5" />
-                              </div>
-                            </div>
-                            <div>
-                              <label className={sLabel}>Image overlay darkness (%)</label>
-                              <div className="grid grid-cols-[1fr_54px] gap-1.5">
-                                <input type="range" min="0" max="80" value={selectedComp.heroOverlayOpacity ?? 35} onChange={(e) => updateComp(selectedComp.id, { heroOverlayOpacity: +e.target.value })} className="w-full" />
-                                <Input type="number" min="0" max="80" value={selectedComp.heroOverlayOpacity ?? 35} onChange={(e) => updateComp(selectedComp.id, { heroOverlayOpacity: +e.target.value })} className="h-6 text-xs px-1.5" />
-                              </div>
-                            </div>
-                            <ColorPicker label="Headline color" value={selectedComp.heroHeadlineColor ?? "#ffffff"} onChange={(v) => updateComp(selectedComp.id, { heroHeadlineColor: v })} />
-                            <ColorPicker label="Subtext color" value={selectedComp.heroSubtextColor ?? "#f3f4f6"} onChange={(v) => updateComp(selectedComp.id, { heroSubtextColor: v })} />
-                            <ColorPicker label="Button background" value={selectedComp.heroCtaBgColor ?? "#ffffff"} onChange={(v) => updateComp(selectedComp.id, { heroCtaBgColor: v })} />
-                            <ColorPicker label="Button text" value={selectedComp.heroCtaFontColor ?? "#111111"} onChange={(v) => updateComp(selectedComp.id, { heroCtaFontColor: v })} />
-                            <ColorPicker label="Background" value={selectedComp.bgColor === "transparent" ? "#111827" : (selectedComp.bgColor ?? "#111827")} onChange={(v) => updateComp(selectedComp.id, { bgColor: v })} />
-                            </>)}
-                            {renderPropertySection("responsive", "Responsive", renderResponsiveHint())}
-                            {renderPropertySection("effects", "Effects", renderShadowBlurFields(selectedComp))}
-                          </div>
-                        );
-                      })() : (
-                        <button type="button" onClick={() => addHeroCarousel()}
-                          className="w-full flex items-center justify-center gap-1.5 h-9 rounded border border-gray-700 bg-gray-800 transition-colors text-xs text-gray-200">
-                          <GalleryHorizontalEnd className="h-4 w-4" /> Add Hero Carousel
-                        </button>
-                      )}
-                    </div>
-                  )}
-                </div>
-
-                {/* Category Carousel */}
-                <div>
-                  <button type="button" onClick={() => setOpenTool(openTool === "category-carousel" ? null : "category-carousel")}
-                    className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md border text-xs transition-colors text-left text-gray-200 ${openTool === "category-carousel" ? "border-white bg-gray-700" : "border-gray-700 hover:bg-gray-700"}`}>
-                    <LayoutGrid className="h-3.5 w-3.5 text-muted-foreground shrink-0" /> Category Carousel
-                    <ChevronDown className={`h-3 w-3 ml-auto text-muted-foreground transition-transform ${openTool === "category-carousel" ? "rotate-180" : ""}`} />
-                  </button>
-                  {openTool === "category-carousel" && (
-                    <div className="mt-1 p-1.5 border rounded-md bg-gray-900 border-gray-700 text-gray-200">
-                      {selectedComp && selectedComp.type === "category-carousel" ? (() => {
-                        const items = selectedComp.catCarouselItems ?? [];
-                        const cardStyle = selectedComp.catCarouselCardStyle ?? "image-first";
-                        return (
-                          <div className="flex flex-col">
-                            {renderTypeHeader(selectedComp)}
-                            {renderPropertySection("layout", "Layout", renderCommonFields(selectedComp))}
-                            {renderPropertySection("appearance", "Appearance", <>
-                            <div>
-                              <label className={sLabel}>Section title</label>
-                              <Input value={selectedComp.catCarouselTitle ?? ""} onChange={(e) => updateComp(selectedComp.id, { catCarouselTitle: e.target.value })} placeholder="e.g. Shop by Category" className="h-7 text-xs" />
-                            </div>
-                            <div>
-                              <label className={sLabel}>Section subtitle</label>
-                              <Input value={selectedComp.catCarouselSubtitle ?? ""} onChange={(e) => updateComp(selectedComp.id, { catCarouselSubtitle: e.target.value })} placeholder="Optional subtitle" className="h-7 text-xs" />
-                            </div>
-                            <div>
-                              <label className={sLabel}>Card style</label>
-                              <div className="grid grid-cols-3 gap-1">
-                                {([["image-first", "Image-first"], ["icon-text", "Icon + text"], ["split", "Split"]] as [CardStyle, string][]).map(([val, label]) => (
-                                  <button key={val} type="button" onClick={() => updateComp(selectedComp.id, { catCarouselCardStyle: val })}
-                                    className={`text-[10px] py-1 rounded border ${cardStyle === val ? "bg-black text-white border-black" : "hover:bg-muted hover:text-gray-900"}`}>
-                                    {label}
-                                  </button>
-                                ))}
-                              </div>
-                            </div>
-                            <div className="grid grid-cols-2 gap-1.5">
-                              <div>
-                                <label className={sLabel}>Aspect ratio</label>
-                                <div className="grid grid-cols-2 gap-1">
-                                  {(["1:1", "3:4"] as CardAspectRatio[]).map((val) => (
-                                    <button key={val} type="button" onClick={() => updateComp(selectedComp.id, { catCarouselAspectRatio: val })}
-                                      className={`text-[10px] py-1 rounded border ${(selectedComp.catCarouselAspectRatio ?? "1:1") === val ? "bg-black text-white border-black" : "hover:bg-muted hover:text-gray-900"}`}>
-                                      {val}
-                                    </button>
-                                  ))}
-                                </div>
-                              </div>
-                              <div>
-                                <label className={sLabel}>Corner radius</label>
-                                <Input type="number" min="0" max="40" value={selectedComp.catCarouselCornerRadius ?? 12} onChange={(e) => updateComp(selectedComp.id, { catCarouselCornerRadius: +e.target.value })} className="h-6 text-xs px-1.5" />
-                              </div>
-                            </div>
-                            <div className="grid grid-cols-2 gap-1.5">
-                              <button type="button" onClick={() => updateComp(selectedComp.id, { catCarouselShowDescriptor: !(selectedComp.catCarouselShowDescriptor ?? false) })}
-                                className={`text-[11px] py-1 rounded border ${(selectedComp.catCarouselShowDescriptor ?? false) ? "bg-black text-white border-black" : "hover:bg-muted hover:text-gray-900"}`}>
-                                Descriptor {(selectedComp.catCarouselShowDescriptor ?? false) ? "On" : "Off"}
-                              </button>
-                              <button type="button" onClick={() => updateComp(selectedComp.id, { catCarouselShowBadge: !(selectedComp.catCarouselShowBadge ?? false) })}
-                                className={`text-[11px] py-1 rounded border ${(selectedComp.catCarouselShowBadge ?? false) ? "bg-black text-white border-black" : "hover:bg-muted hover:text-gray-900"}`}>
-                                Badge {(selectedComp.catCarouselShowBadge ?? false) ? "On" : "Off"}
-                              </button>
-                            </div>
-                            <div>
-                              <label className={sLabel}>Snap scrolling</label>
-                              <div className="grid grid-cols-2 gap-1">
-                                {(["single", "double"] as SnapMode[]).map((val) => (
-                                  <button key={val} type="button" onClick={() => updateComp(selectedComp.id, { catCarouselSnapMode: val })}
-                                    className={`text-[10px] py-1 rounded border ${(selectedComp.catCarouselSnapMode ?? "single") === val ? "bg-black text-white border-black" : "hover:bg-muted hover:text-gray-900"}`}>
-                                    {val === "single" ? "Per card" : "Per 2 cards"}
-                                  </button>
-                                ))}
-                              </div>
-                            </div>
-                            <div className="grid grid-cols-3 gap-1.5">
-                              <div>
-                                <label className={sLabel}>Desktop cards</label>
-                                <Input type="number" min="3" max="5" value={selectedComp.catCarouselDesktopCards ?? 4} onChange={(e) => updateComp(selectedComp.id, { catCarouselDesktopCards: Math.max(3, Math.min(5, +e.target.value)) })} className="h-6 text-xs px-1.5" />
-                              </div>
-                              <div>
-                                <label className={sLabel}>Gap desktop</label>
-                                <Input type="number" min="0" value={selectedComp.catCarouselGapDesktop ?? 16} onChange={(e) => updateComp(selectedComp.id, { catCarouselGapDesktop: +e.target.value })} className="h-6 text-xs px-1.5" />
-                              </div>
-                              <div>
-                                <label className={sLabel}>Gap mobile</label>
-                                <Input type="number" min="0" value={selectedComp.catCarouselGapMobile ?? 12} onChange={(e) => updateComp(selectedComp.id, { catCarouselGapMobile: +e.target.value })} className="h-6 text-xs px-1.5" />
-                              </div>
-                            </div>
-                            <ColorPicker label="Title color" value={selectedComp.catCarouselTitleColor ?? "#111111"} onChange={(v) => updateComp(selectedComp.id, { catCarouselTitleColor: v })} />
-                            <ColorPicker label="Subtitle color" value={selectedComp.catCarouselSubtitleColor ?? "#6b7280"} onChange={(v) => updateComp(selectedComp.id, { catCarouselSubtitleColor: v })} />
-                            <div>
-                              <div className="flex items-center justify-between mb-1">
-                                <label className={sLabel + " mb-0"}>Categories ({items.length})</label>
-                                <button type="button" onClick={() => addCatCarouselItem(selectedComp.id, items)} className="text-[10px] px-1.5 py-0.5 rounded border hover:bg-muted hover:text-gray-900 flex items-center gap-1"><Plus className="h-3 w-3" /> Add</button>
-                              </div>
-                              <div className="flex flex-col gap-1.5">
-                                {items.map((item, i) => (
-                                  <div key={item.id} className="flex flex-col gap-1 p-1.5 border border-gray-700 rounded bg-gray-900 text-gray-200">
-                                    <div className="flex gap-1.5 items-center">
-                                      <ImagePickerButton
-                                        label="Category image"
-                                        buttonClassName="w-9 h-9 rounded bg-gray-100 overflow-hidden shrink-0 flex items-center justify-center cursor-pointer hover:opacity-80"
-                                        uploading={uploading} uploadProgress={uploadProgress}
-                                        assetItems={assetItems} assetsLoading={assetsLoading} loadAssets={loadAssets}
-                                        onUpload={uploadToAssets}
-                                        onSelect={(url) => updateCatCarouselItem(selectedComp.id, items, item.id, { imageUrl: url })}
-                                      >
-                                        {item.imageUrl ? <img src={item.imageUrl} alt="" className="w-full h-full object-cover" /> : <ImageIcon className="h-3.5 w-3.5 text-gray-300" />}
-                                      </ImagePickerButton>
-                                      <div className="flex-1 min-w-0 flex flex-col gap-1">
-                                        <Input value={item.name ?? ""} onChange={(e) => updateCatCarouselItem(selectedComp.id, items, item.id, { name: e.target.value })} placeholder="Category name" className="h-6 text-xs px-1.5" />
-                                        <Input value={item.link ?? ""} onChange={(e) => updateCatCarouselItem(selectedComp.id, items, item.id, { link: e.target.value })} placeholder="Link to page" className="h-6 text-xs px-1.5" />
-                                      </div>
-                                      <div className="flex flex-col shrink-0">
-                                        <button type="button" title="Move earlier" disabled={i === 0} onClick={() => moveCatCarouselItem(selectedComp.id, items, i, -1)} className="h-4 w-4 flex items-center justify-center disabled:opacity-20 hover:bg-muted hover:text-gray-900 rounded"><ChevronLeft className="h-3 w-3" /></button>
-                                        <button type="button" title="Move later" disabled={i === items.length - 1} onClick={() => moveCatCarouselItem(selectedComp.id, items, i, 1)} className="h-4 w-4 flex items-center justify-center disabled:opacity-20 hover:bg-muted hover:text-gray-900 rounded"><ChevronRight className="h-3 w-3" /></button>
-                                      </div>
-                                      <button type="button" title="Remove" onClick={() => removeCatCarouselItem(selectedComp.id, items, item.id)} className="text-destructive shrink-0 hover:bg-destructive/10 rounded p-0.5">
-                                        <Trash2 className="h-3.5 w-3.5" />
-                                      </button>
-                                    </div>
-                                    {((selectedComp.catCarouselShowDescriptor ?? false) || (selectedComp.catCarouselShowBadge ?? false)) && (
-                                      <div className="grid grid-cols-2 gap-1">
-                                        {(selectedComp.catCarouselShowDescriptor ?? false) && (
-                                          <Input value={item.descriptor ?? ""} onChange={(e) => updateCatCarouselItem(selectedComp.id, items, item.id, { descriptor: e.target.value })} placeholder="Descriptor" className="h-6 text-xs px-1.5" />
-                                        )}
-                                        {(selectedComp.catCarouselShowBadge ?? false) && (
-                                          <Input value={item.badge ?? ""} onChange={(e) => updateCatCarouselItem(selectedComp.id, items, item.id, { badge: e.target.value })} placeholder="Badge, e.g. New" className="h-6 text-xs px-1.5" />
-                                        )}
-                                      </div>
-                                    )}
-                                  </div>
-                                ))}
-                                {items.length === 0 && <p className="text-[11px] text-muted-foreground text-center py-2">No categories yet</p>}
-                              </div>
-                            </div>
-                            </>)}
-                            {renderPropertySection("responsive", "Responsive", renderResponsiveHint())}
-                            {renderPropertySection("effects", "Effects", renderShadowBlurFields(selectedComp))}
-                          </div>
-                        );
-                      })() : (
-                        <button type="button" onClick={() => addCategoryCarousel()}
-                          className="w-full flex items-center justify-center gap-1.5 h-9 rounded border border-gray-700 bg-gray-800 transition-colors text-xs text-gray-200">
-                          <LayoutGrid className="h-4 w-4" /> Add Category Carousel
-                        </button>
-                      )}
-                    </div>
-                  )}
-                </div>
-
                 {/* Icon */}
                 <div>
                   <button type="button" onClick={() => setOpenTool(openTool === "icon" ? null : "icon")}
@@ -6417,7 +6207,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                           {renderPropertySection("appearance", "Appearance", <>
                             <div>
                               <label className={sLabel}>Icon</label>
-                              {renderIconPicker((id) => updateComp(selectedComp.id, { iconName: id }), selectedComp.iconName)}
+                              {renderIconAssetPicker((url) => updateComp(selectedComp.id, { iconUrl: url }), selectedComp.iconUrl)}
                             </div>
                             <ColorPicker label="Color" value={selectedComp.fontColor ?? "#111111"} onChange={(v) => updateComp(selectedComp.id, { fontColor: v })} />
                             <div>
@@ -6439,12 +6229,25 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                           {renderPropertySection("effects", "Effects", renderShadowBlurFields(selectedComp))}
                         </div>
                       ) : (
-                        renderIconPicker(addIcon)
+                        renderIconAssetPicker(addIcon)
                       )}
                     </div>
                   )}
                 </div>
+                  </div>
+                )}
 
+                {/* Travel Component group — Map/Location Picker/Date & Time
+                    Picker/Vehicle Selector/Driver Badge/Fare Details */}
+                <div>
+                  <button type="button" onClick={() => setOpenGroup(openGroup === "travel" ? null : "travel")}
+                    className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md border text-xs font-semibold transition-colors text-left text-gray-100 ${openGroup === "travel" ? "border-white bg-gray-700" : "border-gray-700 bg-gray-800"}`}>
+                    <MapPin className="h-3.5 w-3.5 text-muted-foreground shrink-0" /> Travel Component
+                    <ChevronDown className={`h-3 w-3 ml-auto text-muted-foreground transition-transform ${openGroup === "travel" ? "rotate-180" : ""}`} />
+                  </button>
+                </div>
+                {openGroup === "travel" && (
+                  <div className="flex flex-col gap-1.5 pl-2 border-l border-gray-700 ml-1.5">
                 {/* Location Input */}
                 <div>
                   <button type="button" onClick={() => setOpenTool(openTool === "location-input" ? null : "location-input")}
@@ -6777,6 +6580,8 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                     </div>
                   )}
                 </div>
+                  </div>
+                )}
 
               </div>
 
@@ -6795,12 +6600,12 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                 <p className={sLabel}>Logo & Favicon</p>
 
                 <div>
-                  <label className="text-[10px] text-muted-foreground block mb-1 uppercase tracking-wide">Logo</label>
+                  <label className="text-[10px] text-gray-400 block mb-1 uppercase tracking-wide">Logo</label>
                   <div className="flex items-center gap-2">
                     <button type="button" onClick={() => logoInputRef.current?.click()}
                       className="h-12 w-12 shrink-0 rounded border border-dashed border-gray-700 bg-gray-900 flex items-center justify-center overflow-hidden transition-colors">
                       {logoUploading ? (
-                        <span className="text-[9px] text-muted-foreground">…</span>
+                        <span className="text-[9px] text-gray-400">…</span>
                       ) : siteSettings.logoUrl ? (
                         <img src={siteSettings.logoUrl} alt="" className="max-h-full max-w-full object-contain" />
                       ) : (
@@ -6808,11 +6613,11 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                       )}
                     </button>
                     <div className="flex-1 flex flex-col gap-1">
-                      <button type="button" onClick={() => logoInputRef.current?.click()} className="text-[11px] px-2 py-1 rounded border hover:bg-muted hover:text-gray-900 text-left">
+                      <button type="button" onClick={() => logoInputRef.current?.click()} className="text-[11px] px-2 py-1 rounded border border-gray-700 text-gray-200 text-left">
                         {siteSettings.logoUrl ? "Replace logo" : "Upload logo"}
                       </button>
                       {siteSettings.logoUrl && (
-                        <button type="button" onClick={() => updateSiteSettings({ logoUrl: null })} className="text-[11px] text-muted-foreground hover:text-destructive text-left">
+                        <button type="button" onClick={() => updateSiteSettings({ logoUrl: null })} className="text-[11px] text-gray-400 hover:text-destructive text-left">
                           Remove
                         </button>
                       )}
@@ -6823,6 +6628,13 @@ export function PageEditor({ slug, label }: PageEditorProps) {
 
                   {siteSettings.logoUrl && (
                     <div className="mt-2 flex flex-col gap-1.5">
+                      {/* Item 3: the logo is no longer auto-attached to a header —
+                          this places it as a freely draggable/resizable component,
+                          same as clicking "+ Add Image". */}
+                      <button type="button" onClick={() => addLogo()}
+                        className="flex items-center justify-center gap-1.5 h-7 rounded border border-gray-700 bg-gray-800 text-gray-200 text-[11px]">
+                        <Plus className="h-3 w-3" /> Place Logo on Canvas
+                      </button>
                       <div>
                         <label className={sLabel}>Width (px)</label>
                         <Input type="number" min="20" max="600" value={siteSettings.logoWidth}
@@ -6833,7 +6645,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                         <div className="grid grid-cols-3 gap-1">
                           {(["left", "center", "right"] as const).map((a) => (
                             <button key={a} type="button" onClick={() => updateSiteSettings({ logoAlign: a })}
-                              className={`text-[11px] py-0.5 rounded border capitalize ${siteSettings.logoAlign === a ? "bg-black text-white" : "hover:bg-muted hover:text-gray-900"}`}>
+                              className={`text-[11px] py-0.5 rounded border capitalize ${siteSettings.logoAlign === a ? "bg-black text-white border-black" : "border-gray-700 text-gray-300"}`}>
                               {a}
                             </button>
                           ))}
@@ -6849,12 +6661,12 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                 </div>
 
                 <div>
-                  <label className="text-[10px] text-muted-foreground block mb-1 uppercase tracking-wide">Favicon</label>
+                  <label className="text-[10px] text-gray-400 block mb-1 uppercase tracking-wide">Favicon</label>
                   <div className="flex items-center gap-2">
                     <button type="button" onClick={() => faviconInputRef.current?.click()}
                       className="h-8 w-8 shrink-0 rounded border border-dashed border-gray-700 bg-gray-900 flex items-center justify-center overflow-hidden transition-colors">
                       {faviconUploading ? (
-                        <span className="text-[8px] text-muted-foreground">…</span>
+                        <span className="text-[8px] text-gray-400">…</span>
                       ) : siteSettings.faviconUrl ? (
                         <img src={siteSettings.faviconUrl} alt="" className="max-h-full max-w-full object-contain" />
                       ) : (
@@ -6862,11 +6674,11 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                       )}
                     </button>
                     <div className="flex-1 flex flex-col gap-1">
-                      <button type="button" onClick={() => faviconInputRef.current?.click()} className="text-[11px] px-2 py-1 rounded border hover:bg-muted hover:text-gray-900 text-left">
+                      <button type="button" onClick={() => faviconInputRef.current?.click()} className="text-[11px] px-2 py-1 rounded border border-gray-700 text-gray-200 text-left">
                         {siteSettings.faviconUrl ? "Replace favicon" : "Upload favicon"}
                       </button>
                       {siteSettings.faviconUrl && (
-                        <button type="button" onClick={() => updateSiteSettings({ faviconUrl: null })} className="text-[11px] text-muted-foreground hover:text-destructive text-left">
+                        <button type="button" onClick={() => updateSiteSettings({ faviconUrl: null })} className="text-[11px] text-gray-400 hover:text-destructive text-left">
                           Remove
                         </button>
                       )}
@@ -6874,6 +6686,19 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                   </div>
                   <input ref={faviconInputRef} type="file" accept="image/*" className="hidden"
                     onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFaviconUpload(f); e.target.value = ""; }} />
+
+                  {siteSettings.faviconUrl && (
+                    <div className="mt-2 flex flex-col gap-1.5">
+                      <button type="button" onClick={applyFavicon} disabled={faviconStatus === "applying"}
+                        className="flex items-center justify-center gap-1.5 h-7 rounded border border-gray-700 bg-gray-800 text-gray-200 text-[11px] disabled:opacity-50">
+                        {faviconStatus === "applying" ? "Applying…" : "Apply"}
+                      </button>
+                      <button type="button" onClick={publishFavicon} disabled={faviconStatus === "publishing"}
+                        className="flex items-center justify-center gap-1.5 h-7 rounded text-white text-[11px] disabled:opacity-50" style={{ backgroundColor: "#6366f1" }}>
+                        {faviconStatus === "publishing" ? "Publishing…" : faviconStatus === "published" ? "Published ✓" : "Publish"}
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
 

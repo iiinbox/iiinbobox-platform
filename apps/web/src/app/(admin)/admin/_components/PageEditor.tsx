@@ -40,13 +40,13 @@ type ViewMode = "desktop" | "mobile";
 // Template is this page's own unique content. Not to be confused with the
 // unrelated PageComponent `type: "header"` (a heading/text component type).
 type Zone = "header" | "template" | "footer";
-// One header or footer block's editor-side metadata — mirrors
-// lib/page-template-zones.ts's HeaderFooterBlock, but with real PageComponent
+// One header or footer block's metadata — mirrors lib/page-template-zones.ts's
+// HeaderFooterBlock exactly (same fields), but with real PageComponent
 // children (richer than the shared ZoneComponent shape) since this is what
 // actually flows through addComponent/updateComp/etc. Multiple blocks of each
-// kind can exist per page per viewport; only one header and one footer are
-// "active" (edited on the header/footer zone-canvas) at a time — see
-// activeHeaderId/activeFooterId and setActiveBlock().
+// kind can exist per page per viewport; ALL of them render simultaneously and
+// are simultaneously interactive on the one canvas — there's no more "active"
+// block concept.
 interface BlockMeta {
   id: string;
   kind: "header" | "footer";
@@ -1420,6 +1420,8 @@ function componentTypeLabel(type: ComponentType): string {
     case "fare-display": return "Fare Display";
     case "hero-carousel": return "Hero Carousel";
     case "category-carousel": return "Category Carousel";
+    case "header-block": return "Header";
+    case "footer-block": return "Footer";
     default: return "Button";
   }
 }
@@ -1737,8 +1739,8 @@ function ColorPicker({ label, value, onChange }: { label: string; value: string;
     <div>
       <label className="text-[10px] text-muted-foreground block mb-0.5 uppercase tracking-wide">{label}</label>
       <div className="flex items-center gap-1">
-        <input type="color" value={value} onChange={(e) => { onChange(e.target.value); setHex(e.target.value); }} className="h-6 w-7 rounded cursor-pointer border p-0.5 shrink-0" />
-        <input type="text" value={hex} onChange={(e) => setHex(e.target.value)} onBlur={(e) => commit(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") commit((e.target as HTMLInputElement).value); }} className="flex-1 h-6 text-[11px] border rounded px-1.5 font-mono min-w-0" maxLength={7} placeholder="#000000" />
+        <input type="color" value={value} onChange={(e) => { onChange(e.target.value); setHex(e.target.value); }} className="h-6 w-7 rounded cursor-pointer border border-gray-700 bg-gray-900 p-0.5 shrink-0" />
+        <input type="text" value={hex} onChange={(e) => setHex(e.target.value)} onBlur={(e) => commit(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") commit((e.target as HTMLInputElement).value); }} className="flex-1 h-6 text-[11px] border border-gray-700 bg-gray-900 text-gray-100 rounded px-1.5 font-mono min-w-0" maxLength={7} placeholder="#000000" />
       </div>
     </div>
   );
@@ -1750,13 +1752,13 @@ function renderStepperInput(value: number, step: number, min: number, max: numbe
   const round = (v: number) => Math.round(v / step) * step;
   return (
     <div className="flex items-center gap-1">
-      <button type="button" onClick={() => onChange(clamp(round(value - step)))} className="h-6 w-6 shrink-0 flex items-center justify-center rounded border hover:bg-muted hover:text-gray-900">
+      <button type="button" onClick={() => onChange(clamp(round(value - step)))} className="h-6 w-6 shrink-0 flex items-center justify-center rounded border border-gray-700">
         <Minus className="h-3 w-3" />
       </button>
       <Input type="number" step={step} min={min} max={max} value={value}
         onChange={(e) => { const v = +e.target.value; if (Number.isFinite(v)) onChange(clamp(v)); }}
         className="h-6 text-xs px-1 text-center" />
-      <button type="button" onClick={() => onChange(clamp(round(value + step)))} className="h-6 w-6 shrink-0 flex items-center justify-center rounded border hover:bg-muted hover:text-gray-900">
+      <button type="button" onClick={() => onChange(clamp(round(value + step)))} className="h-6 w-6 shrink-0 flex items-center justify-center rounded border border-gray-700">
         <Plus className="h-3 w-3" />
       </button>
     </div>
@@ -2038,7 +2040,6 @@ export function PageEditor({ slug, label }: PageEditorProps) {
   const [blocksMobile, setBlocksMobile] = useState<BlockMeta[]>([]);
   const [activeHeaderId, setActiveHeaderId] = useState<{ desktop: string | null; mobile: string | null }>({ desktop: null, mobile: null });
   const [activeFooterId, setActiveFooterId] = useState<{ desktop: string | null; mobile: string | null }>({ desktop: null, mobile: null });
-  const [footerSettingsOpen, setFooterSettingsOpen] = useState(false);
   const [blockHideUpPxDraft, setBlockHideUpPxDraft] = useState<string | null>(null);
   const [blockHideDownPxDraft, setBlockHideDownPxDraft] = useState<string | null>(null);
   // Canvas Background — page-level (not per-zone), stored alongside name/header/
@@ -2117,7 +2118,6 @@ export function PageEditor({ slug, label }: PageEditorProps) {
       if (result) updateSiteSettings({ faviconUrl: result.url, faviconContentType: result.contentType });
     } finally { setFaviconUploading(false); }
   }
-  const [headerSettingsOpen, setHeaderSettingsOpen] = useState(false);
   const [footerDesktopComponents, setFooterDesktopComponents] = useState<PageComponent[]>([]);
   const [footerMobileComponents, setFooterMobileComponents] = useState<PageComponent[]>([]);
   const [pageLabel, setPageLabel] = useState(label ?? "");
@@ -4020,20 +4020,20 @@ export function PageEditor({ slug, label }: PageEditorProps) {
     }
 
     return (
-      <div className="mx-1 mb-1 p-2 rounded-md border bg-muted/30 flex flex-col gap-2">
+      <div className="mx-1 mb-1 p-2 rounded-md border border-gray-700 bg-gray-900 text-gray-200 flex flex-col gap-2">
         <div>
-          <label className="text-[10px] text-muted-foreground block mb-1 uppercase tracking-wide">Position</label>
+          <label className="text-[10px] text-gray-400 block mb-1 uppercase tracking-wide">Position</label>
           <div className="grid grid-cols-4 gap-1">
             {(["top", "bottom", "left", "right"] as const).map((d) => (
               <button key={d} type="button" onClick={() => patch({ dock: d })}
-                className={`h-6 text-[10px] rounded border capitalize ${block.dock === d ? "bg-black text-white border-black" : "border-gray-200 hover:bg-muted hover:text-gray-900"}`}>
+                className={`h-6 text-[10px] rounded border capitalize ${block.dock === d ? "bg-black text-white border-black" : "border-gray-700"}`}>
                 {d}
               </button>
             ))}
           </div>
         </div>
         <div>
-          <label className="text-[10px] text-muted-foreground block mb-1 uppercase tracking-wide">
+          <label className="text-[10px] text-gray-400 block mb-1 uppercase tracking-wide">
             Size ({block.dock === "left" || block.dock === "right" ? "width" : "height"})
           </label>
           {renderStepperInput(block.size, 10, 20, 2000, (v) => patch({ size: v }))}
@@ -4042,16 +4042,16 @@ export function PageEditor({ slug, label }: PageEditorProps) {
         {renderPxField("Hide on scroll down (px)", block.hideOnScrollDownPx, blockHideDownPxDraft, setBlockHideDownPxDraft, (v) => patch({ hideOnScrollDownPx: v }))}
         {renderPxField("Hide on scroll up (px)", block.hideOnScrollUpPx, blockHideUpPxDraft, setBlockHideUpPxDraft, (v) => patch({ hideOnScrollUpPx: v }))}
         <div>
-          <label className="text-[10px] text-muted-foreground block mb-1 uppercase tracking-wide">Rotation</label>
+          <label className="text-[10px] text-gray-400 block mb-1 uppercase tracking-wide">Rotation</label>
           <div className="flex items-center gap-1">
             {([0, 90, 180, 270] as const).map((deg) => (
               <button key={deg} type="button" onClick={() => patch({ rotation: deg })}
-                className={`flex-1 h-6 text-[10px] rounded border ${block.rotation === deg ? "bg-black text-white border-black" : "border-gray-200 hover:bg-muted hover:text-gray-900"}`}>
+                className={`flex-1 h-6 text-[10px] rounded border ${block.rotation === deg ? "bg-black text-white border-black" : "border-gray-700"}`}>
                 {deg}°
               </button>
             ))}
           </div>
-          <p className="text-[9px] text-muted-foreground mt-1">Only the bar rotates — its contents stay upright.</p>
+          <p className="text-[9px] text-gray-400 mt-1">Only the bar rotates — its contents stay upright.</p>
         </div>
       </div>
     );
@@ -4097,7 +4097,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
         <div className="flex">
           <div
             ref={(el) => { canvasElRefs.current[zone] = el; }}
-            className="relative shadow-sm select-none flex-1 min-w-0"
+            className="relative select-none flex-1 min-w-0"
             style={{ aspectRatio: `${canvasW} / ${zCanvasH}`, backgroundColor: zone === "template" ? canvasBgColor : (activeBlock(zone as "header" | "footer")?.bgColor ?? "#ffffff") }}
             onMouseDown={(e) => onCanvasMouseDown(e, zone)}
             onDragOver={(e) => {
@@ -4641,28 +4641,18 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                         ? allZoneComps.filter((c) => (c.name?.trim() || componentTypeLabel(c.type)).toLowerCase().includes(query))
                         : allZoneComps;
                       const zoneIsExpanded = query ? true : expandedZones[zone];
-                      // Header/Footer are optional now — no strip at all until "+ Add
-                      // Header"/"+ Add Footer" is clicked (Template always exists; it's
-                      // the one mandatory zone every page has). A page can have any
-                      // number of each (see addBlock/renderBlockSelector) — this empty
-                      // state only shows before the FIRST one exists.
+                      // Header/Footer are optional now, added via the ADD COMPONENT
+                      // list (like any other component) rather than a dedicated
+                      // link here — so this row simply doesn't render at all until
+                      // one exists (Template always exists; it's the one mandatory
+                      // zone every page has).
                       const zoneHasAnyBlock = zone === "header"
                         ? (view === "desktop" ? activeHeaderId.desktop : activeHeaderId.mobile) !== null
                         : zone === "footer"
                         ? (view === "desktop" ? activeFooterId.desktop : activeFooterId.mobile) !== null
                         : true;
                       if ((zone === "header" || zone === "footer") && !zoneHasAnyBlock) {
-                        return (
-                          <div key={zone} className="flex flex-col gap-0.5">
-                            <button
-                              type="button"
-                              onClick={() => addBlock(zone)}
-                              className="flex items-center gap-1.5 px-1 py-1.5 text-xs text-blue-600 hover:bg-blue-50 rounded-md"
-                            >
-                              <Plus className="h-3.5 w-3.5" /> Add {zoneLabel}
-                            </button>
-                          </div>
-                        );
+                        return null;
                       }
                       return (
                         <div key={zone} className="flex flex-col gap-0.5">
@@ -4675,30 +4665,6 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                             <span className="text-[10px] uppercase tracking-wide font-semibold text-muted-foreground flex-1 truncate">
                               {zoneLabel} {zoneComps.length > 0 && `(${zoneComps.length})`}
                             </span>
-                            {zone === "header" && (
-                              <>
-                                <button type="button" title="Header position/size/colour/scroll settings" onClick={() => setHeaderSettingsOpen((v) => !v)}
-                                  className={`p-1 rounded hover:bg-muted hover:text-gray-900 shrink-0 ${headerSettingsOpen ? "bg-muted text-foreground" : "text-muted-foreground"}`}>
-                                  <Settings className="h-3.5 w-3.5" />
-                                </button>
-                                <button type="button" title="Remove this header" onClick={() => { const id = (view === "desktop" ? activeHeaderId.desktop : activeHeaderId.mobile); if (id) removeBlock("header", id); }}
-                                  className="p-1 rounded hover:bg-muted hover:text-gray-900 shrink-0 text-muted-foreground hover:text-destructive">
-                                  <X className="h-3.5 w-3.5" />
-                                </button>
-                              </>
-                            )}
-                            {zone === "footer" && (
-                              <>
-                                <button type="button" title="Footer position/size/colour/scroll settings" onClick={() => setFooterSettingsOpen((v) => !v)}
-                                  className={`p-1 rounded hover:bg-muted hover:text-gray-900 shrink-0 ${footerSettingsOpen ? "bg-muted text-foreground" : "text-muted-foreground"}`}>
-                                  <Settings className="h-3.5 w-3.5" />
-                                </button>
-                                <button type="button" title="Remove this footer" onClick={() => { const id = (view === "desktop" ? activeFooterId.desktop : activeFooterId.mobile); if (id) removeBlock("footer", id); }}
-                                  className="p-1 rounded hover:bg-muted hover:text-gray-900 shrink-0 text-muted-foreground hover:text-destructive">
-                                  <X className="h-3.5 w-3.5" />
-                                </button>
-                              </>
-                            )}
                             <div className="relative shrink-0">
                               <button type="button" title={`Add to ${zoneLabel}`} onClick={() => setZoneAddMenuOpen((z) => (z === zone ? null : zone))} className="p-1 rounded hover:bg-muted hover:text-gray-900">
                                 <Plus className="h-3.5 w-3.5" />
@@ -4736,20 +4702,6 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                               )}
                             </div>
                           </div>
-
-                          {/* Which header/footer block (Header 1 / Header 2 / …) is
-                              currently active, when more than one exists — plus a "+"
-                              to add another. */}
-                          {zone === "header" && renderBlockSelector("header")}
-                          {zone === "footer" && renderBlockSelector("footer")}
-
-                          {/* Header/Footer position/size/colour/scroll/rotation settings —
-                              all live on the live site and in Preview. Fixed positioning
-                              is implicit whenever a header/footer block exists; the two
-                              scroll-hide px thresholds are independent (either, both, or
-                              neither can be enabled). */}
-                          {zone === "header" && headerSettingsOpen && renderBlockSettings("header")}
-                          {zone === "footer" && footerSettingsOpen && renderBlockSettings("footer")}
 
                           {/* Section rows within this zone, with tree connector lines */}
                           {zoneIsExpanded && (
@@ -4898,18 +4850,8 @@ export function PageEditor({ slug, label }: PageEditorProps) {
   }
 
   // ── JSX ─────────────────────────────────────────────────────────────────────
-  // Sticky-header/scrollable-body split (item 6): a header docked "top" at 0°
-  // rotation (the normal orientation) pins in place with its own dedicated
-  // scroll region below it, matching the live site's sticky-header behavior.
-  // Anything rotated or docked to a side is just a fixed panel with no scroll
-  // region carved out for it — see renderZoneCanvas's own dock-relative
-  // positioning for how a left/right block still stays put.
   const hasHeaderBlock = (view === "desktop" ? activeHeaderId.desktop : activeHeaderId.mobile) !== null;
   const hasFooterBlock = (view === "desktop" ? activeFooterId.desktop : activeFooterId.mobile) !== null;
-  const headerBlockMeta = activeBlock("header");
-  const footerBlockMeta = activeBlock("footer");
-  const headerIsPinned = hasHeaderBlock && (headerBlockMeta?.dock ?? "top") === "top" && (headerBlockMeta?.rotation ?? 0) === 0;
-  const footerIsPinned = hasFooterBlock && (footerBlockMeta?.dock ?? "bottom") === "bottom" && (footerBlockMeta?.rotation ?? 0) === 0;
 
   // Full-viewport takeover (same fixed-inset-0 precedent as the Preview overlay
   // below, just one z-layer under it) — covers the shared AdminTopNav rather than
@@ -5539,36 +5481,15 @@ export function PageEditor({ slug, label }: PageEditorProps) {
           {/* Canvas (scrollable) — wrapped in a positioning parent so ZoomControls can float
               fixed at its bottom-right corner regardless of internal scroll position. */}
           <div className="relative flex-1 min-w-0 min-h-[44vh]">
-          <div className="absolute inset-0 flex flex-col bg-gray-900">
-              {/* Item 2/6: header/footer render inside the single canvas, not as
-                  separate views. A header docked "top" at 0° rotation (the normal
-                  orientation) pins in place while the rest of the page scrolls
-                  beneath it, matching the live site's own sticky-header behavior —
-                  same for a "bottom"-docked footer at 0°, pinned below the scroll
-                  area. A header/footer that's rotated or docked to a side is just
-                  a fixed panel with no scroll region carved out for it specifically
-                  — it renders inline with the scrolling content instead. */}
-              {hasHeaderBlock && headerIsPinned && (
-                <div className="shrink-0 px-3 pt-3 overflow-hidden">
-                  <div className="mx-auto" style={{ width: canvasW * (zoom / 100) }}>
-                    {renderZoneCanvas("header")}
-                  </div>
-                </div>
-              )}
-              <div ref={scrollContainerRef} className="flex-1 min-h-0 overflow-auto p-3">
-                <div className="mx-auto" style={{ width: canvasW * (zoom / 100) }}>
-                  {hasHeaderBlock && !headerIsPinned && renderZoneCanvas("header")}
-                  {renderZoneCanvas("template")}
-                  {hasFooterBlock && !footerIsPinned && renderZoneCanvas("footer")}
-                </div>
-              </div>
-              {hasFooterBlock && footerIsPinned && (
-                <div className="shrink-0 px-3 pb-3 overflow-hidden">
-                  <div className="mx-auto" style={{ width: canvasW * (zoom / 100) }}>
-                    {renderZoneCanvas("footer")}
-                  </div>
-                </div>
-              )}
+          <div ref={scrollContainerRef} className="absolute inset-0 overflow-auto bg-gray-900 p-3">
+            <div className="mx-auto" style={{ width: canvasW * (zoom / 100) }}>
+              {/* Header/template/footer render as ONE seamless canvas, stacked
+                  with zero visual gap or border between them — no separate
+                  "zone" boxes, no sticky/pinned split. */}
+              {hasHeaderBlock && renderZoneCanvas("header")}
+              {renderZoneCanvas("template")}
+              {hasFooterBlock && renderZoneCanvas("footer")}
+            </div>
           </div>
 
           </div>
@@ -5767,6 +5688,70 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                             </button>
                           ))}
                         </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Header — a component like any other: click to add, click
+                    again to edit its position/size/colour/rotation/scroll
+                    behaviour. Multiple can exist (see renderBlockSelector's
+                    pills below); the block's own content is edited directly
+                    on the canvas, exactly like Template's content. */}
+                <div>
+                  <button type="button" onClick={() => setOpenTool(openTool === "header-block" ? null : "header-block")}
+                    className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md border text-xs transition-colors text-left text-gray-200 ${openTool === "header-block" ? "border-white bg-gray-700" : "border-gray-700 hover:bg-gray-700"}`}>
+                    <ArrowUpToLine className="h-3.5 w-3.5 text-muted-foreground shrink-0" /> Header
+                    <ChevronDown className={`h-3 w-3 ml-auto text-muted-foreground transition-transform ${openTool === "header-block" ? "rotate-180" : ""}`} />
+                  </button>
+                  {openTool === "header-block" && (
+                    <div className="mt-1 p-1.5 border rounded-md bg-gray-900 border-gray-700 text-gray-200">
+                      {hasHeaderBlock ? (
+                        <div className="flex flex-col gap-2">
+                          {renderBlockSelector("header")}
+                          {renderBlockSettings("header")}
+                          <button type="button"
+                            onClick={() => { const id = view === "desktop" ? activeHeaderId.desktop : activeHeaderId.mobile; if (id) removeBlock("header", id); }}
+                            className="flex items-center justify-center gap-1.5 h-7 rounded border border-gray-700 text-xs text-red-400">
+                            <Trash2 className="h-3 w-3" /> Remove header
+                          </button>
+                        </div>
+                      ) : (
+                        <button type="button" onClick={() => addBlock("header")}
+                          className="w-full flex flex-col items-center justify-center gap-1 h-14 rounded border border-gray-700 bg-gray-800 text-gray-200 transition-colors">
+                          <ArrowUpToLine className="h-4 w-4 text-muted-foreground" />
+                          <span className="text-[11px]">+ Add Header</span>
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Footer — same pattern as Header, docked to the bottom by default. */}
+                <div>
+                  <button type="button" onClick={() => setOpenTool(openTool === "footer-block" ? null : "footer-block")}
+                    className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md border text-xs transition-colors text-left text-gray-200 ${openTool === "footer-block" ? "border-white bg-gray-700" : "border-gray-700 hover:bg-gray-700"}`}>
+                    <ArrowDownToLine className="h-3.5 w-3.5 text-muted-foreground shrink-0" /> Footer
+                    <ChevronDown className={`h-3 w-3 ml-auto text-muted-foreground transition-transform ${openTool === "footer-block" ? "rotate-180" : ""}`} />
+                  </button>
+                  {openTool === "footer-block" && (
+                    <div className="mt-1 p-1.5 border rounded-md bg-gray-900 border-gray-700 text-gray-200">
+                      {hasFooterBlock ? (
+                        <div className="flex flex-col gap-2">
+                          {renderBlockSelector("footer")}
+                          {renderBlockSettings("footer")}
+                          <button type="button"
+                            onClick={() => { const id = view === "desktop" ? activeFooterId.desktop : activeFooterId.mobile; if (id) removeBlock("footer", id); }}
+                            className="flex items-center justify-center gap-1.5 h-7 rounded border border-gray-700 text-xs text-red-400">
+                            <Trash2 className="h-3 w-3" /> Remove footer
+                          </button>
+                        </div>
+                      ) : (
+                        <button type="button" onClick={() => addBlock("footer")}
+                          className="w-full flex flex-col items-center justify-center gap-1 h-14 rounded border border-gray-700 bg-gray-800 text-gray-200 transition-colors">
+                          <ArrowDownToLine className="h-4 w-4 text-muted-foreground" />
+                          <span className="text-[11px]">+ Add Footer</span>
+                        </button>
                       )}
                     </div>
                   )}

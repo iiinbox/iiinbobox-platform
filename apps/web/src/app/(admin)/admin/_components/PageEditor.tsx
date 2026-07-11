@@ -1791,13 +1791,13 @@ function FontSelect({ value, onChange, options = FONT_FAMILIES }: { value: strin
         <ChevronDown className="h-3 w-3 shrink-0 text-muted-foreground" />
       </button>
       {open && (
-        <div className="absolute z-40 mt-1 left-0 right-0 max-h-52 overflow-y-auto rounded-md border bg-white shadow-lg">
+        <div className="absolute z-40 mt-1 left-0 right-0 max-h-52 overflow-y-auto rounded-md border border-gray-700 bg-gray-800 shadow-lg">
           {options.map((f) => (
             <button
               key={f.value}
               type="button"
               onClick={() => { onChange(f.value); setOpen(false); }}
-              className={`block w-full text-left px-2 py-1 text-[13px] hover:bg-muted hover:text-gray-900 ${f.value === value ? "bg-muted" : ""}`}
+              className={`block w-full text-left px-2 py-1 text-[13px] text-gray-100 ${f.value === value ? "bg-gray-700" : ""}`}
               style={{ fontFamily: f.value }}
             >
               {f.label}
@@ -1877,35 +1877,35 @@ function ImagePickerButton({
         )}
       </button>
       {open && (
-        <div className="absolute z-50 mt-1 left-0 right-0 min-w-[220px] rounded-md border bg-white shadow-lg p-2 flex flex-col gap-2">
+        <div className="absolute z-50 mt-1 left-0 right-0 min-w-[220px] rounded-md border border-gray-700 bg-gray-800 shadow-lg p-2 flex flex-col gap-2 text-gray-100">
           {uploading ? (
             <div className="flex flex-col gap-1.5 p-1.5">
-              <p className="text-[11px] text-muted-foreground">Uploading to assets…</p>
-              <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
+              <p className="text-[11px] text-gray-400">Uploading to assets…</p>
+              <div className="h-1.5 w-full rounded-full bg-gray-700 overflow-hidden">
                 <div className="h-full bg-blue-500 transition-all" style={{ width: `${uploadProgress}%` }} />
               </div>
             </div>
           ) : view === "choose" ? (
             <>
               <button type="button" onClick={() => { setView("assets"); loadAssets(); }}
-                className="flex items-center gap-1.5 text-xs px-2 py-1.5 rounded hover:bg-muted hover:text-gray-900 text-left">
+                className="flex items-center gap-1.5 text-xs px-2 py-1.5 rounded text-left">
                 <ImageIcon className="h-3 w-3" /> Select from Asset
               </button>
               <button type="button" onClick={() => fileInputRef.current?.click()}
-                className="flex items-center gap-1.5 text-xs px-2 py-1.5 rounded hover:bg-muted hover:text-gray-900 text-left">
+                className="flex items-center gap-1.5 text-xs px-2 py-1.5 rounded text-left">
                 <Plus className="h-3 w-3" /> Upload New Image
               </button>
             </>
           ) : (
             <>
               <div className="flex items-center justify-between px-0.5">
-                <button type="button" onClick={() => setView("choose")} className="text-[10px] text-muted-foreground hover:text-foreground">&larr; Back</button>
-                <button type="button" onClick={() => fileInputRef.current?.click()} className="text-[10px] text-blue-600 hover:underline">Upload new</button>
+                <button type="button" onClick={() => setView("choose")} className="text-[10px] text-gray-400">&larr; Back</button>
+                <button type="button" onClick={() => fileInputRef.current?.click()} className="text-[10px] text-blue-400">Upload new</button>
               </div>
               {assetsLoading ? (
-                <p className="text-[11px] text-muted-foreground text-center py-3">Loading…</p>
+                <p className="text-[11px] text-gray-400 text-center py-3">Loading…</p>
               ) : (assetItems ?? []).length === 0 ? (
-                <p className="text-[11px] text-muted-foreground text-center py-3">No assets yet</p>
+                <p className="text-[11px] text-gray-400 text-center py-3">No assets yet</p>
               ) : (
                 <div className="grid grid-cols-3 gap-1 max-h-56 overflow-y-auto">
                   {(assetItems ?? []).map((a) => (
@@ -4573,35 +4573,35 @@ export function PageEditor({ slug, label }: PageEditorProps) {
         <button
           type="button"
           onClick={() => { setConnectMenuFolderId(isOpen ? null : folder.id); setConnectError(null); setNewSubdomainInput(""); }}
-          className="w-full flex items-center justify-between gap-2 px-2 py-2 rounded-md border border-gray-300 bg-white hover:border-black transition-colors text-left"
+          className="w-full flex items-center justify-between gap-2 px-2 py-2 rounded-md border border-gray-700 bg-gray-800 transition-colors text-left"
         >
           <span className="min-w-0">
-            <span className="block text-[9px] uppercase tracking-wide text-muted-foreground">Connect to</span>
-            <span className="block text-xs font-medium truncate text-gray-900">{current}</span>
+            <span className="block text-[9px] uppercase tracking-wide text-gray-400">Connect to</span>
+            <span className="block text-xs font-medium truncate text-gray-100">{current}</span>
           </span>
-          <ChevronDown className={`h-3.5 w-3.5 text-muted-foreground shrink-0 transition-transform ${isOpen ? "rotate-180" : ""}`} />
+          <ChevronDown className={`h-3.5 w-3.5 text-gray-400 shrink-0 transition-transform ${isOpen ? "rotate-180" : ""}`} />
         </button>
         {isOpen && (
           <>
             <div className="fixed inset-0 z-40" onClick={() => setConnectMenuFolderId(null)} />
-            <div className="absolute left-0 right-0 top-full mt-1 z-50 rounded-md border bg-white shadow-lg p-1.5 flex flex-col gap-0.5 text-gray-900">
+            <div className="absolute left-0 right-0 top-full mt-1 z-50 rounded-md border border-gray-700 bg-gray-800 shadow-lg p-1.5 flex flex-col gap-0.5 text-gray-100">
               <button type="button" onClick={() => choose(null)}
-                className={`text-left text-xs px-2 py-1.5 rounded hover:bg-muted hover:text-gray-900 ${!folder.subdomain ? "bg-muted font-medium" : ""}`}>
+                className={`text-left text-xs px-2 py-1.5 rounded ${!folder.subdomain ? "bg-gray-700 font-medium" : ""}`}>
                 Domain (iiinbox.com)
               </button>
               {connectableSubdomains().map((s) => (
                 <button key={s.value} type="button" onClick={() => choose(s.value)}
-                  className={`text-left text-xs px-2 py-1.5 rounded hover:bg-muted hover:text-gray-900 ${folder.subdomain === s.value ? "bg-muted font-medium" : ""}`}>
+                  className={`text-left text-xs px-2 py-1.5 rounded ${folder.subdomain === s.value ? "bg-gray-700 font-medium" : ""}`}>
                   {s.label}
                 </button>
               ))}
-              <div className="h-px bg-border my-0.5" />
+              <div className="h-px bg-gray-700 my-0.5" />
               <div className="flex items-center gap-1 px-1">
                 <input
                   value={newSubdomainInput}
                   onChange={(e) => setNewSubdomainInput(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""))}
                   placeholder="new-subdomain"
-                  className="flex-1 min-w-0 h-6 text-xs border rounded px-1.5 bg-background text-gray-900"
+                  className="flex-1 min-w-0 h-6 text-xs border border-gray-700 rounded px-1.5 bg-gray-900 text-gray-100 placeholder:text-gray-500"
                 />
                 <button type="button" disabled={!newSubdomainInput.trim()} onClick={() => choose(newSubdomainInput.trim())}
                   className="text-[11px] px-2 py-1 rounded bg-black text-white disabled:opacity-40 shrink-0">
@@ -4706,31 +4706,31 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                               {zoneAddMenuOpen === zone && (
                                 <>
                                   <div className="fixed inset-0 z-40" onClick={() => setZoneAddMenuOpen(null)} />
-                                  <div className="absolute right-0 top-full mt-1 z-50 w-48 max-h-80 overflow-y-auto rounded-md border bg-white shadow-lg p-1.5 flex flex-col gap-0.5">
-                                    <button type="button" onClick={() => { addComponent("text", undefined, zone); setZoneAddMenuOpen(null); }} className="flex items-center gap-1.5 text-xs px-2 py-1 rounded hover:bg-muted hover:text-gray-900 text-left"><Type className="h-3 w-3" /> Text</button>
-                                    <button type="button" onClick={() => { addShape("rectangle", zone); setZoneAddMenuOpen(null); }} className="flex items-center gap-1.5 text-xs px-2 py-1 rounded hover:bg-muted hover:text-gray-900 text-left"><Square className="h-3 w-3" /> Shape</button>
-                                    <button type="button" onClick={() => { addImage("single", zone); setZoneAddMenuOpen(null); }} className="flex items-center gap-1.5 text-xs px-2 py-1 rounded hover:bg-muted hover:text-gray-900 text-left"><ImageIcon className="h-3 w-3" /> Image</button>
-                                    <button type="button" onClick={() => { addComponent("button", BUTTON_PRESETS[0].patch, zone); setZoneAddMenuOpen(null); }} className="flex items-center gap-1.5 text-xs px-2 py-1 rounded hover:bg-muted hover:text-gray-900 text-left"><ComponentIcon className="h-3 w-3" /> Button</button>
-                                    <button type="button" onClick={() => { addCarousel(zone); setZoneAddMenuOpen(null); }} className="flex items-center gap-1.5 text-xs px-2 py-1 rounded hover:bg-muted hover:text-gray-900 text-left"><GalleryHorizontal className="h-3 w-3" /> Carousel</button>
-                                    <button type="button" onClick={() => { addHeroCarousel(zone); setZoneAddMenuOpen(null); }} className="flex items-center gap-1.5 text-xs px-2 py-1 rounded hover:bg-muted hover:text-gray-900 text-left"><GalleryHorizontalEnd className="h-3 w-3" /> Hero Carousel</button>
-                                    <button type="button" onClick={() => { addCategoryCarousel(zone); setZoneAddMenuOpen(null); }} className="flex items-center gap-1.5 text-xs px-2 py-1 rounded hover:bg-muted hover:text-gray-900 text-left"><LayoutGrid className="h-3 w-3" /> Category Carousel</button>
-                                    <button type="button" onClick={() => { addIcon("cart", zone); setZoneAddMenuOpen(null); }} className="flex items-center gap-1.5 text-xs px-2 py-1 rounded hover:bg-muted hover:text-gray-900 text-left"><Square className="h-3 w-3" /> Icon</button>
-                                    <div className="h-px bg-border my-0.5" />
-                                    <p className="text-[9px] uppercase tracking-wide text-muted-foreground px-2">Widgets</p>
+                                  <div className="absolute right-0 top-full mt-1 z-50 w-48 max-h-80 overflow-y-auto rounded-md border border-gray-700 bg-gray-800 shadow-lg p-1.5 flex flex-col gap-0.5 text-gray-100">
+                                    <button type="button" onClick={() => { addComponent("text", undefined, zone); setZoneAddMenuOpen(null); }} className="flex items-center gap-1.5 text-xs px-2 py-1 rounded text-left"><Type className="h-3 w-3" /> Text</button>
+                                    <button type="button" onClick={() => { addShape("rectangle", zone); setZoneAddMenuOpen(null); }} className="flex items-center gap-1.5 text-xs px-2 py-1 rounded text-left"><Square className="h-3 w-3" /> Shape</button>
+                                    <button type="button" onClick={() => { addImage("single", zone); setZoneAddMenuOpen(null); }} className="flex items-center gap-1.5 text-xs px-2 py-1 rounded text-left"><ImageIcon className="h-3 w-3" /> Image</button>
+                                    <button type="button" onClick={() => { addComponent("button", BUTTON_PRESETS[0].patch, zone); setZoneAddMenuOpen(null); }} className="flex items-center gap-1.5 text-xs px-2 py-1 rounded text-left"><ComponentIcon className="h-3 w-3" /> Button</button>
+                                    <button type="button" onClick={() => { addCarousel(zone); setZoneAddMenuOpen(null); }} className="flex items-center gap-1.5 text-xs px-2 py-1 rounded text-left"><GalleryHorizontal className="h-3 w-3" /> Carousel</button>
+                                    <button type="button" onClick={() => { addHeroCarousel(zone); setZoneAddMenuOpen(null); }} className="flex items-center gap-1.5 text-xs px-2 py-1 rounded text-left"><GalleryHorizontalEnd className="h-3 w-3" /> Hero Carousel</button>
+                                    <button type="button" onClick={() => { addCategoryCarousel(zone); setZoneAddMenuOpen(null); }} className="flex items-center gap-1.5 text-xs px-2 py-1 rounded text-left"><LayoutGrid className="h-3 w-3" /> Category Carousel</button>
+                                    <button type="button" onClick={() => { addIcon("cart", zone); setZoneAddMenuOpen(null); }} className="flex items-center gap-1.5 text-xs px-2 py-1 rounded text-left"><Square className="h-3 w-3" /> Icon</button>
+                                    <div className="h-px bg-gray-700 my-0.5" />
+                                    <p className="text-[9px] uppercase tracking-wide text-gray-400 px-2">Widgets</p>
                                     {MARKET_WIDGETS.map((w) => (
-                                      <button key={w.id} type="button" onClick={() => { addMarketWidget(w.id, zone); setZoneAddMenuOpen(null); }} className="flex items-center gap-1.5 text-xs px-2 py-1 rounded hover:bg-muted hover:text-gray-900 text-left">
+                                      <button key={w.id} type="button" onClick={() => { addMarketWidget(w.id, zone); setZoneAddMenuOpen(null); }} className="flex items-center gap-1.5 text-xs px-2 py-1 rounded text-left">
                                         <w.icon className="h-3 w-3" /> {w.label}
                                       </button>
                                     ))}
-                                    <div className="h-px bg-border my-0.5" />
-                                    <p className="text-[9px] uppercase tracking-wide text-muted-foreground px-2">Ride-hailing</p>
-                                    <button type="button" onClick={() => { addLocationInput(zone); setZoneAddMenuOpen(null); }} className="flex items-center gap-1.5 text-xs px-2 py-1 rounded hover:bg-muted hover:text-gray-900 text-left"><MapPin className="h-3 w-3" /> Location Input</button>
-                                    <button type="button" onClick={() => { addMap(zone); setZoneAddMenuOpen(null); }} className="flex items-center gap-1.5 text-xs px-2 py-1 rounded hover:bg-muted hover:text-gray-900 text-left"><MapIcon className="h-3 w-3" /> Map</button>
-                                    <button type="button" onClick={() => { addDateTimePicker(zone); setZoneAddMenuOpen(null); }} className="flex items-center gap-1.5 text-xs px-2 py-1 rounded hover:bg-muted hover:text-gray-900 text-left"><CalendarClock className="h-3 w-3" /> Date & Time Picker</button>
-                                    <button type="button" onClick={() => { addVehicleSelector(zone); setZoneAddMenuOpen(null); }} className="flex items-center gap-1.5 text-xs px-2 py-1 rounded hover:bg-muted hover:text-gray-900 text-left"><CarFront className="h-3 w-3" /> Vehicle Selector</button>
-                                    <button type="button" onClick={() => { addDriverBadge(zone); setZoneAddMenuOpen(null); }} className="flex items-center gap-1.5 text-xs px-2 py-1 rounded hover:bg-muted hover:text-gray-900 text-left"><BadgeCheck className="h-3 w-3" /> Driver Badge</button>
-                                    <button type="button" onClick={() => { addFareDisplay(zone); setZoneAddMenuOpen(null); }} className="flex items-center gap-1.5 text-xs px-2 py-1 rounded hover:bg-muted hover:text-gray-900 text-left"><Receipt className="h-3 w-3" /> Fare Display</button>
-                                    <button type="button" onClick={() => { addComponent("button", BUTTON_PRESETS.find((p) => p.label === "Book Now")?.patch ?? BUTTON_PRESETS[0].patch, zone); setZoneAddMenuOpen(null); }} className="flex items-center gap-1.5 text-xs px-2 py-1 rounded hover:bg-muted hover:text-gray-900 text-left"><ComponentIcon className="h-3 w-3" /> Book Now Button</button>
+                                    <div className="h-px bg-gray-700 my-0.5" />
+                                    <p className="text-[9px] uppercase tracking-wide text-gray-400 px-2">Ride-hailing</p>
+                                    <button type="button" onClick={() => { addLocationInput(zone); setZoneAddMenuOpen(null); }} className="flex items-center gap-1.5 text-xs px-2 py-1 rounded text-left"><MapPin className="h-3 w-3" /> Location Input</button>
+                                    <button type="button" onClick={() => { addMap(zone); setZoneAddMenuOpen(null); }} className="flex items-center gap-1.5 text-xs px-2 py-1 rounded text-left"><MapIcon className="h-3 w-3" /> Map</button>
+                                    <button type="button" onClick={() => { addDateTimePicker(zone); setZoneAddMenuOpen(null); }} className="flex items-center gap-1.5 text-xs px-2 py-1 rounded text-left"><CalendarClock className="h-3 w-3" /> Date & Time Picker</button>
+                                    <button type="button" onClick={() => { addVehicleSelector(zone); setZoneAddMenuOpen(null); }} className="flex items-center gap-1.5 text-xs px-2 py-1 rounded text-left"><CarFront className="h-3 w-3" /> Vehicle Selector</button>
+                                    <button type="button" onClick={() => { addDriverBadge(zone); setZoneAddMenuOpen(null); }} className="flex items-center gap-1.5 text-xs px-2 py-1 rounded text-left"><BadgeCheck className="h-3 w-3" /> Driver Badge</button>
+                                    <button type="button" onClick={() => { addFareDisplay(zone); setZoneAddMenuOpen(null); }} className="flex items-center gap-1.5 text-xs px-2 py-1 rounded text-left"><Receipt className="h-3 w-3" /> Fare Display</button>
+                                    <button type="button" onClick={() => { addComponent("button", BUTTON_PRESETS.find((p) => p.label === "Book Now")?.patch ?? BUTTON_PRESETS[0].patch, zone); setZoneAddMenuOpen(null); }} className="flex items-center gap-1.5 text-xs px-2 py-1 rounded text-left"><ComponentIcon className="h-3 w-3" /> Book Now Button</button>
                                   </div>
                                 </>
                               )}
@@ -4828,16 +4828,16 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                                           {openRowMenu === comp.id && (
                                             <>
                                               <div className="fixed inset-0 z-40" onClick={(e) => { e.stopPropagation(); setOpenRowMenu(null); }} />
-                                              <div className="absolute right-0 top-full mt-1 z-50 min-w-[150px] rounded-md border bg-white shadow-lg py-1 text-xs text-gray-900" onClick={(e) => e.stopPropagation()}>
-                                                <button type="button" onClick={() => { setActiveZone(zone); duplicateInPlace(comp, zone); setOpenRowMenu(null); }} className="w-full flex items-center gap-2 text-left px-3 py-1.5 hover:bg-muted hover:text-gray-900"><Copy className="h-3 w-3" /> Duplicate</button>
-                                                <button type="button" onClick={() => { setActiveZone(zone); toggleHidden([comp.id], zone); setOpenRowMenu(null); }} className="w-full flex items-center gap-2 text-left px-3 py-1.5 hover:bg-muted hover:text-gray-900">
+                                              <div className="absolute right-0 top-full mt-1 z-50 min-w-[150px] rounded-md border border-gray-700 bg-gray-800 shadow-lg py-1 text-xs text-gray-100" onClick={(e) => e.stopPropagation()}>
+                                                <button type="button" onClick={() => { setActiveZone(zone); duplicateInPlace(comp, zone); setOpenRowMenu(null); }} className="w-full flex items-center gap-2 text-left px-3 py-1.5"><Copy className="h-3 w-3" /> Duplicate</button>
+                                                <button type="button" onClick={() => { setActiveZone(zone); toggleHidden([comp.id], zone); setOpenRowMenu(null); }} className="w-full flex items-center gap-2 text-left px-3 py-1.5">
                                                   {comp.hidden ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />} {comp.hidden ? "Show" : "Hide"}
                                                 </button>
-                                                <button type="button" onClick={() => { setActiveZone(zone); toggleLocked([comp.id], zone); setOpenRowMenu(null); }} className="w-full flex items-center gap-2 text-left px-3 py-1.5 hover:bg-muted hover:text-gray-900">
+                                                <button type="button" onClick={() => { setActiveZone(zone); toggleLocked([comp.id], zone); setOpenRowMenu(null); }} className="w-full flex items-center gap-2 text-left px-3 py-1.5">
                                                   {comp.locked ? <Unlock className="h-3 w-3" /> : <Lock className="h-3 w-3" />} {comp.locked ? "Unlock" : "Lock"}
                                                 </button>
-                                                <button type="button" onClick={() => { setActiveZone(zone); setRenameInput(comp.name?.trim() || componentTypeLabel(comp.type)); setRenamingId(comp.id); setOpenRowMenu(null); }} className="w-full flex items-center gap-2 text-left px-3 py-1.5 hover:bg-muted hover:text-gray-900"><Pencil className="h-3 w-3" /> Rename</button>
-                                                <button type="button" disabled={comp.locked} onClick={() => { setActiveZone(zone); deleteComp([comp.id], zone); setOpenRowMenu(null); }} className="w-full flex items-center gap-2 text-left px-3 py-1.5 hover:bg-muted hover:text-gray-900 text-destructive disabled:opacity-40 disabled:cursor-not-allowed"><Trash2 className="h-3 w-3" /> Delete</button>
+                                                <button type="button" onClick={() => { setActiveZone(zone); setRenameInput(comp.name?.trim() || componentTypeLabel(comp.type)); setRenamingId(comp.id); setOpenRowMenu(null); }} className="w-full flex items-center gap-2 text-left px-3 py-1.5"><Pencil className="h-3 w-3" /> Rename</button>
+                                                <button type="button" disabled={comp.locked} onClick={() => { setActiveZone(zone); deleteComp([comp.id], zone); setOpenRowMenu(null); }} className="w-full flex items-center gap-2 text-left px-3 py-1.5 text-red-400 disabled:opacity-40 disabled:cursor-not-allowed"><Trash2 className="h-3 w-3" /> Delete</button>
                                               </div>
                                             </>
                                           )}
@@ -4864,9 +4864,9 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                                                   {openRowMenu === childKey && (
                                                     <>
                                                       <div className="fixed inset-0 z-40" onClick={() => setOpenRowMenu(null)} />
-                                                      <div className="absolute right-0 top-full mt-1 z-50 min-w-[130px] rounded-md border bg-white shadow-lg py-1 text-xs">
-                                                        <button type="button" onClick={() => { setActiveZone(zone); duplicateChildItem(comp, item.id, zone); setOpenRowMenu(null); }} className="w-full flex items-center gap-2 text-left px-3 py-1.5 hover:bg-muted hover:text-gray-900"><Copy className="h-3 w-3" /> Duplicate</button>
-                                                        <button type="button" onClick={() => { setActiveZone(zone); removeChildItem(comp, item.id, zone); setOpenRowMenu(null); }} className="w-full flex items-center gap-2 text-left px-3 py-1.5 hover:bg-muted hover:text-gray-900 text-destructive"><Trash2 className="h-3 w-3" /> Delete</button>
+                                                      <div className="absolute right-0 top-full mt-1 z-50 min-w-[130px] rounded-md border border-gray-700 bg-gray-800 shadow-lg py-1 text-xs text-gray-100">
+                                                        <button type="button" onClick={() => { setActiveZone(zone); duplicateChildItem(comp, item.id, zone); setOpenRowMenu(null); }} className="w-full flex items-center gap-2 text-left px-3 py-1.5"><Copy className="h-3 w-3" /> Duplicate</button>
+                                                        <button type="button" onClick={() => { setActiveZone(zone); removeChildItem(comp, item.id, zone); setOpenRowMenu(null); }} className="w-full flex items-center gap-2 text-left px-3 py-1.5 text-red-400"><Trash2 className="h-3 w-3" /> Delete</button>
                                                       </div>
                                                     </>
                                                   )}
@@ -4898,12 +4898,25 @@ export function PageEditor({ slug, label }: PageEditorProps) {
   }
 
   // ── JSX ─────────────────────────────────────────────────────────────────────
+  // Sticky-header/scrollable-body split (item 6): a header docked "top" at 0°
+  // rotation (the normal orientation) pins in place with its own dedicated
+  // scroll region below it, matching the live site's sticky-header behavior.
+  // Anything rotated or docked to a side is just a fixed panel with no scroll
+  // region carved out for it — see renderZoneCanvas's own dock-relative
+  // positioning for how a left/right block still stays put.
+  const hasHeaderBlock = (view === "desktop" ? activeHeaderId.desktop : activeHeaderId.mobile) !== null;
+  const hasFooterBlock = (view === "desktop" ? activeFooterId.desktop : activeFooterId.mobile) !== null;
+  const headerBlockMeta = activeBlock("header");
+  const footerBlockMeta = activeBlock("footer");
+  const headerIsPinned = hasHeaderBlock && (headerBlockMeta?.dock ?? "top") === "top" && (headerBlockMeta?.rotation ?? 0) === 0;
+  const footerIsPinned = hasFooterBlock && (footerBlockMeta?.dock ?? "bottom") === "bottom" && (footerBlockMeta?.rotation ?? 0) === 0;
+
   // Full-viewport takeover (same fixed-inset-0 precedent as the Preview overlay
   // below, just one z-layer under it) — covers the shared AdminTopNav rather than
   // modifying it, so other admin routes (which still render through the normal
   // layout) are completely unaffected by this editor's own chrome.
   return (
-    <div className="fixed inset-0 z-30 flex flex-col bg-white p-4">
+    <div className="fixed inset-0 z-30 flex flex-col bg-gray-900 p-4">
       {/* Folder-level Preview overlay — opened from the Pages panel's [Preview]
           button (see openFolderPreview above), not from anything in this
           editor's own top bar. Publishing here promotes the WHOLE folder. */}
@@ -5172,7 +5185,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                               {openTreeMenu === project.id && (
                                 <>
                                   <div className="fixed inset-0 z-40" onClick={() => setOpenTreeMenu(null)} />
-                                  <div className="absolute right-0 top-full mt-1 z-50 min-w-[150px] rounded-md border bg-white shadow-lg py-1 text-xs text-gray-900">
+                                  <div className="absolute right-0 top-full mt-1 z-50 min-w-[150px] rounded-md border border-gray-700 bg-gray-800 shadow-lg py-1 text-xs text-gray-100">
                                     <button type="button" onClick={() => { projectsTree.startEditProject(project.id, project.name); setOpenTreeMenu(null); }} className="w-full flex items-center gap-2 text-left px-3 py-1.5"><Pencil className="h-3 w-3" /> Edit name</button>
                                     <button type="button" onClick={() => { projectsTree.toggleProjectCollapsed(project.id); setOpenTreeMenu(null); }} className="w-full flex items-center gap-2 text-left px-3 py-1.5"><ChevronDown className="h-3 w-3" /> {isCollapsed ? "Expand" : "Minimize"}</button>
                                     <button type="button" onClick={() => { projectsTree.duplicateProject(project.id); setOpenTreeMenu(null); }} className="w-full flex items-center gap-2 text-left px-3 py-1.5"><Copy className="h-3 w-3" /> Duplicate project</button>
@@ -5274,7 +5287,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                                     {openTreeMenu === folder.id && (
                                       <>
                                         <div className="fixed inset-0 z-40" onClick={() => setOpenTreeMenu(null)} />
-                                        <div className="absolute right-0 top-full mt-1 z-50 min-w-[150px] rounded-md border bg-white shadow-lg py-1 text-xs text-gray-900">
+                                        <div className="absolute right-0 top-full mt-1 z-50 min-w-[150px] rounded-md border border-gray-700 bg-gray-800 shadow-lg py-1 text-xs text-gray-100">
                                           <button type="button" onClick={() => { projectsTree.startEditFolder(folder.id, folder.name); setOpenTreeMenu(null); }} className="w-full flex items-center gap-2 text-left px-3 py-1.5"><Pencil className="h-3 w-3" /> Edit name</button>
                                           <button type="button" onClick={() => { projectsTree.toggleFolderCollapsed(folder.id); setOpenTreeMenu(null); }} className="w-full flex items-center gap-2 text-left px-3 py-1.5"><ChevronDown className="h-3 w-3" /> {folderCollapsed ? "Expand" : "Minimize"}</button>
                                           <button type="button" onClick={() => { setConfirmDeleteFolderId(folder.id); setOpenTreeMenu(null); }} className="w-full flex items-center gap-2 text-left px-3 py-1.5 text-destructive"><Trash2 className="h-3 w-3" /> Delete</button>
@@ -5393,7 +5406,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                     ) : (
                       <div className="flex flex-col gap-1">
                         {(fontItems ?? []).map((f) => (
-                          <div key={f.key} className="group flex items-center justify-between gap-2 rounded border px-2 py-1.5 hover:border-black transition-colors">
+                          <div key={f.key} className="group flex items-center justify-between gap-2 rounded border border-gray-700 px-2 py-1.5 transition-colors">
                             <span className="truncate text-xs" style={{ fontFamily: `"${f.family}"` }} title={f.name}>{f.name}</span>
                             <button type="button" title="Delete font" onClick={() => deleteFont(f.key)}
                               className="shrink-0 p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-destructive/10 text-destructive transition-opacity">
@@ -5429,7 +5442,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                     ) : (
                       <div className="grid grid-cols-2 gap-1.5">
                         {(assetItems ?? []).map((a) => (
-                          <div key={a.key} className="group relative aspect-square rounded border overflow-hidden hover:border-black transition-colors">
+                          <div key={a.key} className="group relative aspect-square rounded border border-gray-700 overflow-hidden transition-colors">
                             <button type="button" title="Insert as image" onClick={() => addImageFromUrl(a.url)} className="absolute inset-0">
                               <img src={a.url} alt="" className="w-full h-full object-cover" />
                             </button>
@@ -5526,20 +5539,36 @@ export function PageEditor({ slug, label }: PageEditorProps) {
           {/* Canvas (scrollable) — wrapped in a positioning parent so ZoomControls can float
               fixed at its bottom-right corner regardless of internal scroll position. */}
           <div className="relative flex-1 min-w-0 min-h-[44vh]">
-          <div ref={scrollContainerRef} className="absolute inset-0 overflow-auto bg-gray-900 p-3">
-            <div className="mx-auto" style={{ width: canvasW * (zoom / 100) }}>
-              {/* Item 2: header, template, and footer render as ONE seamless,
-                  simultaneously-interactive canvas — no separate zone views,
-                  no click-to-activate strips. Header/footer only appear when
-                  a block of that kind exists (see zoneHasBlock below); every
-                  visible zone is fully draggable/resizable/rotatable in
-                  place, stacked with zero visual gap or border between them. */}
-              {(view === "desktop" ? activeHeaderId.desktop : activeHeaderId.mobile) !== null &&
-                renderZoneCanvas("header")}
-              {renderZoneCanvas("template")}
-              {(view === "desktop" ? activeFooterId.desktop : activeFooterId.mobile) !== null &&
-                renderZoneCanvas("footer")}
-            </div>
+          <div className="absolute inset-0 flex flex-col bg-gray-900">
+              {/* Item 2/6: header/footer render inside the single canvas, not as
+                  separate views. A header docked "top" at 0° rotation (the normal
+                  orientation) pins in place while the rest of the page scrolls
+                  beneath it, matching the live site's own sticky-header behavior —
+                  same for a "bottom"-docked footer at 0°, pinned below the scroll
+                  area. A header/footer that's rotated or docked to a side is just
+                  a fixed panel with no scroll region carved out for it specifically
+                  — it renders inline with the scrolling content instead. */}
+              {hasHeaderBlock && headerIsPinned && (
+                <div className="shrink-0 px-3 pt-3 overflow-hidden">
+                  <div className="mx-auto" style={{ width: canvasW * (zoom / 100) }}>
+                    {renderZoneCanvas("header")}
+                  </div>
+                </div>
+              )}
+              <div ref={scrollContainerRef} className="flex-1 min-h-0 overflow-auto p-3">
+                <div className="mx-auto" style={{ width: canvasW * (zoom / 100) }}>
+                  {hasHeaderBlock && !headerIsPinned && renderZoneCanvas("header")}
+                  {renderZoneCanvas("template")}
+                  {hasFooterBlock && !footerIsPinned && renderZoneCanvas("footer")}
+                </div>
+              </div>
+              {hasFooterBlock && footerIsPinned && (
+                <div className="shrink-0 px-3 pb-3 overflow-hidden">
+                  <div className="mx-auto" style={{ width: canvasW * (zoom / 100) }}>
+                    {renderZoneCanvas("footer")}
+                  </div>
+                </div>
+              )}
           </div>
 
           </div>
@@ -5584,7 +5613,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                     <ChevronDown className={`h-3 w-3 ml-auto text-muted-foreground transition-transform ${openTool === "text" ? "rotate-180" : ""}`} />
                   </button>
                   {openTool === "text" && (
-                    <div className="mt-1 p-1.5 border rounded-md bg-gray-300 border-gray-400">
+                    <div className="mt-1 p-1.5 border rounded-md bg-gray-900 border-gray-700 text-gray-200">
                       {selectedComp && (selectedComp.type === "text" || selectedComp.type === "header") ? (
                         <div className="flex flex-col">
                           {renderTypeHeader(selectedComp)}
@@ -5607,7 +5636,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                                   </div>
                                 </div>
                                 <button type="button" onClick={() => updateComp(selectedComp.id, { lockedTypography: false })}
-                                  className="flex items-center justify-center gap-1.5 text-[11px] py-1 rounded border border-gray-200 hover:bg-muted hover:text-gray-900">
+                                  className="flex items-center justify-center gap-1.5 text-[11px] py-1 rounded border border-gray-700 text-gray-200">
                                   <Unlock className="h-3 w-3" /> Detach from template (unlock typography)
                                 </button>
                               </>
@@ -5663,12 +5692,12 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                         <div className="flex flex-col gap-2">
                           <div className="grid grid-cols-2 gap-1.5">
                             <button type="button" onClick={() => addComponent("text", { fontFamily: (fontItems ?? [])[0]?.family })}
-                              className="flex flex-col items-center justify-center gap-1 h-14 rounded border border-gray-200 bg-white hover:border-black transition-colors">
+                              className="flex flex-col items-center justify-center gap-1 h-14 rounded border border-gray-700 bg-gray-800 text-gray-200 transition-colors">
                               <Type className="h-4 w-4 text-muted-foreground" />
                               <span className="text-[11px]">+ Add Text</span>
                             </button>
                             <button type="button" onClick={() => addComponent("header", { fontFamily: (fontItems ?? [])[0]?.family })}
-                              className="flex flex-col items-center justify-center gap-1 h-14 rounded border border-gray-200 bg-white hover:border-black transition-colors">
+                              className="flex flex-col items-center justify-center gap-1 h-14 rounded border border-gray-700 bg-gray-800 text-gray-200 transition-colors">
                               <Type className="h-4 w-4 text-muted-foreground" />
                               <span className="text-[11px]">+ Add Heading</span>
                             </button>
@@ -5687,7 +5716,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                     <ChevronDown className={`h-3 w-3 ml-auto text-muted-foreground transition-transform ${openTool === "shape" ? "rotate-180" : ""}`} />
                   </button>
                   {openTool === "shape" && (
-                    <div className="mt-1 p-1.5 border rounded-md bg-gray-300 border-gray-400">
+                    <div className="mt-1 p-1.5 border rounded-md bg-gray-900 border-gray-700 text-gray-200">
                       {selectedComp && selectedComp.type === "shape" ? (
                         <div className="flex flex-col">
                           {renderTypeHeader(selectedComp)}
@@ -5733,7 +5762,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                         <div className="grid grid-cols-4 gap-1">
                           {SHAPES.map(({ type, label: shapeLabel }) => (
                             <button key={type} type="button" onClick={() => addShape(type)} title={shapeLabel}
-                              className="flex items-center justify-center h-9 rounded-md border border-gray-200 bg-white hover:border-black transition-colors text-muted-foreground">
+                              className="flex items-center justify-center h-9 rounded-md border border-gray-700 bg-gray-800 transition-colors text-gray-300">
                               <ShapeSwatch type={type} />
                             </button>
                           ))}
@@ -5751,7 +5780,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                     <ChevronDown className={`h-3 w-3 ml-auto text-muted-foreground transition-transform ${openTool === "image" ? "rotate-180" : ""}`} />
                   </button>
                   {openTool === "image" && (
-                    <div className="mt-1 p-2 border rounded-md bg-muted/30">
+                    <div className="mt-1 p-2 border rounded-md bg-gray-900 border-gray-700 text-gray-200">
                       {selectedComp && selectedComp.type === "image" ? (
                         <div className="flex flex-col">
                           {renderTypeHeader(selectedComp)}
@@ -5769,7 +5798,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                               />
                             </div>
                           ) : (
-                            <div className="flex flex-col gap-2.5 p-2 border rounded-md bg-white">
+                            <div className="flex flex-col gap-2.5 p-2 border border-gray-700 rounded-md bg-gray-900 text-gray-200">
                               <p className={sLabel + " mb-0"}>Slideshow settings</p>
 
                               {/* Photos */}
@@ -5827,7 +5856,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                                   {([5, 10, 15, 0] as const).map((max) => (
                                     <button key={max} type="button"
                                       onClick={() => updateComp(selectedComp.id, { slideshowMax: max })}
-                                      className={`flex items-center justify-center gap-0.5 text-[10px] py-1 rounded border transition-colors ${(selectedComp.slideshowMax ?? 5) === max ? "bg-black text-white border-black" : "bg-white border-gray-200 hover:bg-muted hover:text-gray-900"}`}>
+                                      className={`flex items-center justify-center gap-0.5 text-[10px] py-1 rounded border transition-colors ${(selectedComp.slideshowMax ?? 5) === max ? "bg-black text-white border-black" : "bg-gray-800 border-gray-700 text-gray-200"}`}>
                                       {max === 0 ? <InfinityIcon className="h-3 w-3" /> : max}
                                     </button>
                                   ))}
@@ -5861,12 +5890,12 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                             <p className="text-[9px] uppercase tracking-wide text-muted-foreground mb-1">Frame type</p>
                             <div className="grid grid-cols-2 gap-1">
                               <button type="button" onClick={() => addImage("single")}
-                                className="flex flex-col items-center justify-center gap-1 h-14 rounded border border-gray-200 bg-white hover:border-black transition-colors">
+                                className="flex flex-col items-center justify-center gap-1 h-14 rounded border border-gray-700 bg-gray-800 text-gray-200 transition-colors">
                                 <ImageIcon className="h-4 w-4 text-muted-foreground" />
                                 <span className="text-[10px]">Photo Frame</span>
                               </button>
                               <button type="button" onClick={() => addImage("slideshow")}
-                                className="flex flex-col items-center justify-center gap-1 h-14 rounded border border-gray-200 bg-white hover:border-black transition-colors">
+                                className="flex flex-col items-center justify-center gap-1 h-14 rounded border border-gray-700 bg-gray-800 text-gray-200 transition-colors">
                                 <Images className="h-4 w-4 text-muted-foreground" />
                                 <span className="text-[10px]">Slideshow</span>
                               </button>
@@ -5877,7 +5906,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                             <div className="grid grid-cols-4 gap-1">
                               {IMAGE_SIZES.map((s) => (
                                 <button key={s.id} type="button" onClick={() => setImageSizePreset(s.id)}
-                                  className={`text-[10px] py-1 rounded border transition-colors ${imageSizePreset === s.id ? "bg-black text-white border-black" : "bg-white border-gray-200 hover:bg-muted hover:text-gray-900"}`}>
+                                  className={`text-[10px] py-1 rounded border transition-colors ${imageSizePreset === s.id ? "bg-black text-white border-black" : "bg-gray-800 border-gray-700 text-gray-200"}`}>
                                   {s.label}
                                 </button>
                               ))}
@@ -5897,7 +5926,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                     <ChevronDown className={`h-3 w-3 ml-auto text-muted-foreground transition-transform ${openTool === "button" ? "rotate-180" : ""}`} />
                   </button>
                   {openTool === "button" && (
-                    <div className="mt-1 p-1.5 border rounded-md bg-gray-300 border-gray-400">
+                    <div className="mt-1 p-1.5 border rounded-md bg-gray-900 border-gray-700 text-gray-200">
                       {selectedComp && selectedComp.type === "button" ? (
                         <div className="flex flex-col">
                           {renderTypeHeader(selectedComp)}
@@ -5967,7 +5996,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                             const s = resolveButtonStyles(preset.patch as PageComponent, false);
                             return (
                               <button key={preset.id} type="button" onClick={() => addComponent("button", preset.patch)}
-                                className="flex items-center justify-center h-9 rounded border border-gray-200 bg-white hover:border-black transition-colors p-1">
+                                className="flex items-center justify-center h-9 rounded border border-gray-700 bg-gray-800 transition-colors p-1">
                                 <span className="w-full truncate text-center text-[10px] font-semibold py-1 px-1"
                                   style={{ backgroundColor: s.bg, color: s.color, border: s.border, borderRadius: preset.patch.borderRadius ?? 8, textDecoration: s.isLink ? "underline" : "none" }}>
                                   {preset.patch.content}
@@ -5989,7 +6018,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                     <ChevronDown className={`h-3 w-3 ml-auto text-muted-foreground transition-transform ${openTool === "carousel" ? "rotate-180" : ""}`} />
                   </button>
                   {openTool === "carousel" && (
-                    <div className="mt-1 p-1.5 border rounded-md bg-gray-300 border-gray-400">
+                    <div className="mt-1 p-1.5 border rounded-md bg-gray-900 border-gray-700 text-gray-200">
                       {selectedComp && selectedComp.type === "carousel" ? (() => {
                         const items = selectedComp.carouselItems ?? [];
                         return (
@@ -6002,7 +6031,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                               {items.length > 0 && (
                                 <div className="flex flex-col gap-1 mb-1.5">
                                   {items.map((item, i) => (
-                                    <div key={item.id} className="flex gap-1.5 items-center p-1.5 border rounded bg-white">
+                                    <div key={item.id} className="flex gap-1.5 items-center p-1.5 border border-gray-700 rounded bg-gray-900 text-gray-200">
                                       <div className="w-8 h-8 rounded bg-gray-100 overflow-hidden shrink-0 flex items-center justify-center">
                                         {item.imageUrl ? <img src={item.imageUrl} alt="" className="w-full h-full object-cover" /> : <ImageIcon className="h-3.5 w-3.5 text-gray-300" />}
                                       </div>
@@ -6024,12 +6053,12 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                               <div className="grid grid-cols-2 gap-1.5">
                                 <button type="button"
                                   onClick={() => { setShowCategoryPicker((v) => !v); if (!showCategoryPicker) loadCategoryOptions(); }}
-                                  className={`flex items-center justify-center gap-1 h-7 rounded border text-xs transition-colors ${showCategoryPicker ? "bg-black text-white border-black" : "border-gray-200 hover:bg-muted hover:text-gray-900"}`}>
+                                  className={`flex items-center justify-center gap-1 h-7 rounded border text-xs transition-colors ${showCategoryPicker ? "bg-black text-white border-black" : "border-gray-700 text-gray-200"}`}>
                                   <Tag className="h-3 w-3" /> From Categories
                                 </button>
                                 <ImagePickerButton
                                   label="Custom item" icon={ImageIcon}
-                                  buttonClassName="flex items-center justify-center gap-1 h-7 rounded border border-gray-200 text-xs hover:bg-muted hover:text-gray-900 cursor-pointer w-full"
+                                  buttonClassName="flex items-center justify-center gap-1 h-7 rounded border border-gray-700 text-xs text-gray-200 cursor-pointer w-full"
                                   uploading={uploading} uploadProgress={uploadProgress}
                                   assetItems={assetItems} assetsLoading={assetsLoading} loadAssets={loadAssets}
                                   onUpload={uploadToAssets}
@@ -6037,7 +6066,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                                 />
                               </div>
                               {showCategoryPicker && (
-                                <div className="mt-1.5 max-h-36 overflow-y-auto border rounded bg-white flex flex-col gap-0.5 p-1">
+                                <div className="mt-1.5 max-h-36 overflow-y-auto border border-gray-700 rounded bg-gray-900 text-gray-200 flex flex-col gap-0.5 p-1">
                                   {loadingCategories ? (
                                     <p className="text-[11px] text-muted-foreground p-1">Loading…</p>
                                   ) : (categoryOptions ?? []).length === 0 ? (
@@ -6101,7 +6130,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                         );
                       })() : (
                         <button type="button" onClick={() => addCarousel()}
-                          className="w-full flex items-center justify-center gap-1.5 h-9 rounded border border-gray-200 bg-white hover:border-black transition-colors text-xs">
+                          className="w-full flex items-center justify-center gap-1.5 h-9 rounded border border-gray-700 bg-gray-800 transition-colors text-xs text-gray-200">
                           <GalleryHorizontal className="h-4 w-4" /> Add Carousel
                         </button>
                       )}
@@ -6117,7 +6146,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                     <ChevronDown className={`h-3 w-3 ml-auto text-muted-foreground transition-transform ${openTool === "hero-carousel" ? "rotate-180" : ""}`} />
                   </button>
                   {openTool === "hero-carousel" && (
-                    <div className="mt-1 p-1.5 border rounded-md bg-gray-300 border-gray-400">
+                    <div className="mt-1 p-1.5 border rounded-md bg-gray-900 border-gray-700 text-gray-200">
                       {selectedComp && selectedComp.type === "hero-carousel" ? (() => {
                         const slides = selectedComp.heroSlides ?? [];
                         return (
@@ -6132,7 +6161,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                               </div>
                               <div className="flex flex-col gap-1.5">
                                 {slides.map((slide, i) => (
-                                  <div key={slide.id} className="flex flex-col gap-1 p-1.5 border rounded bg-white">
+                                  <div key={slide.id} className="flex flex-col gap-1 p-1.5 border border-gray-700 rounded bg-gray-900 text-gray-200">
                                     <div className="flex gap-1.5 items-center">
                                       <ImagePickerButton
                                         label="Slide image"
@@ -6217,7 +6246,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                         );
                       })() : (
                         <button type="button" onClick={() => addHeroCarousel()}
-                          className="w-full flex items-center justify-center gap-1.5 h-9 rounded border border-gray-200 bg-white hover:border-black transition-colors text-xs">
+                          className="w-full flex items-center justify-center gap-1.5 h-9 rounded border border-gray-700 bg-gray-800 transition-colors text-xs text-gray-200">
                           <GalleryHorizontalEnd className="h-4 w-4" /> Add Hero Carousel
                         </button>
                       )}
@@ -6233,7 +6262,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                     <ChevronDown className={`h-3 w-3 ml-auto text-muted-foreground transition-transform ${openTool === "category-carousel" ? "rotate-180" : ""}`} />
                   </button>
                   {openTool === "category-carousel" && (
-                    <div className="mt-1 p-1.5 border rounded-md bg-gray-300 border-gray-400">
+                    <div className="mt-1 p-1.5 border rounded-md bg-gray-900 border-gray-700 text-gray-200">
                       {selectedComp && selectedComp.type === "category-carousel" ? (() => {
                         const items = selectedComp.catCarouselItems ?? [];
                         const cardStyle = selectedComp.catCarouselCardStyle ?? "image-first";
@@ -6322,7 +6351,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                               </div>
                               <div className="flex flex-col gap-1.5">
                                 {items.map((item, i) => (
-                                  <div key={item.id} className="flex flex-col gap-1 p-1.5 border rounded bg-white">
+                                  <div key={item.id} className="flex flex-col gap-1 p-1.5 border border-gray-700 rounded bg-gray-900 text-gray-200">
                                     <div className="flex gap-1.5 items-center">
                                       <ImagePickerButton
                                         label="Category image"
@@ -6368,7 +6397,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                         );
                       })() : (
                         <button type="button" onClick={() => addCategoryCarousel()}
-                          className="w-full flex items-center justify-center gap-1.5 h-9 rounded border border-gray-200 bg-white hover:border-black transition-colors text-xs">
+                          className="w-full flex items-center justify-center gap-1.5 h-9 rounded border border-gray-700 bg-gray-800 transition-colors text-xs text-gray-200">
                           <LayoutGrid className="h-4 w-4" /> Add Category Carousel
                         </button>
                       )}
@@ -6384,7 +6413,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                     <ChevronDown className={`h-3 w-3 ml-auto text-muted-foreground transition-transform ${openTool === "icon" ? "rotate-180" : ""}`} />
                   </button>
                   {openTool === "icon" && (
-                    <div className="mt-1 p-1.5 border rounded-md bg-gray-300 border-gray-400">
+                    <div className="mt-1 p-1.5 border rounded-md bg-gray-900 border-gray-700 text-gray-200">
                       {selectedComp && selectedComp.type === "icon" ? (
                         <div className="flex flex-col">
                           {renderTypeHeader(selectedComp)}
@@ -6428,7 +6457,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                     <ChevronDown className={`h-3 w-3 ml-auto text-muted-foreground transition-transform ${openTool === "location-input" ? "rotate-180" : ""}`} />
                   </button>
                   {openTool === "location-input" && (
-                    <div className="mt-1 p-1.5 border rounded-md bg-gray-300 border-gray-400">
+                    <div className="mt-1 p-1.5 border rounded-md bg-gray-900 border-gray-700 text-gray-200">
                       {selectedComp && selectedComp.type === "location-input" ? (
                         <div className="flex flex-col">
                           {renderTypeHeader(selectedComp)}
@@ -6451,7 +6480,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                         </div>
                       ) : (
                         <button type="button" onClick={() => addLocationInput()}
-                          className="w-full flex items-center justify-center gap-1.5 h-9 rounded border border-gray-200 bg-white hover:border-black transition-colors text-xs">
+                          className="w-full flex items-center justify-center gap-1.5 h-9 rounded border border-gray-700 bg-gray-800 transition-colors text-xs text-gray-200">
                           <MapPin className="h-4 w-4" /> Add Location Input
                         </button>
                       )}
@@ -6467,7 +6496,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                     <ChevronDown className={`h-3 w-3 ml-auto text-muted-foreground transition-transform ${openTool === "map" ? "rotate-180" : ""}`} />
                   </button>
                   {openTool === "map" && (
-                    <div className="mt-1 p-1.5 border rounded-md bg-gray-300 border-gray-400">
+                    <div className="mt-1 p-1.5 border rounded-md bg-gray-900 border-gray-700 text-gray-200">
                       {selectedComp && selectedComp.type === "map" ? (() => {
                         const markers = selectedComp.mapMarkers ?? [];
                         return (
@@ -6506,7 +6535,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                                 </div>
                                 <div className="flex flex-col gap-1.5">
                                   {markers.map((m) => (
-                                    <div key={m.id} className="flex items-center gap-1 p-1 border rounded bg-white">
+                                    <div key={m.id} className="flex items-center gap-1 p-1 border border-gray-700 rounded bg-gray-900 text-gray-200">
                                       <Input value={m.label ?? ""} onChange={(e) => updateMapMarker(selectedComp.id, markers, m.id, { label: e.target.value })} placeholder="Label" className="h-6 text-xs px-1.5 flex-1 min-w-0" />
                                       <Input type="number" step="0.0001" value={m.lat} onChange={(e) => updateMapMarker(selectedComp.id, markers, m.id, { lat: +e.target.value })} placeholder="Lat" className="h-6 text-xs px-1.5 w-16" />
                                       <Input type="number" step="0.0001" value={m.lng} onChange={(e) => updateMapMarker(selectedComp.id, markers, m.id, { lng: +e.target.value })} placeholder="Lng" className="h-6 text-xs px-1.5 w-16" />
@@ -6524,7 +6553,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                         );
                       })() : (
                         <button type="button" onClick={() => addMap()}
-                          className="w-full flex items-center justify-center gap-1.5 h-9 rounded border border-gray-200 bg-white hover:border-black transition-colors text-xs">
+                          className="w-full flex items-center justify-center gap-1.5 h-9 rounded border border-gray-700 bg-gray-800 transition-colors text-xs text-gray-200">
                           <MapIcon className="h-4 w-4" /> Add Map
                         </button>
                       )}
@@ -6540,7 +6569,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                     <ChevronDown className={`h-3 w-3 ml-auto text-muted-foreground transition-transform ${openTool === "datetime-picker" ? "rotate-180" : ""}`} />
                   </button>
                   {openTool === "datetime-picker" && (
-                    <div className="mt-1 p-1.5 border rounded-md bg-gray-300 border-gray-400">
+                    <div className="mt-1 p-1.5 border rounded-md bg-gray-900 border-gray-700 text-gray-200">
                       {selectedComp && selectedComp.type === "datetime-picker" ? (
                         <div className="flex flex-col">
                           {renderTypeHeader(selectedComp)}
@@ -6576,7 +6605,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                         </div>
                       ) : (
                         <button type="button" onClick={() => addDateTimePicker()}
-                          className="w-full flex items-center justify-center gap-1.5 h-9 rounded border border-gray-200 bg-white hover:border-black transition-colors text-xs">
+                          className="w-full flex items-center justify-center gap-1.5 h-9 rounded border border-gray-700 bg-gray-800 transition-colors text-xs text-gray-200">
                           <CalendarClock className="h-4 w-4" /> Add Date & Time Picker
                         </button>
                       )}
@@ -6592,7 +6621,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                     <ChevronDown className={`h-3 w-3 ml-auto text-muted-foreground transition-transform ${openTool === "vehicle-selector" ? "rotate-180" : ""}`} />
                   </button>
                   {openTool === "vehicle-selector" && (
-                    <div className="mt-1 p-1.5 border rounded-md bg-gray-300 border-gray-400">
+                    <div className="mt-1 p-1.5 border rounded-md bg-gray-900 border-gray-700 text-gray-200">
                       {selectedComp && selectedComp.type === "vehicle-selector" ? (() => {
                         const options = selectedComp.vehicleOptions ?? [];
                         return (
@@ -6609,7 +6638,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                                   {options.map((opt) => {
                                     const isSelected = (selectedComp.selectedVehicleId ?? options[0]?.id) === opt.id;
                                     return (
-                                      <div key={opt.id} className="flex flex-col gap-1 p-1.5 border rounded bg-white">
+                                      <div key={opt.id} className="flex flex-col gap-1 p-1.5 border border-gray-700 rounded bg-gray-900 text-gray-200">
                                         <div className="flex items-center gap-1">
                                           <Input value={opt.label} onChange={(e) => updateVehicleOption(selectedComp.id, options, opt.id, { label: e.target.value })} placeholder="Label" className="h-6 text-xs px-1.5 flex-1 min-w-0" />
                                           <Input value={opt.fareText ?? ""} onChange={(e) => updateVehicleOption(selectedComp.id, options, opt.id, { fareText: e.target.value })} placeholder="₹99" className="h-6 text-xs px-1.5 w-16" />
@@ -6637,7 +6666,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                         );
                       })() : (
                         <button type="button" onClick={() => addVehicleSelector()}
-                          className="w-full flex items-center justify-center gap-1.5 h-9 rounded border border-gray-200 bg-white hover:border-black transition-colors text-xs">
+                          className="w-full flex items-center justify-center gap-1.5 h-9 rounded border border-gray-700 bg-gray-800 transition-colors text-xs text-gray-200">
                           <CarFront className="h-4 w-4" /> Add Vehicle Selector
                         </button>
                       )}
@@ -6653,7 +6682,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                     <ChevronDown className={`h-3 w-3 ml-auto text-muted-foreground transition-transform ${openTool === "driver-badge" ? "rotate-180" : ""}`} />
                   </button>
                   {openTool === "driver-badge" && (
-                    <div className="mt-1 p-1.5 border rounded-md bg-gray-300 border-gray-400">
+                    <div className="mt-1 p-1.5 border rounded-md bg-gray-900 border-gray-700 text-gray-200">
                       {selectedComp && selectedComp.type === "driver-badge" ? (
                         <div className="flex flex-col">
                           {renderTypeHeader(selectedComp)}
@@ -6693,7 +6722,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                         </div>
                       ) : (
                         <button type="button" onClick={() => addDriverBadge()}
-                          className="w-full flex items-center justify-center gap-1.5 h-9 rounded border border-gray-200 bg-white hover:border-black transition-colors text-xs">
+                          className="w-full flex items-center justify-center gap-1.5 h-9 rounded border border-gray-700 bg-gray-800 transition-colors text-xs text-gray-200">
                           <BadgeCheck className="h-4 w-4" /> Add Driver Badge
                         </button>
                       )}
@@ -6709,7 +6738,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                     <ChevronDown className={`h-3 w-3 ml-auto text-muted-foreground transition-transform ${openTool === "fare-display" ? "rotate-180" : ""}`} />
                   </button>
                   {openTool === "fare-display" && (
-                    <div className="mt-1 p-1.5 border rounded-md bg-gray-300 border-gray-400">
+                    <div className="mt-1 p-1.5 border rounded-md bg-gray-900 border-gray-700 text-gray-200">
                       {selectedComp && selectedComp.type === "fare-display" ? (
                         <div className="flex flex-col">
                           {renderTypeHeader(selectedComp)}
@@ -6745,7 +6774,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                         </div>
                       ) : (
                         <button type="button" onClick={() => addFareDisplay()}
-                          className="w-full flex items-center justify-center gap-1.5 h-9 rounded border border-gray-200 bg-white hover:border-black transition-colors text-xs">
+                          className="w-full flex items-center justify-center gap-1.5 h-9 rounded border border-gray-700 bg-gray-800 transition-colors text-xs text-gray-200">
                           <Receipt className="h-4 w-4" /> Add Fare Display
                         </button>
                       )}
@@ -6773,7 +6802,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                   <label className="text-[10px] text-muted-foreground block mb-1 uppercase tracking-wide">Logo</label>
                   <div className="flex items-center gap-2">
                     <button type="button" onClick={() => logoInputRef.current?.click()}
-                      className="h-12 w-12 shrink-0 rounded border border-dashed border-gray-300 bg-gray-50 flex items-center justify-center overflow-hidden hover:border-black transition-colors">
+                      className="h-12 w-12 shrink-0 rounded border border-dashed border-gray-700 bg-gray-900 flex items-center justify-center overflow-hidden transition-colors">
                       {logoUploading ? (
                         <span className="text-[9px] text-muted-foreground">…</span>
                       ) : siteSettings.logoUrl ? (
@@ -6827,7 +6856,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                   <label className="text-[10px] text-muted-foreground block mb-1 uppercase tracking-wide">Favicon</label>
                   <div className="flex items-center gap-2">
                     <button type="button" onClick={() => faviconInputRef.current?.click()}
-                      className="h-8 w-8 shrink-0 rounded border border-dashed border-gray-300 bg-gray-50 flex items-center justify-center overflow-hidden hover:border-black transition-colors">
+                      className="h-8 w-8 shrink-0 rounded border border-dashed border-gray-700 bg-gray-900 flex items-center justify-center overflow-hidden transition-colors">
                       {faviconUploading ? (
                         <span className="text-[8px] text-muted-foreground">…</span>
                       ) : siteSettings.faviconUrl ? (
@@ -6866,7 +6895,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
                         key={r.id}
                         draggable
                         onDragStart={(e) => e.dataTransfer.setData("application/x-reusable-component", JSON.stringify(r))}
-                        className="flex items-center gap-2 px-2.5 py-1.5 rounded-md border border-gray-200 text-xs cursor-grab hover:bg-muted hover:text-gray-900"
+                        className="flex items-center gap-2 px-2.5 py-1.5 rounded-md border border-gray-700 text-xs text-gray-200 cursor-grab"
                         title={`From "${r.sourcePage}"`}
                       >
                         <ComponentIcon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
@@ -6880,7 +6909,7 @@ export function PageEditor({ slug, label }: PageEditorProps) {
 
               {/* Group / multi-selection settings — not tied to one component type */}
               {(selectedComps.length > 1 || (selectedComp && selectedComp.groupId)) && (
-                <div className="mt-3 p-3 border rounded-md bg-muted/30 flex flex-col gap-2.5">
+                <div className="mt-3 p-3 border rounded-md bg-gray-900 border-gray-700 text-gray-200 flex flex-col gap-2.5">
                   <div className="flex items-center gap-2">
                     <span className="text-xs font-semibold flex-1">
                       {selectionGroupId ? "Group" : `${selectedComps.length} selected`}

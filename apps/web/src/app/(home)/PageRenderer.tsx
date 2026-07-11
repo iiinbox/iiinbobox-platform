@@ -180,7 +180,7 @@ export async function getPublishedPageConfig(slug: string) {
   try {
     const res = await fetch(`${API}/page-config/${encodeURIComponent(slug)}/published`, { next: { revalidate: 10 } });
     if (!res.ok) return null;
-    return res.json();
+    return await res.json();
   } catch {
     return null;
   }

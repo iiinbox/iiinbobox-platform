@@ -10,7 +10,7 @@ async function getCategories(): Promise<Category[]> {
       { next: { revalidate: 3600 } }
     );
     if (!res.ok) return [];
-    return res.json();
+    return await res.json();
   } catch {
     return [];
   }
